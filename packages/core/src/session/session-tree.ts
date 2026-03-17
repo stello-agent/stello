@@ -138,13 +138,14 @@ export class SessionTreeImpl implements SessionTree {
 
   async updateMeta(
     id: string,
-    updates: Partial<Pick<SessionMeta, 'label' | 'scope' | 'tags' | 'metadata'>>,
+    updates: Partial<Pick<SessionMeta, 'label' | 'scope' | 'tags' | 'metadata' | 'turnCount'>>,
   ): Promise<SessionMeta> {
     const meta = await this.requireSession(id);
     if (updates.label !== undefined) meta.label = updates.label;
     if (updates.scope !== undefined) meta.scope = updates.scope;
     if (updates.tags !== undefined) meta.tags = updates.tags;
     if (updates.metadata !== undefined) meta.metadata = updates.metadata;
+    if (updates.turnCount !== undefined) meta.turnCount = updates.turnCount;
     meta.updatedAt = now();
     await this.fs.writeJSON(metaPath(id), meta);
     return meta;
