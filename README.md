@@ -1,6 +1,8 @@
 <p align="right">
-  <strong>English</strong> | <a href="./README.zh-CN.md">中文</a>
+  <a href="#english">English</a> | <a href="#中文">中文</a>
 </p>
+
+<a id="english"></a>
 
 <p align="center">
   <h1 align="center">Stello</h1>
@@ -275,5 +277,281 @@ pnpm typecheck   # TypeScript strict mode
 ```
 
 ## License
+
+[Apache-2.0](./LICENSE)
+
+---
+
+<a id="中文"></a>
+
+<p align="right">
+  <a href="#english">English</a> | <a href="#中文">中文</a>
+</p>
+
+<h1 align="center">Stello</h1>
+<p align="center">
+  <strong>首个开源对话拓扑引擎。</strong><br/>
+  自动分支会话树、跨分支继承记忆、星空图可视化。
+</p>
+
+---
+
+对话不是线性的——AI 聊天为什么要是？
+
+Stello 让 AI Agent **自动将**线性对话分裂为树状 Session，跨分支**继承记忆**，并将整个拓扑渲染为可交互的**星空图**。构建能记忆、能分支、能生长的 Agent。
+
+```
+@stello-ai/core        →  Session 树 + 三层记忆 + 生命周期钩子 + Agent Tools
+@stello-ai/visualizer  →  星图布局 + Canvas 渲染 + React 组件
+```
+
+## 安装
+
+```bash
+# npm
+npm install @stello-ai/core @stello-ai/visualizer
+
+# pnpm
+pnpm add @stello-ai/core @stello-ai/visualizer
+
+# yarn
+yarn add @stello-ai/core @stello-ai/visualizer
+```
+
+> `@stello-ai/visualizer` 需要 `react` 和 `react-dom` 作为 peer dependency。`@stello-ai/core` 零依赖。
+
+## 5 分钟快速上手
+
+### 1. 初始化引擎
+
+```typescript
+import {
+  NodeFileSystemAdapter,
+  CoreMemory,
+  SessionMemory,
+  SessionTreeImpl,
+  LifecycleManager,
+  SplitGuard,
+  SkillRouterImpl,
+  AgentTools,
+} from '@stello-ai/core';
+import type { CoreSchema, StelloConfig } from '@stello-ai/core';
+
+// 定义 Agent 的全局核心档案结构
+const schema: CoreSchema = {
+  name:    { type: 'string',  default: '',  bubbleable: true },
+  goal:    { type: 'string',  default: '',  bubbleable: true },
+  notes:   { type: 'array',   default: [],  bubbleable: true },
+};
+
+// 接入你的 LLM
+const callLLM = async (prompt: string): Promise<string> => {
+  // 替换为你的 OpenAI / Claude / 本地模型调用
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }] }),
+  });
+  const json = await res.json() as { choices: { message: { content: string } }[] };
+  return json.choices[0]?.message.content ?? '';
+};
+
+// 组装所有模块
+const fs       = new NodeFileSystemAdapter('./stello-data');
+const core     = new CoreMemory(fs, schema);
+const sessions = new SessionTreeImpl(fs);
+const memory   = new SessionMemory(fs);
+const config: StelloConfig = { dataDir: './stello-data', coreSchema: schema, callLLM };
+const lifecycle = new LifecycleManager(core, memory, sessions, config);
+const guard    = new SplitGuard(sessions);
+const tools    = new AgentTools(sessions, core, memory, lifecycle, guard);
+
+await core.init();
+```
+
+### 2. 创建根 Session 并开始对话
+
+```typescript
+const root = await sessions.createRoot('我的项目');
+const { context } = await lifecycle.bootstrap(root.id);
+
+// context.core    → { name: '', goal: '', notes: [] }
+// context.memories → []
+// context.scope   → null
+
+// 每轮对话结束后调用 afterTurn，同时更新三层记忆
+const result = await lifecycle.afterTurn(
+  root.id,
+  { role: 'user',      content: '我叫 Alice，想做一个聊天机器人', timestamp: new Date().toISOString() },
+  { role: 'assistant', content: '好的 Alice！让我来帮你做聊天机器人。', timestamp: new Date().toISOString() },
+);
+await lifecycle.flushBubbles();
+// result → { recordAppended: true, memoryUpdated: true, coreUpdated: true }
+```
+
+### 3. 分支到子 Session
+
+```typescript
+// 将 8 个内置 tool 交给 LLM
+const toolDefs = tools.getToolDefinitions();
+// → 将 toolDefs 传给 LLM 的 function calling / tool use
+
+// 当 Agent 决定分支时：
+await sessions.updateMeta(root.id, { turnCount: 5 });
+const { success, data: child } = await tools.executeTool('stello_create_session', {
+  parentId: root.id,
+  label: 'UI 设计讨论',
+});
+// 子 Session 通过继承策略自动获得父的 memory.md
+```
+
+### 4. 渲染星空图
+
+```tsx
+import { StelloGraph } from '@stello-ai/visualizer';
+
+function App() {
+  const [sessions, setSessions] = useState([]);
+  const [memories, setMemories] = useState(new Map());
+
+  // 从 Stello 数据加载 sessions
+  // ...
+
+  return (
+    <StelloGraph
+      sessions={sessions}
+      memories={memories}
+      onSessionClick={(id) => console.log('跳转到', id)}
+      layoutConfig={{ ringSpacing: 120, colorFn: (s) => s.depth === 0 ? '#FFD700' : '#7EC8E3' }}
+    />
+  );
+}
+```
+
+## 核心概念
+
+### Session 树
+
+每段对话都是一棵**树**。根 Session 是主线程，子 Session 分支出去探索子话题，还可以通过**跨分支引用**（refs）横向关联。
+
+```
+        ┌── UI 设计 ──── 配色方案
+根 ─────┤
+        └── 后端 API ─── 认证模块
+               (ref) ─ ─ ─ ─ ┘
+```
+
+- **平铺存储**：`sessions/{uuid}/` — 树关系靠 `meta.json` 维护，不靠文件夹嵌套
+- **只归档不删除**：归档可逆，永不删除
+- **拆分保护**：最少轮次 + 冷却期，防止过度分支
+
+### 三层记忆
+
+| 层 | 存什么 | 粒度 | 文件 |
+|----|--------|------|------|
+| **L1** 核心档案 | 结构化数据（开发者定义 schema） | 全局唯一 | `core.json` |
+| **L2** Session 记忆 | 关键结论、意图、待跟进 | 每 Session 一份 | `memory.md` |
+| **L3** 原始记录 | 完整对话历史 | 每 Session 一份 | `records.jsonl` |
+
+**记忆双向流动：**
+
+- **继承（向下）**：子 Session 按策略继承父的记忆（`summary` / `full` / `minimal` / `scoped`）
+- **冒泡（向上）**：schema 中标记 `bubbleable` 的字段从子 Session 冒泡回全局 `core.json`（500ms 防抖，last-write-wins）
+
+### 星空图可视化
+
+`<StelloGraph />` React 组件将 Session 树渲染为可交互的星座图：
+
+- **节点大小** = `turnCount`（对话越多，星星越大）
+- **节点亮度** = `lastActiveAt`（越近越亮）
+- **实线** = 父子关系
+- **虚线** = 跨分支引用
+- **归档节点** = 低透明度
+- **交互**：滚轮缩放、拖拽平移、点击导航、悬浮预览
+
+## API 概览
+
+### @stello-ai/core
+
+| 类 | 用途 |
+|----|------|
+| `NodeFileSystemAdapter` | 文件系统持久化（可替换为 DB 适配器） |
+| `SessionTreeImpl` | Session 树 CRUD — `createRoot`、`createChild`、`archive`、`addRef` |
+| `CoreMemory` | L1 全局档案 — schema 校验、点路径访问（`profile.gpa`）、变更事件 |
+| `SessionMemory` | L2 + L3 — `readMemory`、`writeMemory`、`appendRecord`、`readRecords` |
+| `LifecycleManager` | 编排 `bootstrap`、`afterTurn`、`onSessionSwitch`、`prepareChildSpawn` |
+| `BubbleManager` | 防抖冒泡：子 Session L1 变更传播到全局 |
+| `SplitGuard` | 拆分保护（最少轮次 + 冷却期） |
+| `ConfirmManager` | 确认协议：拆分建议 + `requireConfirm` 字段变更 |
+| `SkillRouterImpl` | Skill 注册 + 关键词匹配 |
+| `AgentTools` | 8 个 LLM 可调用的 tool |
+
+#### Agent Tools（LLM function calling）
+
+```typescript
+const defs = tools.getToolDefinitions();
+// 传给 LLM，然后执行：
+const result = await tools.executeTool('stello_create_session', { parentId, label });
+```
+
+| Tool | 用途 |
+|------|------|
+| `stello_read_core` | 读取全局档案字段 |
+| `stello_update_core` | 更新全局档案字段 |
+| `stello_create_session` | 创建子 Session |
+| `stello_list_sessions` | 列出所有 Session |
+| `stello_read_summary` | 读取 Session 的 memory.md |
+| `stello_add_ref` | 创建跨分支引用 |
+| `stello_archive` | 归档 Session |
+| `stello_update_meta` | 更新 Session 元数据 |
+
+### @stello-ai/visualizer
+
+| 导出 | 用途 |
+|------|------|
+| `<StelloGraph />` | React 组件 — 开箱即用的星座图 |
+| `computeConstellationLayout()` | 纯函数 — 不依赖 React 也能用 |
+| `renderFrame()` | Canvas 渲染器 — 不依赖 React 也能用 |
+| `InteractionHandler` | 缩放 / 平移 / 点击处理器 — 不依赖 React 也能用 |
+
+## 配置项
+
+```typescript
+const config: StelloConfig = {
+  dataDir: './stello-data',           // 数据存储目录（必填）
+  coreSchema: schema,                 // L1 字段定义（必填）
+  callLLM: myLLMFunction,            // LLM 调用函数（必填）
+  inheritancePolicy: 'summary',      // 'summary' | 'full' | 'minimal' | 'scoped'
+  splitStrategy: {
+    minTurns: 3,                      // 拆分前最少轮次
+    cooldownTurns: 5,                 // 两次拆分间最少间隔轮次
+  },
+  bubblePolicy: {
+    debounceMs: 500,                  // 冒泡防抖间隔
+  },
+};
+```
+
+## 设计哲学
+
+- **适配器模式**：默认文件系统，换 SQLite/Postgres 不改业务代码
+- **三层独立**：L1/L2/L3 互不阻塞，某层失败不影响其他层
+- **Markdown 原生**：memory/scope/index 文件都是 `.md` — LLM 天然理解，人类可直接阅读编辑
+- **无厂商锁定**：自带 LLM（`callLLM`）、自带 embedder — 你选什么模型就用什么模型
+- **事件驱动，不含 UI**：确认协议只发事件，UI 你自己定
+
+## 参与贡献
+
+欢迎贡献！请查看 [issues](https://github.com/stello-agent/stello/issues) 页面。
+
+```bash
+git clone https://github.com/stello-agent/stello.git
+cd stello
+pnpm install
+pnpm test        # 两个包共 134 个测试
+pnpm typecheck   # TypeScript 严格模式
+```
+
+## 许可证
 
 [Apache-2.0](./LICENSE)
