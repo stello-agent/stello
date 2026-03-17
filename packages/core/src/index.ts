@@ -54,3 +54,5 @@ export { BubbleManager } from './memory/bubble';
 export { ConfirmManager } from './confirm/confirm-manager';
 export { SplitGuard } from './session/split-guard';
 export type { SplitCheckResult } from './session/split-guard';
+export { SkillRouterImpl } from './skill/skill-router';
+export { AgentTools } from './tools/agent-tools';
