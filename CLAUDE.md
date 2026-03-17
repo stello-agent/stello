@@ -249,8 +249,8 @@ stello-data/
 - [x] 架构变更：Session 文件从 summary.json 改为 memory.md / scope.md / index.md `320b3d8`
 - [x] 记忆系统（L1 CoreMemory + L2/L3 SessionMemory + assembleContext）`3dea1bb` `12fa359`
 - [x] bootstrap + assemble + afterTurn + onSessionSwitch + prepareChildSpawn 钩子 `5b90342`
-- [ ] **冒泡机制（bubbleable + debounce + 冲突处理）** ← **当前**
-- [ ] 拆分策略 + 保护机制
+- [x] 冒泡机制（bubbleable + debounce + 冲突处理）`841bf9b`
+- [ ] **拆分策略 + 保护机制** ← **当前**
 - [ ] 确认协议（splitProposal + updateProposal）
 - [ ] Skill 插槽（注册 + 手动调用）
 - [ ] Agent Tools（getToolDefinitions + 8 个 tool）
@@ -271,6 +271,7 @@ stello-data/
 - `3dea1bb` feat(memory): 实现 L1 核心档案 CoreMemory — 12 个测试，累计 40 个
 - `12fa359` feat(memory): 实现 L2 + L3 SessionMemory — 10 个测试，累计 50 个
 - `5b90342` feat(lifecycle): 实现 LifecycleManager — 15 个测试，累计 65 个
+- `841bf9b` feat(memory): 实现冒泡机制 BubbleManager — 6 个测试，累计 71 个
 
 ## 设计决策记录
 

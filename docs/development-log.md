@@ -381,19 +381,61 @@ try index: updateParentIndex
 
 ---
 
+## Phase 4：冒泡机制 BubbleManager
+
+**时间**：2026-03-17
+**Commit**：`841bf9b`
+**测试**：71 个（fs 11 + session 17 + core-memory 12 + session-memory 10 + lifecycle 15 + bubble 6）
+
+**文件**：`memory/bubble.ts`（`BubbleManager` 类）
+
+BubbleManager 实现子 Session 的 L1 字段变更冒泡到全局 core.json。只有 schema 中标记 `bubbleable: true` 的字段才会冒泡，同字段短时间多次变更通过 500ms debounce 合并为一次写入。
+
+**核心方法**：
+
+| 方法 | 功能 |
+|------|------|
+| `handleBubble(path, value)` | 同步方法：过滤非 bubbleable → debounce → 定时调 writeCore |
+| `flush()` | 立即执行所有待处理的冒泡写入（关闭前 / 测试用） |
+| `dispose()` | 清理所有 timer，不执行写入 |
+
+**设计决策**：
+- **不依赖 SessionTreeImpl**：v0.1 无跨 Session 冲突检测需求，KISS 原则
+- **复用 CoreMemory.writeCore**：requireConfirm 字段自动走确认流程（CoreMemory 内部处理）
+- **last-write-wins**：同字段 debounce 期间多次变更，只保留最后一次
+
+**集成方式**：
+- LifecycleManager 构造函数中创建 BubbleManager 实例
+- afterTurn L1 步骤从直接 `coreMemory.writeCore` 改为 `bubbleManager.handleBubble`
+- 新增 `LifecycleManager.flushBubbles()` 暴露给外部（测试 / 关闭前调用）
+
+**测试覆盖（6 个）**：
+- bubbleable 字段 500ms 后写入 core.json
+- 非 bubbleable 字段不触发写入
+- 500ms debounce：短时间多次只写最后一次
+- requireConfirm + bubbleable 走确认流程（触发 updateProposal，不直接写入）
+- flush 立即执行所有待处理冒泡
+- dispose 清理 timer 不执行写入
+
+**lifecycle-turns.test.ts 适配**：
+- testSchema 字段加 `bubbleable: true`
+- "afterTurn 检测 L1 变更" 测试在断言前调 `lm.flushBubbles()`
+
+---
+
 ## 当前代码统计
 
 | 指标 | 数量 |
 |------|------|
 | 类型接口文件 | 5 个（types/ 目录） |
-| 实现文件 | 5 个（file-system-adapter, session-tree, core-memory, session-memory, lifecycle-manager） |
-| 测试文件 | 6 个 |
-| 测试用例 | 65 个（全部通过） |
+| 实现文件 | 6 个（file-system-adapter, session-tree, core-memory, session-memory, lifecycle-manager, bubble） |
+| 测试文件 | 7 个 |
+| 测试用例 | 71 个（全部通过） |
 | 导出类型 | 25 个 |
-| 导出实现 | 5 个（NodeFileSystemAdapter, SessionTreeImpl, CoreMemory, SessionMemory, LifecycleManager） |
+| 导出实现 | 6 个（NodeFileSystemAdapter, SessionTreeImpl, CoreMemory, SessionMemory, LifecycleManager, BubbleManager） |
 
 ---
 
-## 下一步：Phase 4 — 冒泡机制
+## 下一步：Phase 5 — 拆分策略 + 保护机制
 
-实现 bubbleable 字段的子→父冒泡：即时冒泡 + 500ms debounce + last-write-wins 冲突处理。
+实现 Session 拆分的保护机制（最少 N 轮 + 冷却期）和 Agent 主动拆分路径。
