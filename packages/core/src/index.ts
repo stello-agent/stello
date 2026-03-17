@@ -47,3 +47,4 @@ export type {
 
 // 导出实现
 export { NodeFileSystemAdapter } from './fs';
+export { SessionTreeImpl } from './session';
