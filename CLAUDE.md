@@ -250,9 +250,8 @@ stello-data/
 - [x] 记忆系统（L1 CoreMemory + L2/L3 SessionMemory + assembleContext）`3dea1bb` `12fa359`
 - [x] bootstrap + assemble + afterTurn + onSessionSwitch + prepareChildSpawn 钩子 `5b90342`
 - [x] 冒泡机制（bubbleable + debounce + 冲突处理）`841bf9b`
-- [ ] **拆分策略 + 保护机制** ← **当前**
-- [ ] 确认协议（splitProposal + updateProposal）
-- [ ] Skill 插槽（注册 + 手动调用）
+- [x] 拆分策略 + 确认协议（SplitGuard + ConfirmManager）`066bdbc`
+- [ ] **Skill 插槽（注册 + 手动调用）** ← **当前**
 - [ ] Agent Tools（getToolDefinitions + 8 个 tool）
 - [ ] 生命周期完整串联 + 集成测试
 - [ ] 星空图布局 + Canvas 渲染 + 交互
@@ -272,6 +271,7 @@ stello-data/
 - `12fa359` feat(memory): 实现 L2 + L3 SessionMemory — 10 个测试，累计 50 个
 - `5b90342` feat(lifecycle): 实现 LifecycleManager — 15 个测试，累计 65 个
 - `841bf9b` feat(memory): 实现冒泡机制 BubbleManager — 6 个测试，累计 71 个
+- `066bdbc` feat(confirm): 实现确认协议 + 拆分保护机制 — 11 个测试，累计 82 个
 
 ## 设计决策记录
 
