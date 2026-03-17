@@ -219,8 +219,8 @@ stello-data/
 - [x] 项目初始化（monorepo + TS + Vitest + tsup）`9af6b04`
 - [x] types.ts 全量接口定义 `c684697`
 - [x] FileSystemAdapter `efeefeb`
-- [ ] SessionTree CRUD + 跨分支引用 ← **当前**
-- [ ] L1 核心档案（schema + 点路径读写 + onChange）
+- [x] SessionTree CRUD + 跨分支引用 `ac64dc2`
+- [ ] L1 核心档案（schema + 点路径读写 + onChange） ← **当前**
 - [ ] L2 摘要读写 + summaryExtractor 接口
 - [ ] L3 原始记录（JSONL 追加读取）
 - [ ] bootstrap + assemble + afterTurn + onSessionSwitch 钩子
@@ -241,6 +241,7 @@ stello-data/
 - `9af6b04` chore(init): 初始化 monorepo 项目结构 — pnpm workspace、TypeScript 严格模式、tsup 打包、Vitest、ESLint + Prettier、.claude/settings.json
 - `c684697` feat(types): 定义全量接口 — 拆为 5 个子文件 (session/memory/fs/lifecycle/engine) + types.ts 统一再导出
 - `efeefeb` feat(fs): 实现 NodeFileSystemAdapter — 7 个方法 + 9 个测试
+- `ac64dc2` feat(session): 实现 SessionTree — createRoot/createChild/get/archive/addRef/updateMeta + 15 个测试
 
 ## 设计决策记录
 
