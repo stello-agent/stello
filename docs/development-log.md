@@ -478,19 +478,65 @@ SplitGuard 检查 Session 是否满足拆分条件，防止过早或过于频繁
 
 ---
 
+## Phase 6：Skill 插槽 + Agent Tools
+
+**时间**：2026-03-17
+**Commit**：`8b9dd7e`
+**测试**：98 个（+skill 5 + tools 11）
+
+### 6.1 SkillRouterImpl — Skill 路由器
+
+**文件**：`skill/skill-router.ts`
+
+实现 `SkillRouter` 接口，v0.1 简单关键词匹配。
+
+| 方法 | 功能 |
+|------|------|
+| `register(skill)` | Map 存储，同名覆盖 |
+| `match(message)` | 遍历 keywords，content.includes 匹配（不区分大小写） |
+| `getAll()` | 返回所有已注册 Skill |
+
+**测试覆盖（5 个）**：纯内存测试，不需要文件系统。
+
+### 6.2 AgentTools — Agent Tools 执行器
+
+**文件**：`tools/agent-tools.ts` + `tools/definitions.ts`
+
+提供 8 个 tool 定义（JSON Schema 格式）+ 统一执行入口。`definitions.ts` 单独拆出避免主文件超 200 行。
+
+| Tool | 内部调用 |
+|------|----------|
+| `stello_read_core` | `coreMemory.readCore(path)` |
+| `stello_update_core` | `coreMemory.writeCore(path, value)` |
+| `stello_create_session` | `splitGuard.checkCanSplit` → `lifecycle.prepareChildSpawn` → `splitGuard.recordSplit` |
+| `stello_list_sessions` | `sessions.listAll()` |
+| `stello_read_summary` | `sessionMemory.readMemory(sessionId)` |
+| `stello_add_ref` | `sessions.addRef(fromId, toId)` |
+| `stello_archive` | `sessions.archive(sessionId)` |
+| `stello_update_meta` | `sessions.updateMeta(sessionId, updates)` |
+
+**设计决策**：
+- `stello_create_session` 先检查 SplitGuard，不通过直接返回 `{ success: false }`
+- 统一 try/catch，错误不抛出，返回 `{ success: false, error }`
+- 未知 tool 名返回错误
+
+**测试覆盖（11 个）**：每个 tool 一个测试 + 拆分保护拒绝 + 未知 tool 错误。
+
+---
+
 ## 当前代码统计
 
 | 指标 | 数量 |
 |------|------|
 | 类型接口文件 | 5 个（types/ 目录） |
-| 实现文件 | 8 个（+confirm-manager, split-guard） |
-| 测试文件 | 9 个 |
-| 测试用例 | 82 个（全部通过） |
-| 导出类型 | 26 个（+SplitCheckResult） |
-| 导出实现 | 8 个（+ConfirmManager, SplitGuard） |
+| 实现文件 | 11 个（+skill-router, agent-tools, definitions） |
+| 测试文件 | 11 个 |
+| 测试用例 | 98 个（全部通过） |
+| 导出类型 | 26 个 |
+| 导出实现 | 10 个（+SkillRouterImpl, AgentTools） |
 
 ---
 
-## 下一步：Phase 6 — Skill 插槽
+## 下一步：Phase 7 — 生命周期完整串联 + 集成测试
 
-实现 Skill 注册 + 手动调用（v0.1 不做意图路由）。
+串联所有模块，端到端集成测试验证完整工作流。
