@@ -247,9 +247,9 @@ stello-data/
 - [x] FileSystemAdapter `efeefeb`
 - [x] SessionTree CRUD + 跨分支引用 `ac64dc2`
 - [x] 架构变更：Session 文件从 summary.json 改为 memory.md / scope.md / index.md `320b3d8`
-- [ ] **记忆系统（L1 core.json ✅ + L2/L3 SessionMemory ✅ + assembleContext）** ← **当前**
-- [ ] bootstrap + assemble + afterTurn + onSessionSwitch 钩子
-- [ ] 冒泡机制（bubbleable + debounce + 冲突处理）
+- [x] 记忆系统（L1 CoreMemory + L2/L3 SessionMemory + assembleContext）`3dea1bb` `12fa359`
+- [x] bootstrap + assemble + afterTurn + onSessionSwitch + prepareChildSpawn 钩子 `5b90342`
+- [ ] **冒泡机制（bubbleable + debounce + 冲突处理）** ← **当前**
 - [ ] 拆分策略 + 保护机制
 - [ ] 确认协议（splitProposal + updateProposal）
 - [ ] Skill 插槽（注册 + 手动调用）
@@ -270,6 +270,7 @@ stello-data/
 - `320b3d8` refactor(types): Session 文件从 summary.json 改为 memory.md / scope.md / index.md — 28 个测试
 - `3dea1bb` feat(memory): 实现 L1 核心档案 CoreMemory — 12 个测试，累计 40 个
 - `12fa359` feat(memory): 实现 L2 + L3 SessionMemory — 10 个测试，累计 50 个
+- `5b90342` feat(lifecycle): 实现 LifecycleManager — 15 个测试，累计 65 个
 
 ## 设计决策记录
 
