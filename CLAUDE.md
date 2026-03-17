@@ -246,8 +246,8 @@ stello-data/
 - [x] types.ts 全量接口定义 `c684697`
 - [x] FileSystemAdapter `efeefeb`
 - [x] SessionTree CRUD + 跨分支引用 `ac64dc2`
-- [ ] **架构变更：Session 文件从 summary.json 改为 memory.md / scope.md / index.md** ← **当前**
-- [ ] 记忆系统（L1 core.json + L2 memory.md + L3 records.jsonl）
+- [x] 架构变更：Session 文件从 summary.json 改为 memory.md / scope.md / index.md `320b3d8`
+- [ ] **记忆系统（L1 core.json + L2 memory.md + L3 records.jsonl）** ← **当前**
 - [ ] bootstrap + assemble + afterTurn + onSessionSwitch 钩子
 - [ ] 冒泡机制（bubbleable + debounce + 冲突处理）
 - [ ] 拆分策略 + 保护机制
@@ -267,6 +267,7 @@ stello-data/
 - `c684697` feat(types): 定义全量接口
 - `efeefeb` feat(fs): 实现 NodeFileSystemAdapter — 7 个方法 + 9 个测试
 - `ac64dc2` feat(session): 实现 SessionTree — createRoot/createChild/get/archive/addRef/updateMeta + 15 个测试
+- `320b3d8` refactor(types): Session 文件从 summary.json 改为 memory.md / scope.md / index.md — 28 个测试
 
 ## 设计决策记录
 
