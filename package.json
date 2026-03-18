@@ -6,12 +6,14 @@
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
+    "smoke": "tsx scripts/smoke-test.ts",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
   "devDependencies": {
     "eslint": "^10.0.3",
     "prettier": "^3.8.1",
+    "tsx": "^4.21.0",
     "typescript-eslint": "^8.57.1"
   }
 }
