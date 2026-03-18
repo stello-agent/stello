@@ -43,10 +43,18 @@ stello/
 │   │       └── index.ts            ← 统一导出
 │   └── visualizer/
 │       └── src/
+│           ├── styles/             ← Liquid Glass 设计令牌
 │           ├── layout/             ← 星空图布局算法
-│           ├── renderer/           ← Canvas 渲染
-│           ├── interaction/        ← 缩放/平移/点击
-│           └── StelloGraph.tsx     ← React 组件
+│           ├── renderer/           ← Canvas 渲染（渐变背景 + 节点发光）
+│           ├── interaction/        ← 缩放/平移/点击/节点拖拽
+│           └── components/         ← StelloGraph + ChatPanel + FilePanel + Tooltip
+├── examples/
+│   ├── demo/                       ← 6 个功能演示脚本
+│   └── visualizer-test/            ← 可视化交互测试（Vite + React）
+├── scripts/
+│   └── smoke-test.ts               ← 冒烟测试脚本
+├── assets/
+│   └── logo.png
 ├── .claude/
 │   └── settings.json
 ├── CLAUDE.md                       ← 本文件
@@ -188,11 +196,13 @@ stello-data/
 
 ### 可视化（@stello-ai/visualizer）
 
-- 星空图布局 + Canvas 渲染
+- 星空图布局 + Canvas 渲染（渐变背景 + 节点发光效果）
 - 节点映射：大小=turnCount、亮度=lastActiveAt、颜色=开发者自定义
 - 父子=实线、引用=虚线、归档=低透明度
-- 交互：缩放、平移、点击进入 Session、悬浮预览摘要
-- React 组件：`<StelloGraph />`
+- 交互：缩放、平移、节点拖拽、点击进入 Session、悬浮预览摘要
+- 侧边栏面板：ChatPanel（对话）+ FilePanel（文件浏览）+ Tab 切换
+- Liquid Glass 视觉风格：毛玻璃背景、统一设计令牌（theme.ts）
+- React 组件：`<StelloGraph />`、`<ChatPanel />`、`<FilePanel />`
 
 ---
 
@@ -253,9 +263,12 @@ stello-data/
 - [x] 拆分策略 + 确认协议（SplitGuard + ConfirmManager）`066bdbc`
 - [x] Skill 插槽 + Agent Tools（SkillRouterImpl + AgentTools）`8b9dd7e`
 - [x] 生命周期完整串联 + 集成测试（9 个用例覆盖完整生命周期）
-- [x] 星空图布局 + Canvas 渲染 + 交互 + StelloGraph React 组件
-- [ ] **终端 demo** ← **当前**
-- [ ] README + Quickstart
+- [x] 星空图布局 + Canvas 渲染 + 交互 + StelloGraph React 组件 `7f1cb83`
+- [x] DX 改进（别名方法 + 辅助函数 + 错误提示 + testMode + turnCount 自增）`bdca7c1`
+- [x] Visualizer 升级：侧边栏面板 + 节点拖拽 + Liquid Glass 视觉风格 `143bebb`
+- [x] 终端 demo（6 个完成：basic, conversation, branching, cross-reference, agent-tools, full-flow）
+- [x] 可视化交互测试（examples/visualizer-test）
+- [ ] **仓库整理 + README 更新** ← **当前**
 - [ ] npm 发布 0.1.0
 
 ## 最近改动日志
@@ -273,6 +286,11 @@ stello-data/
 - `8b9dd7e` feat(skill+tools): 实现 Skill 插槽 + Agent Tools — 16 个测试，累计 98 个
 - `724cea0` test(integration): 端到端集成测试 — 9 个用例覆盖完整生命周期，累计 107 个
 - `9a170fe` feat(visualizer): 实现星空图可视化 — 布局 + Canvas 渲染 + 交互 + StelloGraph 组件，27 个测试
+- `bafe7c2` chore(publish): 补充 npm 发布元数据
+- `bdca7c1` feat(core): 7 项 DX 改进 — 别名方法 + 辅助函数 + 错误提示 + testMode + turnCount 自动递增
+- `b14b1b0` chore(scripts): 添加 smoke-test 联调脚本
+- `143bebb` feat(visualizer): 面板 + 拖拽 + Liquid Glass 视觉升级 — 36 个测试
+- `c0cde98` chore(repo): 整理仓库 — 提交 examples + assets + 更新 gitignore
 
 ## 设计决策记录
 

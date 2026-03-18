@@ -141,6 +141,7 @@ import { StelloGraph } from '@stello-ai/visualizer';
 function App() {
   const [sessions, setSessions] = useState([]);
   const [memories, setMemories] = useState(new Map());
+  const [messages, setMessages] = useState(new Map());
 
   // Load sessions from your Stello data
   // ...
@@ -149,7 +150,10 @@ function App() {
     <StelloGraph
       sessions={sessions}
       memories={memories}
+      messages={messages}
       onSessionClick={(id) => console.log('Navigate to', id)}
+      onSendMessage={(id, text) => console.log('Send to', id, text)}
+      sessionFiles={(id) => ({ memory: '...', scope: '...' })}
       layoutConfig={{ ringSpacing: 120, colorFn: (s) => s.depth === 0 ? '#FFD700' : '#7EC8E3' }}
     />
   );
@@ -188,14 +192,17 @@ Root ───┤
 
 ### Star-Map Visualization
 
-The `<StelloGraph />` React component renders your session tree as an interactive constellation:
+The `<StelloGraph />` React component renders your session tree as an interactive constellation with **Liquid Glass** aesthetics:
 
 - **Node size** = `turnCount` (more conversation = bigger star)
 - **Node brightness** = `lastActiveAt` (recent = brighter)
+- **Node glow** = color-matched glow effect on each star
 - **Solid lines** = parent-child relationships
 - **Dashed lines** = cross-branch references
 - **Archived nodes** = low opacity
-- **Interactions**: zoom (scroll), pan (drag), click to navigate, hover for tooltip
+- **Gradient background** = smooth dark gradient canvas
+- **Interactions**: zoom (scroll), pan (drag), **drag nodes**, click to navigate, hover for tooltip
+- **Sidebar panel**: click a node to open a side panel with **Chat** (conversation view) and **Files** (memory/scope/index) tabs
 
 ## API Overview
 
@@ -237,10 +244,13 @@ const result = await tools.executeTool('stello_create_session', { parentId, labe
 
 | Export | Purpose |
 |--------|---------|
-| `<StelloGraph />` | React component — drop-in constellation visualization |
+| `<StelloGraph />` | React component — drop-in constellation with sidebar panels |
+| `<ChatPanel />` | Standalone chat panel component |
+| `<FilePanel />` | Standalone file viewer panel component |
+| `theme` | Liquid Glass design tokens (colors, blur, shadows) |
 | `computeConstellationLayout()` | Pure function — use without React |
-| `renderFrame()` | Canvas renderer — use without React |
-| `InteractionHandler` | Zoom / pan / click handler — use without React |
+| `renderFrame()` | Canvas renderer — gradient background + node glow |
+| `InteractionHandler` | Zoom / pan / drag nodes / click — use without React |
 
 ## Configuration
 
@@ -276,8 +286,30 @@ We welcome contributions! Please check the [issues](https://github.com/stello-ag
 git clone https://github.com/stello-agent/stello.git
 cd stello
 pnpm install
-pnpm test        # 134 tests across both packages
+pnpm test        # 154 tests across both packages
 pnpm typecheck   # TypeScript strict mode
+```
+
+## Examples
+
+The [`examples/`](./examples/) directory contains working demos:
+
+| Example | Description |
+|---------|-------------|
+| `examples/demo/src/basic.ts` | Minimal setup — create root session, run afterTurn |
+| `examples/demo/src/conversation.ts` | Multi-turn conversation with memory updates |
+| `examples/demo/src/branching.ts` | Session branching and memory inheritance |
+| `examples/demo/src/cross-reference.ts` | Cross-branch references between sessions |
+| `examples/demo/src/agent-tools.ts` | All 8 agent tools in action |
+| `examples/demo/src/full-flow.ts` | Complete lifecycle with visualization export |
+| `examples/visualizer-test/` | Interactive star-map visualization (Vite + React) |
+
+```bash
+# Run a demo
+cd examples/demo && pnpm dev
+
+# Run the interactive visualizer
+cd examples/visualizer-test && pnpm dev
 ```
 
 ## License
@@ -427,6 +459,7 @@ import { StelloGraph } from '@stello-ai/visualizer';
 function App() {
   const [sessions, setSessions] = useState([]);
   const [memories, setMemories] = useState(new Map());
+  const [messages, setMessages] = useState(new Map());
 
   // 从 Stello 数据加载 sessions
   // ...
@@ -435,7 +468,10 @@ function App() {
     <StelloGraph
       sessions={sessions}
       memories={memories}
+      messages={messages}
       onSessionClick={(id) => console.log('跳转到', id)}
+      onSendMessage={(id, text) => console.log('发送到', id, text)}
+      sessionFiles={(id) => ({ memory: '...', scope: '...' })}
       layoutConfig={{ ringSpacing: 120, colorFn: (s) => s.depth === 0 ? '#FFD700' : '#7EC8E3' }}
     />
   );
@@ -474,14 +510,17 @@ function App() {
 
 ### 星空图可视化
 
-`<StelloGraph />` React 组件将 Session 树渲染为可交互的星座图：
+`<StelloGraph />` React 组件将 Session 树渲染为可交互的星座图，采用 **Liquid Glass** 视觉风格：
 
 - **节点大小** = `turnCount`（对话越多，星星越大）
 - **节点亮度** = `lastActiveAt`（越近越亮）
+- **节点发光** = 每颗星带颜色匹配的光晕效果
 - **实线** = 父子关系
 - **虚线** = 跨分支引用
 - **归档节点** = 低透明度
-- **交互**：滚轮缩放、拖拽平移、点击导航、悬浮预览
+- **渐变背景** = 暗色渐变画布
+- **交互**：滚轮缩放、拖拽平移、**节点拖拽**、点击导航、悬浮预览
+- **侧边栏面板**：点击节点展开侧边栏，包含**对话**和**文件**（memory/scope/index）两个 Tab
 
 ## API 概览
 
@@ -523,10 +562,13 @@ const result = await tools.executeTool('stello_create_session', { parentId, labe
 
 | 导出 | 用途 |
 |------|------|
-| `<StelloGraph />` | React 组件 — 开箱即用的星座图 |
+| `<StelloGraph />` | React 组件 — 开箱即用的星座图 + 侧边栏面板 |
+| `<ChatPanel />` | 独立对话面板组件 |
+| `<FilePanel />` | 独立文件浏览面板组件 |
+| `theme` | Liquid Glass 设计令牌（颜色、模糊、阴影） |
 | `computeConstellationLayout()` | 纯函数 — 不依赖 React 也能用 |
-| `renderFrame()` | Canvas 渲染器 — 不依赖 React 也能用 |
-| `InteractionHandler` | 缩放 / 平移 / 点击处理器 — 不依赖 React 也能用 |
+| `renderFrame()` | Canvas 渲染器 — 渐变背景 + 节点发光 |
+| `InteractionHandler` | 缩放 / 平移 / 节点拖拽 / 点击处理器 |
 
 ## 配置项
 
@@ -562,8 +604,30 @@ const config: StelloConfig = {
 git clone https://github.com/stello-agent/stello.git
 cd stello
 pnpm install
-pnpm test        # 两个包共 134 个测试
+pnpm test        # 两个包共 154 个测试
 pnpm typecheck   # TypeScript 严格模式
+```
+
+## 示例
+
+[`examples/`](./examples/) 目录包含可运行的完整示例：
+
+| 示例 | 说明 |
+|------|------|
+| `examples/demo/src/basic.ts` | 最小启动 — 创建根 Session，执行 afterTurn |
+| `examples/demo/src/conversation.ts` | 多轮对话 + 记忆更新 |
+| `examples/demo/src/branching.ts` | Session 分支 + 记忆继承 |
+| `examples/demo/src/cross-reference.ts` | 跨分支引用 |
+| `examples/demo/src/agent-tools.ts` | 8 个 Agent Tool 全部演示 |
+| `examples/demo/src/full-flow.ts` | 完整生命周期 + 可视化导出 |
+| `examples/visualizer-test/` | 交互式星空图（Vite + React） |
+
+```bash
+# 运行 demo
+cd examples/demo && pnpm dev
+
+# 运行交互式可视化
+cd examples/visualizer-test && pnpm dev
 ```
 
 ## 许可证
