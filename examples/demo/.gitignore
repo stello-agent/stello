@@ -1,0 +1,7 @@
+node_modules
+dist
+stello-data
+stello-data-*
+stello-graph.html
+*.log
+.DS_Store

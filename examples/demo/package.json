@@ -1,0 +1,22 @@
+{
+  "name": "stello-demo",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "tsx src/basic.ts",
+    "conversation": "tsx src/conversation.ts",
+    "branching": "tsx src/branching.ts",
+    "cross-reference": "tsx src/cross-reference.ts",
+    "agent-tools": "tsx src/agent-tools.ts",
+    "full-flow": "tsx src/full-flow.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@stello-ai/core": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0"
+  }
+}

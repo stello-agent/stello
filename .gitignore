@@ -137,3 +137,11 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# macOS
+.DS_Store
+
+# Stello demo 运行时生成数据
+examples/demo/stello-data/
+examples/demo/stello-data-fullflow/
+examples/demo/stello-graph.html
