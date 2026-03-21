@@ -97,20 +97,19 @@ function buildSession(
 
     async fork(forkOptions: ForkOptions): Promise<Session> {
       const childId = randomUUID()
+      const now = new Date().toISOString()
 
       const childMeta: SessionMeta = {
         id: childId,
-        parentId: currentMeta.id,
         label: forkOptions.label,
         role: 'standard',
         status: 'active',
-        depth: currentMeta.depth + 1,
         turnCount: 0,
         consolidatedTurn: 0,
         tags: forkOptions.tags ?? [],
         metadata: forkOptions.metadata ?? {},
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
       }
 
       await storage.putSession(childMeta)
@@ -159,18 +158,16 @@ function buildSession(
   return session
 }
 
-/** createSession — 创建一个新的子 Session */
+/** createSession — 创建一个新的 Session */
 export async function createSession(options: CreateSessionOptions): Promise<Session> {
   const id = randomUUID()
   const now = new Date().toISOString()
 
   const meta: SessionMeta = {
     id,
-    parentId: options.parentId ?? null,
     label: options.label ?? 'New Session',
     role: 'standard',
     status: 'active',
-    depth: 0,
     turnCount: 0,
     consolidatedTurn: 0,
     tags: options.tags ?? [],
@@ -189,7 +186,7 @@ export async function createSession(options: CreateSessionOptions): Promise<Sess
   return buildSession(meta, options)
 }
 
-/** loadSession — 从存储中加载已有的子 Session */
+/** loadSession — 从存储中加载已有 Session */
 export async function loadSession(
   id: string,
   options: LoadSessionOptions

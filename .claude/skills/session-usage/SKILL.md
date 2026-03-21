@@ -29,9 +29,8 @@ import { createSession, InMemoryStorageAdapter } from '@stello-ai/session'
 
 const storage = new InMemoryStorageAdapter()
 const session = await createSession({
-  storage,
+  storage,                        // SessionStorage 即可
   llm: myLLMAdapter,
-  parentId: mainSession.meta.id,  // 挂到 Main Session 下
   label: '选校讨论',
   systemPrompt: '你是留学申请顾问',
 })
@@ -97,7 +96,8 @@ const child = await session.fork({
   label: '子任务：清洗数据',
   forkRole: 'full',
 })
-// child 与 session 断开直接依赖，挂到 Main Session 下
+// child 与 session 断开直接依赖，独立运行
+// 树状关系由编排层通过 storage.putNode() 维护
 ```
 
 ---
@@ -110,7 +110,7 @@ const child = await session.fork({
 import { createMainSession } from '@stello-ai/session'
 
 const main = await createMainSession({
-  storage,
+  storage,                        // 需要 MainStorage（superset of SessionStorage）
   llm: myLLMAdapter,
   label: '留学申请规划师',
   systemPrompt: '你是全局规划师，根据各子任务的进展给出综合建议',

@@ -74,14 +74,8 @@ function buildMainSession(
         throw new SessionArchivedError(currentMeta.id)
       }
 
-      // 1. 收集所有子 Session 的 L2
-      const children = await storage.listSessions({ parentId: currentMeta.id, status: 'active' })
-      const childSummaries = await Promise.all(
-        children.map(async (child) => {
-          const l2 = await storage.getMemory(child.id)
-          return { sessionId: child.id, label: child.label, l2: l2 ?? '' }
-        })
-      )
+      // 1. 扁平收集所有子 Session 的 L2
+      const childSummaries = await storage.getAllSessionL2s()
 
       // 2. 读取当前 synthesis
       const currentSynthesis = await storage.getMemory(currentMeta.id)
@@ -150,11 +144,9 @@ export async function createMainSession(options: CreateMainSessionOptions): Prom
 
   const meta: SessionMeta = {
     id,
-    parentId: null,
     label: options.label ?? 'Main Session',
     role: 'main',
     status: 'active',
-    depth: 0,
     turnCount: 0,
     consolidatedTurn: 0,
     tags: options.tags ?? [],

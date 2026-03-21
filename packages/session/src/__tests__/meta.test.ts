@@ -7,14 +7,12 @@ describe('meta 同步访问', () => {
     expect(session.meta.label).toBe('Hello')
     expect(session.meta.status).toBe('active')
     expect(session.meta.turnCount).toBe(0)
-    expect(session.meta.depth).toBe(0)
   })
 
   it('meta 包含所有必要字段', async () => {
     const { session } = await makeSession({ tags: ['a', 'b'], metadata: { foo: 'bar' } })
     const m = session.meta
     expect(m.id).toBeTruthy()
-    expect(m.parentId).toBeNull()
     expect(m.role).toBe('standard')
     expect(m.consolidatedTurn).toBe(0)
     expect(m.tags).toEqual(['a', 'b'])

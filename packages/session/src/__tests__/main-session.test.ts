@@ -18,10 +18,10 @@ async function makeWithChildren() {
   const main = await createMainSession({ storage })
 
   const child1 = await createSession({
-    storage, parentId: main.meta.id, label: '选校',
+    storage, label: '选校',
   })
   const child2 = await createSession({
-    storage, parentId: main.meta.id, label: '文书',
+    storage, label: '文书',
   })
 
   // 写入 L2
@@ -35,7 +35,6 @@ describe('MainSession meta', () => {
   it('创建后 role 为 main', async () => {
     const { main } = await makeMainSession()
     expect(main.meta.role).toBe('main')
-    expect(main.meta.parentId).toBeNull()
     expect(main.meta.status).toBe('active')
   })
 

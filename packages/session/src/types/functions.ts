@@ -1,5 +1,5 @@
 import type { Message, LLMAdapter, ToolCall } from './llm.js'
-import type { StorageAdapter } from './storage.js'
+import type { SessionStorage, MainStorage } from './storage.js'
 import type { SessionMeta } from './session.js'
 
 /** consolidate 函数签名：L3 → L2，接收当前 L2 和 L3 记录，返回新 L2 */
@@ -28,12 +28,10 @@ export type IntegrateFn = (
 
 /** createSession() 的选项 */
 export interface CreateSessionOptions {
-  /** 指定存储适配器 */
-  storage: StorageAdapter
+  /** 指定存储适配器（普通 Session 只需 SessionStorage） */
+  storage: SessionStorage
   /** 指定 LLM 适配器 */
   llm?: LLMAdapter
-  /** 父 Session ID（通常为 Main Session 的 ID） */
-  parentId?: string | null
   /** Session 标签 */
   label?: string
   /** 系统提示词 */
@@ -47,7 +45,7 @@ export interface CreateSessionOptions {
 /** loadSession() 的选项 */
 export interface LoadSessionOptions {
   /** 指定存储适配器 */
-  storage: StorageAdapter
+  storage: SessionStorage
   /** LLM 适配器 */
   llm?: LLMAdapter
   /** 系统提示词 */
@@ -56,8 +54,8 @@ export interface LoadSessionOptions {
 
 /** createMainSession() 的选项 */
 export interface CreateMainSessionOptions {
-  /** 指定存储适配器 */
-  storage: StorageAdapter
+  /** 指定存储适配器（Main Session 需要 MainStorage） */
+  storage: MainStorage
   /** 指定 LLM 适配器 */
   llm?: LLMAdapter
   /** Main Session 标签 */
@@ -72,8 +70,8 @@ export interface CreateMainSessionOptions {
 
 /** loadMainSession() 的选项 */
 export interface LoadMainSessionOptions {
-  /** 指定存储适配器 */
-  storage: StorageAdapter
+  /** 指定存储适配器（Main Session 需要 MainStorage） */
+  storage: MainStorage
   /** LLM 适配器 */
   llm?: LLMAdapter
   /** 系统提示词 */

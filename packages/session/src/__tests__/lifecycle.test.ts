@@ -64,8 +64,8 @@ describe('updateMeta() + archive() + fork()', () => {
       const { session } = await makeSession({ label: 'Parent' })
       const child = await session.fork({ label: 'Child' })
       expect(child.meta.label).toBe('Child')
-      expect(child.meta.parentId).toBe(session.meta.id)
-      expect(child.meta.depth).toBe(session.meta.depth + 1)
+      expect(child.meta.role).toBe('standard')
+      expect(child.meta.status).toBe('active')
     })
 
     it('子 Session 初始 turnCount 为 0', async () => {
