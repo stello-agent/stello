@@ -89,7 +89,10 @@ Session **不做**：tool call 循环、consolidation 触发时机判断、Sessi
 ### Session 上下文组装规则（固定，不可覆盖）
 
 **子 Session**：system prompt + insights（Main 推送的）+ 最近 N 轮 L3 + 当前消息
-**Main Session**：system prompt + 所有子 Session L2（技能清单）+ synthesis + 最近 N 轮 L3 + 当前消息
+**Main Session**：system prompt + synthesis（integration cycle 从所有 L2 提炼而来，非原始 L2）+ 最近 N 轮 L3 + 当前消息
+
+**Integration cycle**（编排层触发）：所有子 Session L2 + integration prompt → LLM → synthesis + insights
+原始 L2 只在 integration cycle 中被消费，不直接出现在 Main Session 的对话上下文中。
 
 ### 外部注入点
 

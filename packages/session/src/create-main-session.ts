@@ -1,0 +1,183 @@
+import { randomUUID } from 'node:crypto'
+import type {
+  MainSession, MainSessionEventName, MainSessionEventHandler, MainSessionEventPayloads,
+} from './types/main-session-api.js'
+import type { MessageQueryOptions } from './types/session-api.js'
+import { SessionArchivedError, NotImplementedError } from './types/session-api.js'
+import type { SessionMeta, SessionMetaUpdate } from './types/session.js'
+import type { Message } from './types/llm.js'
+import type {
+  IntegrateFn, IntegrateResult, CreateMainSessionOptions, LoadMainSessionOptions,
+  SendResult, StreamResult,
+} from './types/functions.js'
+
+/** 创建 MainSession 实例的内部工厂 */
+function buildMainSession(
+  meta: SessionMeta,
+  options: CreateMainSessionOptions | LoadMainSessionOptions
+): MainSession {
+  let currentMeta = { ...meta }
+  const { storage } = options
+
+  const listeners = new Map<MainSessionEventName, Set<MainSessionEventHandler<MainSessionEventName>>>()
+
+  /** 触发事件 */
+  function emit<E extends MainSessionEventName>(event: E, payload: MainSessionEventPayloads[E]): void {
+    const handlers = listeners.get(event)
+    if (!handlers) return
+    for (const handler of handlers) {
+      ;(handler as MainSessionEventHandler<E>)(payload)
+    }
+  }
+
+  const mainSession: MainSession = {
+    get meta(): Readonly<SessionMeta> {
+      return currentMeta
+    },
+
+    async send(_content: string): Promise<SendResult> {
+      if (currentMeta.status === 'archived') {
+        throw new SessionArchivedError(currentMeta.id)
+      }
+      throw new NotImplementedError('send()')
+    },
+
+    stream(_content: string): StreamResult {
+      if (currentMeta.status === 'archived') {
+        throw new SessionArchivedError(currentMeta.id)
+      }
+      throw new NotImplementedError('stream()')
+    },
+
+    async messages(queryOptions?: MessageQueryOptions): Promise<Message[]> {
+      return storage.listRecords(currentMeta.id, queryOptions)
+    },
+
+    async systemPrompt(): Promise<string | null> {
+      return storage.getSystemPrompt(currentMeta.id)
+    },
+
+    async setSystemPrompt(content: string): Promise<void> {
+      if (currentMeta.status === 'archived') {
+        throw new SessionArchivedError(currentMeta.id)
+      }
+      await storage.putSystemPrompt(currentMeta.id, content)
+      emit('systemPromptUpdated', { content })
+    },
+
+    async synthesis(): Promise<string | null> {
+      return storage.getMemory(currentMeta.id)
+    },
+
+    async integrate(fn: IntegrateFn): Promise<IntegrateResult> {
+      if (currentMeta.status === 'archived') {
+        throw new SessionArchivedError(currentMeta.id)
+      }
+
+      // 1. 收集所有子 Session 的 L2
+      const children = await storage.listSessions({ parentId: currentMeta.id, status: 'active' })
+      const childSummaries = await Promise.all(
+        children.map(async (child) => {
+          const l2 = await storage.getMemory(child.id)
+          return { sessionId: child.id, label: child.label, l2: l2 ?? '' }
+        })
+      )
+
+      // 2. 读取当前 synthesis
+      const currentSynthesis = await storage.getMemory(currentMeta.id)
+
+      // 3. 调用 IntegrateFn
+      const result = await fn(childSummaries, currentSynthesis)
+
+      // 4. 保存 synthesis
+      await storage.putMemory(currentMeta.id, result.synthesis)
+
+      // 5. 推送 insights 到各子 Session
+      for (const { sessionId, content } of result.insights) {
+        await storage.putInsight(sessionId, content)
+      }
+
+      emit('integrated', { result })
+      return result
+    },
+
+    async updateMeta(updates: SessionMetaUpdate): Promise<void> {
+      if (currentMeta.status === 'archived') {
+        throw new SessionArchivedError(currentMeta.id)
+      }
+      const updatedMeta: SessionMeta = {
+        ...currentMeta,
+        ...(updates.label !== undefined && { label: updates.label }),
+        ...(updates.tags !== undefined && { tags: updates.tags }),
+        ...(updates.metadata !== undefined && { metadata: updates.metadata }),
+        updatedAt: new Date().toISOString(),
+      }
+      await storage.putSession(updatedMeta)
+      currentMeta = updatedMeta
+      emit('metaUpdated', { updates })
+    },
+
+    async archive(): Promise<void> {
+      const updatedMeta: SessionMeta = {
+        ...currentMeta,
+        status: 'archived',
+        updatedAt: new Date().toISOString(),
+      }
+      await storage.putSession(updatedMeta)
+      currentMeta = updatedMeta
+      emit('archived', {})
+    },
+
+    on<E extends MainSessionEventName>(event: E, handler: MainSessionEventHandler<E>): void {
+      if (!listeners.has(event)) {
+        listeners.set(event, new Set())
+      }
+      listeners.get(event)!.add(handler as MainSessionEventHandler<MainSessionEventName>)
+    },
+
+    off<E extends MainSessionEventName>(event: E, handler: MainSessionEventHandler<E>): void {
+      listeners.get(event)?.delete(handler as MainSessionEventHandler<MainSessionEventName>)
+    },
+  }
+
+  return mainSession
+}
+
+/** createMainSession — 创建 Main Session */
+export async function createMainSession(options: CreateMainSessionOptions): Promise<MainSession> {
+  const id = randomUUID()
+  const now = new Date().toISOString()
+
+  const meta: SessionMeta = {
+    id,
+    parentId: null,
+    label: options.label ?? 'Main Session',
+    role: 'main',
+    status: 'active',
+    depth: 0,
+    turnCount: 0,
+    consolidatedTurn: 0,
+    tags: options.tags ?? [],
+    metadata: options.metadata ?? {},
+    createdAt: now,
+    updatedAt: now,
+  }
+
+  await options.storage.putSession(meta)
+
+  if (options.systemPrompt) {
+    await options.storage.putSystemPrompt(id, options.systemPrompt)
+  }
+
+  return buildMainSession(meta, options)
+}
+
+/** loadMainSession — 从存储中加载已有的 Main Session */
+export async function loadMainSession(
+  id: string,
+  options: LoadMainSessionOptions
+): Promise<MainSession | null> {
+  const meta = await options.storage.getSession(id)
+  if (!meta || meta.role !== 'main') return null
+  return buildMainSession(meta, options)
+}

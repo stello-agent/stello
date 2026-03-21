@@ -1,1 +1,1 @@
-.claude/skills/session-usage/SKILL.md
+../.claude/skills/session-usage/SKILL.md

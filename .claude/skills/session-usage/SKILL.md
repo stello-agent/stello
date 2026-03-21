@@ -1,21 +1,28 @@
 ---
 name: session-usage
-description: 当用户或编排层需要操作 Session 对话单元时，触发此 skill。
+description: 当用户或编排层需要操作 Session / MainSession 对话单元时，触发此 skill。
 ---
 
-## Session 是什么
+## 两种 Session
 
-Session 是**有记忆的对话单元**。它的核心职责：
+`@stello-ai/session` 提供两个独立接口，同一个 trait 的两种实现：
 
-1. 接收一条消息 → 组装上下文 → 调一次 LLM → 保存到 L3 → 返回 LLM 响应
-2. 暴露 `consolidate()` 供上层触发 L3 → L2 提炼
-3. 接受 Main Session 推送的 insights
+| | Session（子 Session） | MainSession（全局意识层） |
+|--|----------------------|-------------------------|
+| 工厂 | `createSession()` | `createMainSession()` |
+| 上下文 | system prompt + insights + L3 + msg | system prompt + **synthesis** + L3 + msg |
+| 记忆 | `memory()` = L2（技能描述，给 Main 看） | `synthesis()` = integration 产出 |
+| 提炼 | `consolidate(fn)` L3→L2 | `integrate(fn)` 所有 L2→synthesis+insights |
+| insights | 被动接收 | 通过 integrate 主动推送 |
+| fork | `fork()` 创建子 Session | 无 — 子 Session 由编排层创建 |
 
-Session **不负责**：tool call 循环、consolidation 触发时机、Session 切换路由、integration cycle——这些是编排层的事。
+两者都是**单次 LLM 调用原语**，tool call 循环由上层驱动。
 
 ---
 
-## 场景 1：创建 Session 并对话
+## 子 Session
+
+### 创建并对话
 
 ```typescript
 import { createSession, InMemoryStorageAdapter } from '@stello-ai/session'
@@ -23,143 +30,172 @@ import { createSession, InMemoryStorageAdapter } from '@stello-ai/session'
 const storage = new InMemoryStorageAdapter()
 const session = await createSession({
   storage,
-  llm: myLLMAdapter,        // 实现 LLMAdapter 接口
+  llm: myLLMAdapter,
+  parentId: mainSession.meta.id,  // 挂到 Main Session 下
   label: '选校讨论',
   systemPrompt: '你是留学申请顾问',
 })
 
-// 发送一条消息，Session 组装上下文后调 LLM 返回响应
-// 上下文 = system prompt + insights(如有) + 最近 N 条 L3 + 当前消息
-const response = await session.send('MIT 和 Stanford 怎么选？')
-// response.content = LLM 的文本回复
-// 消息已自动保存到 L3
+const res = await session.send('MIT 和 Stanford 怎么选？')
+// res.content = LLM 文本回复
+// res.toolCalls = 工具调用（由上层决定是否执行）
+// 用户消息 + LLM 响应已自动保存到 L3
 ```
 
-编排层拿到 `response` 后，检查是否有 `toolCalls`，自行决定是否执行工具、是否再送回 Session。
-
----
-
-## 场景 2：编排层驱动 tool call 循环
+### 流式对话
 
 ```typescript
-// 编排层伪代码——不是 Session 的职责
-let response = await session.send(userInput)
-
-while (response.toolCalls?.length) {
-  const toolResults = await executeTools(response.toolCalls)
-  response = await session.send(formatToolResults(toolResults))
+const stream = session.stream('帮我分析 MIT 的优劣')
+for await (const chunk of stream) {
+  process.stdout.write(chunk)
 }
-
-return response.content  // 最终文本回复给用户
+const res = await stream.result  // L3 已保存
 ```
 
-Session 每次只做**单次 LLM 调用 + L3 持久化**，循环逻辑由上层控制。
-
----
-
-## 场景 3：L3 → L2 提炼（consolidation）
-
-L2 是 Session 的**技能描述**——给 Main Session 看的外部摘要，不是 Session 自己的工作记忆。
-L2 对子 Session 自身 LLM **不可见**。
+### 编排层驱动 tool call 循环
 
 ```typescript
-// 上层在合适时机（onSwitch / onArchive / manual）触发
+let res = await session.send(userInput)
+while (res.toolCalls?.length) {
+  const toolResults = await executeTools(res.toolCalls)
+  res = await session.send(formatToolResults(toolResults))
+}
+return res.content
+```
+
+### System Prompt
+
+```typescript
+// 创建时注入
+const session = await createSession({ storage, systemPrompt: '你是顾问' })
+
+// 运行时读取/更新
+const prompt = await session.systemPrompt()
+await session.setSystemPrompt('新的系统提示')
+```
+
+### L3 → L2 提炼（consolidation）
+
+L2 是给 Main Session 看的**技能描述**，对子 Session 自身 LLM 不可见。
+
+```typescript
 await session.consolidate(async (currentL2, l3Records) => {
-  // currentL2: 上一次的 L2（可能为 null）
-  // l3Records: L3 对话记录
-  // 应用层决定 L2 的格式（Markdown / JSON / 任意）
   return JSON.stringify({
     focus: 'CS PhD 选校策略',
     status: '分析中',
     key_decisions: ['倾向 top10 CS 项目'],
   })
 })
-
-// consolidate 后 session.meta.consolidatedTurn 更新
-// Main Session 通过 integration cycle 读取此 L2
 ```
 
----
+### fork 派生子 Session
 
-## 场景 4：Main Session 推送 insights
-
-insights 是 Main Session 通过 integration cycle **定向推送**给子 Session 的。
-子 Session 自己不写 insights，只被动接收。
+fork 根据 `forkRole` 一次性继承父链上下文，之后独立挂到 Main Session 下。
 
 ```typescript
-// integration cycle（编排层）推送 insights 到子 Session
-await childSession.setInsight('文书 DDL 11/15，选校需在 11/8 前完成')
-
-// 子 Session 下次组装上下文时，insights 自动出现在 system context 中
-// [system] ... --- 来自规划师的提示 --- ...
-
-// 读取 insights
-const insight = await session.insight()  // 等价于 session.doc('insights')
-```
-
----
-
-## 场景 5：fork 派生子 Session
-
-fork 根据 `forkRole` 一次性决定从父链继承多少上下文。fork 完成后，新 Session 与父链**断开直接依赖**，挂到 Main Session 下作为平级子 Session。
-
-```typescript
-// forkRole 决定继承策略（完全继承 / 部分继承 / 无继承）
 const child = await session.fork({
   label: '子任务：清洗数据',
-  forkRole: 'full',  // 完全继承父链上下文
+  forkRole: 'full',
 })
-// child 挂到 Main Session 下，与 session 不再有直接数据依赖
-// child 从此通过 Main Session 的 insights 获取跨 Session 信息
-
-// 另一种：轻量 fork，只带必要上下文
-const lightweight = await session.fork({
-  label: '快速验证',
-  forkRole: 'minimal',
-})
-```
-
-fork 后的拓扑关系：
-```
-Main Session
-├── Session A（原始）
-├── Session B（从 A fork 出，但挂在 Main 下）
-└── Session C（从 B fork 出，同样挂在 Main 下）
-```
-
-所有子 Session 是 Main Session 的平级子节点，通过 insights 获取跨 Session 信息。
-
----
-
-## 场景 6：恢复会话
-
-```typescript
-import { loadSession } from '@stello-ai/session'
-
-const session = await loadSession(savedId, { storage, llm: myLLMAdapter })
-if (!session) throw new Error('Session not found')
-
-// 继续对话
-const response = await session.send('继续上次的讨论')
+// child 与 session 断开直接依赖，挂到 Main Session 下
 ```
 
 ---
 
-## 场景 7：事件驱动
+## Main Session
+
+### 创建
 
 ```typescript
-session.on('consolidated', ({ memory }) => {
-  // L2 更新了，可通知 integration cycle
-})
+import { createMainSession } from '@stello-ai/session'
 
-session.on('archived', () => {
-  // Session 归档，可触发最终 consolidation
-})
-
-session.on('insightUpdated', ({ content }) => {
-  // Main Session 推送了新 insights
+const main = await createMainSession({
+  storage,
+  llm: myLLMAdapter,
+  label: '留学申请规划师',
+  systemPrompt: '你是全局规划师，根据各子任务的进展给出综合建议',
 })
 ```
+
+### 对话
+
+Main Session 对话上下文使用 **synthesis**（从所有子 L2 提炼而来），不是原始 L2。
+
+```typescript
+const res = await main.send('整体申请进度如何？')
+// 上下文 = system prompt + synthesis + L3 历史 + 当前消息
+```
+
+### System Prompt
+
+```typescript
+const prompt = await main.systemPrompt()
+await main.setSystemPrompt('更新后的全局指令')
+```
+
+### Integration cycle
+
+`integrate()` 是 Main Session 的核心能力：收集所有子 L2 → 生成 synthesis + per-child insights。
+
+```typescript
+const result = await main.integrate(async (children, currentSynthesis) => {
+  // children: Array<{ sessionId, label, l2 }>
+  // currentSynthesis: 上一次的 synthesis（可能为 null）
+
+  // 用 LLM 处理所有 L2，生成综合认知和定向建议
+  return {
+    synthesis: '选校已确认 top5，文书 PS 初稿完成，推荐信待跟进',
+    insights: [
+      { sessionId: children[0].sessionId, content: '选校已完成，可以开始准备面试' },
+      { sessionId: children[1].sessionId, content: '推荐信需要在 11/15 前确认' },
+    ],
+  }
+})
+
+// result.synthesis 已保存到 Main Session
+// result.insights 已推送到各子 Session 的 insight 存储
+// 子 Session 下次 send() 时 insights 自动出现在上下文中
+```
+
+### 读取 synthesis
+
+```typescript
+const syn = await main.synthesis()  // integration 产出的综合认知
+```
+
+### 恢复会话
+
+```typescript
+import { loadMainSession } from '@stello-ai/session'
+
+const main = await loadMainSession(savedId, { storage, llm })
+if (!main) throw new Error('MainSession not found')
+```
+
+---
+
+## 事件
+
+### Session 事件
+
+| 事件 | 触发时机 | Payload |
+|------|----------|---------|
+| `sent` | send/stream 完成后 | `{ result: SendResult }` |
+| `consolidated` | consolidate 完成后 | `{ memory: string }` |
+| `archived` | archive 完成后 | `{}` |
+| `insightUpdated` | setInsight 完成后 | `{ content: string }` |
+| `systemPromptUpdated` | setSystemPrompt 完成后 | `{ content: string }` |
+| `metaUpdated` | updateMeta 完成后 | `{ updates: SessionMetaUpdate }` |
+
+### MainSession 事件
+
+| 事件 | 触发时机 | Payload |
+|------|----------|---------|
+| `sent` | send/stream 完成后 | `{ result: SendResult }` |
+| `integrated` | integrate 完成后 | `{ result: IntegrateResult }` |
+| `archived` | archive 完成后 | `{}` |
+| `systemPromptUpdated` | setSystemPrompt 完成后 | `{ content: string }` |
+| `metaUpdated` | updateMeta 完成后 | `{ updates: SessionMetaUpdate }` |
 
 ---
 
@@ -170,39 +206,51 @@ session.on('insightUpdated', ({ content }) => {
 | 方法 | 说明 |
 |------|------|
 | `meta` | 同步读取元数据（Readonly） |
-| `send(content)` | 组装上下文 → 单次 LLM 调用 → 存 L3 → 返回响应 |
-| `messages(options?)` | 读取 L3 对话记录（支持分页、角色过滤） |
-| `memory()` | 读取 L2（技能描述），初始为 null |
-| `consolidate(fn)` | L3 → L2 提炼，由上层触发 |
-| `doc(key)` / `setDoc(key, content)` | per-session 文档读写 |
-| `insight()` / `setInsight(content)` | insights 别名（Main Session 推送用） |
+| `send(content)` | 组装上下文 → 调 LLM → 存 L3 → 返回 SendResult |
+| `stream(content)` | 流式输出，返回 StreamResult |
+| `messages(options?)` | 读取 L3 对话记录 |
+| `systemPrompt()` / `setSystemPrompt(content)` | 系统提示词读写 |
+| `memory()` | 读取 L2（技能描述） |
+| `consolidate(fn)` | L3 → L2 提炼 |
+| `insight()` / `setInsight(content)` | insights（被动接收） |
 | `fork(options)` | 派生子 Session |
-| `updateMeta(updates)` | 更新 label / tags / metadata |
-| `archive()` | 归档（不可逆，不连带子 Session） |
-| `on(event, handler)` / `off(event, handler)` | 事件订阅 |
+| `updateMeta(updates)` / `archive()` | 生命周期 |
+| `on(event, handler)` / `off(...)` | 事件 |
 
-### 外部注入
+### MainSession 接口
 
-| 注入 | Session 层 | 编排层 |
-|------|-----------|--------|
-| StorageAdapter | 必须 | — |
-| LLMAdapter | 必须 | 多 tier（fast/strong） |
-| system prompt | 可选 | — |
-| ConsolidateFn | 通过 consolidate() 传入 | 触发时机 |
-| IntegrateFn | — | 编排层配置 |
-| tool 定义 | — | 编排层驱动循环 |
+| 方法 | 说明 |
+|------|------|
+| `meta` | 同步读取元数据（role: 'main'） |
+| `send(content)` | 组装上下文（用 synthesis）→ 调 LLM → 存 L3 |
+| `stream(content)` | 流式输出 |
+| `messages(options?)` | 读取 L3 对话记录 |
+| `systemPrompt()` / `setSystemPrompt(content)` | 系统提示词读写 |
+| `synthesis()` | 读取 synthesis（integration 产出） |
+| `integrate(fn)` | 所有子 L2 → synthesis + insights |
+| `updateMeta(updates)` / `archive()` | 生命周期 |
+| `on(event, handler)` / `off(...)` | 事件 |
+
+### IntegrateFn / IntegrateResult
+
+```typescript
+type IntegrateFn = (
+  children: ChildL2Summary[],       // { sessionId, label, l2 }
+  currentSynthesis: string | null
+) => Promise<IntegrateResult>
+
+interface IntegrateResult {
+  synthesis: string                  // Main Session 的综合认知
+  insights: Array<{                  // 定向推送给子 Session
+    sessionId: string
+    content: string
+  }>
+}
+```
 
 ### 错误类型
 
 | 错误 | 触发条件 |
 |------|----------|
-| `SessionArchivedError` | 对归档 Session 执行写操作 |
-| `NotImplementedError` | 调用尚未实现的方法 |
-
-### DOC_KEYS 常量
-
-```typescript
-DOC_KEYS.SCOPE = 'scope'       // 对话边界
-DOC_KEYS.INSIGHTS = 'insights' // Main Session 推送的洞察
-DOC_KEYS.INDEX = 'index'       // 子节点目录
-```
+| `SessionArchivedError` | 对归档 Session/MainSession 执行写操作 |
+| `NotImplementedError` | 调用 send/stream（尚未实现） |
