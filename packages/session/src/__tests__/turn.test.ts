@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { makeSession, createMockLLM } from './helpers.js'
 import { SessionArchivedError } from '../types/session-api.js'
 import type { LLMResult } from '../types/llm.js'
@@ -82,6 +82,41 @@ describe('send() 契约', () => {
     expect(result.toolCalls![0]!.name).toBe('search')
   })
 
+  it('send() 会把 tools 定义传给 LLMAdapter.complete', async () => {
+    const llm = {
+      complete: vi.fn(async () => ({ content: null, toolCalls: [] })),
+    }
+    const { session } = await makeSession({
+      llm,
+      tools: [
+        {
+          name: 'stello_create_session',
+          description: 'create child session',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              label: { type: 'string' },
+            },
+            required: ['label'],
+          },
+        },
+      ],
+    })
+
+    await session.send('创建一个子 session')
+
+    expect(llm.complete).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        tools: [
+          expect.objectContaining({
+            name: 'stello_create_session',
+          }),
+        ],
+      }),
+    )
+  })
+
   it('send() 无 LLM 时抛错', async () => {
     const { session } = await makeSession()
     await expect(session.send('hello')).rejects.toThrow('LLMAdapter is required for send()')
@@ -91,5 +126,33 @@ describe('send() 契约', () => {
     const { session } = await makeSession()
     await session.archive()
     await expect(session.send('hello')).rejects.toThrow(SessionArchivedError)
+  })
+
+  it('stream() 支持逐 chunk 输出，并在结束后保存 L3', async () => {
+    const { session } = await makeSession({
+      llm: {
+        async complete() {
+          return { content: '你好，世界' }
+        },
+        async *stream() {
+          yield { delta: '你好，' }
+          yield { delta: '世界' }
+        },
+      },
+    })
+
+    const stream = session.stream('hello')
+    const chunks: string[] = []
+    for await (const chunk of stream) {
+      chunks.push(chunk)
+    }
+    const result = await stream.result
+
+    expect(chunks).toEqual(['你好，', '世界'])
+    expect(result.content).toBe('你好，世界')
+
+    const messages = await session.messages()
+    expect(messages).toHaveLength(2)
+    expect(messages[1]!.content).toBe('你好，世界')
   })
 })

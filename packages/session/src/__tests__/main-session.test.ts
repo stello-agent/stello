@@ -250,5 +250,28 @@ describe('MainSession send()', () => {
     await expect(main.send('hello')).rejects.toThrow(SessionArchivedError)
   })
 
-  it.todo('stream() 流式输出')
+  it('stream() 流式输出', async () => {
+    const llm: LLMAdapter = {
+      complete: vi.fn(async () => ({ content: 'hello stream' })),
+      async *stream() {
+        yield { delta: 'hello ' }
+        yield { delta: 'stream' }
+      },
+    }
+    const { main } = await makeMainSession({ llm })
+
+    const stream = main.stream('hello')
+    const chunks: string[] = []
+    for await (const chunk of stream) {
+      chunks.push(chunk)
+    }
+    const result = await stream.result
+
+    expect(chunks).toEqual(['hello ', 'stream'])
+    expect(result.content).toBe('hello stream')
+
+    const messages = await main.messages()
+    expect(messages).toHaveLength(2)
+    expect(messages[1]!.content).toBe('hello stream')
+  })
 })

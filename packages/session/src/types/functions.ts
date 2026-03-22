@@ -1,4 +1,4 @@
-import type { Message, LLMAdapter, ToolCall } from './llm.js'
+import type { Message, LLMAdapter, ToolCall, LLMCompleteOptions } from './llm.js'
 import type { SessionStorage, MainStorage } from './storage.js'
 import type { SessionMeta } from './session.js'
 
@@ -40,6 +40,8 @@ export interface CreateSessionOptions {
   tags?: string[]
   /** 初始元数据 */
   metadata?: Record<string, unknown>
+  /** 可用工具定义 */
+  tools?: LLMCompleteOptions['tools']
 }
 
 /** loadSession() 的选项 */
@@ -50,6 +52,8 @@ export interface LoadSessionOptions {
   llm?: LLMAdapter
   /** 系统提示词 */
   systemPrompt?: string
+  /** 可用工具定义 */
+  tools?: LLMCompleteOptions['tools']
 }
 
 /** createMainSession() 的选项 */
@@ -66,6 +70,8 @@ export interface CreateMainSessionOptions {
   tags?: string[]
   /** 初始元数据 */
   metadata?: Record<string, unknown>
+  /** 可用工具定义 */
+  tools?: LLMCompleteOptions['tools']
 }
 
 /** loadMainSession() 的选项 */
@@ -76,6 +82,8 @@ export interface LoadMainSessionOptions {
   llm?: LLMAdapter
   /** 系统提示词 */
   systemPrompt?: string
+  /** 可用工具定义 */
+  tools?: LLMCompleteOptions['tools']
 }
 
 /** send() 的返回结果 */

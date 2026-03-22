@@ -39,6 +39,13 @@ export interface LLMResult {
 export interface LLMChunk {
   /** 文本增量片段 */
   delta: string
+  /** 工具调用增量片段（用于流式拼接 tool call） */
+  toolCallDeltas?: Array<{
+    index: number
+    id?: string
+    name?: string
+    input?: string
+  }>
 }
 
 /**

@@ -5,6 +5,51 @@ import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './types/sessio
 import type { Message } from './types/llm.js'
 import type { ConsolidateFn, CreateSessionOptions, LoadSessionOptions, SendResult, StreamResult } from './types/functions.js'
 
+function createStreamResult(
+  processor: (push: (chunk: string) => void) => Promise<SendResult>
+): StreamResult {
+  const queue: string[] = []
+  let done = false
+  let notify: (() => void) | null = null
+
+  const wake = () => {
+    if (!notify) return
+    const current = notify
+    notify = null
+    current()
+  }
+
+  const push = (chunk: string) => {
+    if (!chunk) return
+    queue.push(chunk)
+    wake()
+  }
+
+  const result = (async () => {
+    try {
+      return await processor(push)
+    } finally {
+      done = true
+      wake()
+    }
+  })()
+
+  return {
+    result,
+    async *[Symbol.asyncIterator]() {
+      while (!done || queue.length > 0) {
+        if (queue.length > 0) {
+          yield queue.shift()!
+          continue
+        }
+        await new Promise<void>((resolve) => {
+          notify = resolve
+        })
+      }
+    },
+  }
+}
+
 /** 创建 Session 实例的内部工厂 */
 function buildSession(
   meta: SessionMeta,
@@ -13,6 +58,7 @@ function buildSession(
   let currentMeta = { ...meta }
   const { storage } = options
   const llm = options.llm
+  const tools = options.tools
 
   const session: Session = {
     get meta(): Readonly<SessionMeta> {
@@ -47,7 +93,7 @@ function buildSession(
       messages.push({ role: 'user', content, timestamp: now })
 
       // 调 LLM
-      const result = await llm.complete(messages)
+      const result = await llm.complete(messages, { tools })
 
       // 存 L3：用户消息 + assistant 响应
       const userRecord: Message = { role: 'user', content, timestamp: now }
@@ -66,11 +112,76 @@ function buildSession(
       }
     },
 
-    stream(_content: string): StreamResult {
+    stream(content: string): StreamResult {
       if (currentMeta.status === 'archived') {
         throw new SessionArchivedError(currentMeta.id)
       }
-      throw new NotImplementedError('stream()')
+      if (!llm) {
+        throw new Error('LLMAdapter is required for stream()')
+      }
+
+      return createStreamResult(async (push) => {
+        const messages: Message[] = []
+
+        const sysPrompt = await storage.getSystemPrompt(currentMeta.id)
+        if (sysPrompt) {
+          messages.push({ role: 'system', content: sysPrompt })
+        }
+
+        const insightContent = await storage.getInsight(currentMeta.id)
+        if (insightContent) {
+          messages.push({ role: 'system', content: insightContent })
+        }
+
+        const history = await storage.listRecords(currentMeta.id)
+        messages.push(...history)
+
+        const now = new Date().toISOString()
+        messages.push({ role: 'user', content, timestamp: now })
+
+        let result: SendResult
+        if (llm.stream) {
+          let accumulated = ''
+          const toolCallsByIndex = new Map<number, { id?: string; name?: string; input: string }>()
+          for await (const chunk of llm.stream(messages, { tools })) {
+            accumulated += chunk.delta
+            push(chunk.delta)
+            for (const delta of chunk.toolCallDeltas ?? []) {
+              const current = toolCallsByIndex.get(delta.index) ?? { input: '' }
+              if (delta.id) current.id = delta.id
+              if (delta.name) current.name = delta.name
+              if (delta.input) current.input += delta.input
+              toolCallsByIndex.set(delta.index, current)
+            }
+          }
+          const toolCalls = Array.from(toolCallsByIndex.values()).map((call, index) => ({
+            id: call.id ?? `tool_${index}`,
+            name: call.name ?? 'unknown_tool',
+            input: call.input ? JSON.parse(call.input) as Record<string, unknown> : {},
+          }))
+          result = { content: accumulated, toolCalls }
+        } else {
+          result = await llm.complete(messages, { tools })
+          if (result.content) {
+            push(result.content)
+          }
+        }
+
+        const userRecord: Message = { role: 'user', content, timestamp: now }
+        const assistantRecord: Message = {
+          role: 'assistant',
+          content: result.content ?? '',
+          timestamp: new Date().toISOString(),
+        }
+        await storage.appendRecord(currentMeta.id, userRecord)
+        await storage.appendRecord(currentMeta.id, assistantRecord)
+
+        return {
+          content: result.content,
+          toolCalls: result.toolCalls,
+          usage: result.usage,
+        }
+      })
     },
 
     async messages(queryOptions?: MessageQueryOptions): Promise<Message[]> {
