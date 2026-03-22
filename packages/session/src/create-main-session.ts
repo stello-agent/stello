@@ -1,7 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type {
-  MainSession, MainSessionEventName, MainSessionEventHandler, MainSessionEventPayloads,
-} from './types/main-session-api.js'
+import type { MainSession } from './types/main-session-api.js'
 import type { MessageQueryOptions } from './types/session-api.js'
 import { SessionArchivedError, NotImplementedError } from './types/session-api.js'
 import type { SessionMeta, SessionMetaUpdate } from './types/session.js'
@@ -18,17 +16,6 @@ function buildMainSession(
 ): MainSession {
   let currentMeta = { ...meta }
   const { storage } = options
-
-  const listeners = new Map<MainSessionEventName, Set<MainSessionEventHandler<MainSessionEventName>>>()
-
-  /** 触发事件 */
-  function emit<E extends MainSessionEventName>(event: E, payload: MainSessionEventPayloads[E]): void {
-    const handlers = listeners.get(event)
-    if (!handlers) return
-    for (const handler of handlers) {
-      ;(handler as MainSessionEventHandler<E>)(payload)
-    }
-  }
 
   const mainSession: MainSession = {
     get meta(): Readonly<SessionMeta> {
@@ -62,7 +49,6 @@ function buildMainSession(
         throw new SessionArchivedError(currentMeta.id)
       }
       await storage.putSystemPrompt(currentMeta.id, content)
-      emit('systemPromptUpdated', { content })
     },
 
     async synthesis(): Promise<string | null> {
@@ -91,7 +77,6 @@ function buildMainSession(
         await storage.putInsight(sessionId, content)
       }
 
-      emit('integrated', { result })
       return result
     },
 
@@ -108,7 +93,6 @@ function buildMainSession(
       }
       await storage.putSession(updatedMeta)
       currentMeta = updatedMeta
-      emit('metaUpdated', { updates })
     },
 
     async archive(): Promise<void> {
@@ -119,18 +103,6 @@ function buildMainSession(
       }
       await storage.putSession(updatedMeta)
       currentMeta = updatedMeta
-      emit('archived', {})
-    },
-
-    on<E extends MainSessionEventName>(event: E, handler: MainSessionEventHandler<E>): void {
-      if (!listeners.has(event)) {
-        listeners.set(event, new Set())
-      }
-      listeners.get(event)!.add(handler as MainSessionEventHandler<MainSessionEventName>)
-    },
-
-    off<E extends MainSessionEventName>(event: E, handler: MainSessionEventHandler<E>): void {
-      listeners.get(event)?.delete(handler as MainSessionEventHandler<MainSessionEventName>)
     },
   }
 

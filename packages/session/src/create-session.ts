@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { Session, SessionEventName, SessionEventHandler, MessageQueryOptions, SessionEventPayloads } from './types/session-api.js'
+import type { Session, MessageQueryOptions } from './types/session-api.js'
 import { SessionArchivedError, NotImplementedError } from './types/session-api.js'
 import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './types/session.js'
 import type { Message } from './types/llm.js'
@@ -12,17 +12,6 @@ function buildSession(
 ): Session {
   let currentMeta = { ...meta }
   const { storage } = options
-
-  const listeners = new Map<SessionEventName, Set<SessionEventHandler<SessionEventName>>>()
-
-  /** 触发事件 */
-  function emit<E extends SessionEventName>(event: E, payload: SessionEventPayloads[E]): void {
-    const handlers = listeners.get(event)
-    if (!handlers) return
-    for (const handler of handlers) {
-      ;(handler as SessionEventHandler<E>)(payload)
-    }
-  }
 
   const session: Session = {
     get meta(): Readonly<SessionMeta> {
@@ -56,7 +45,6 @@ function buildSession(
         throw new SessionArchivedError(currentMeta.id)
       }
       await storage.putSystemPrompt(currentMeta.id, content)
-      emit('systemPromptUpdated', { content })
     },
 
     async insight(): Promise<string | null> {
@@ -68,7 +56,6 @@ function buildSession(
         throw new SessionArchivedError(currentMeta.id)
       }
       await storage.putInsight(currentMeta.id, content)
-      emit('insightUpdated', { content })
     },
 
     async memory(): Promise<string | null> {
@@ -91,8 +78,6 @@ function buildSession(
       }
       await storage.putSession(updatedMeta)
       currentMeta = updatedMeta
-
-      emit('consolidated', { memory: newMemory })
     },
 
     async fork(forkOptions: ForkOptions): Promise<Session> {
@@ -129,7 +114,6 @@ function buildSession(
       }
       await storage.putSession(updatedMeta)
       currentMeta = updatedMeta
-      emit('metaUpdated', { updates })
     },
 
     async archive(): Promise<void> {
@@ -140,18 +124,6 @@ function buildSession(
       }
       await storage.putSession(updatedMeta)
       currentMeta = updatedMeta
-      emit('archived', {})
-    },
-
-    on<E extends SessionEventName>(event: E, handler: SessionEventHandler<E>): void {
-      if (!listeners.has(event)) {
-        listeners.set(event, new Set())
-      }
-      listeners.get(event)!.add(handler as SessionEventHandler<SessionEventName>)
-    },
-
-    off<E extends SessionEventName>(event: E, handler: SessionEventHandler<E>): void {
-      listeners.get(event)?.delete(handler as SessionEventHandler<SessionEventName>)
     },
   }
 

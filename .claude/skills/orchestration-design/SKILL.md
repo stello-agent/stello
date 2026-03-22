@@ -52,7 +52,7 @@ description: 编排层（Engine）技术设计：turn() 执行流程、tool call
      │     ↓ 继续直到无 toolCalls       │
      │   ← finalResult ────────────────┘
      │
-     ├─ afterTurn 回调 (fire-and-forget)
+     ├─ emit('turnComplete', { result })
      ├─ shouldConsolidate? → session.consolidate(fn)  (fire-and-forget)
      ├─ shouldIntegrate?   → main.integrate(fn)       (fire-and-forget)
      │
@@ -156,9 +156,6 @@ interface EngineConfig {
   /** Session 对话上下文最多保留几轮 L3（默认 20） */
   maxTurns?: number
 
-  // ─── 回调 ───
-  /** 每轮 turn 完成后的通知（fire-and-forget） */
-  afterTurn?: (result: TurnResult) => void
 }
 ```
 
@@ -317,8 +314,7 @@ Engine.turn(sessionId, input, options?)
   │  ③ Tool Call 循环
   │  result = await toolCallLoop(session, input, options)
   │
-  │  ④ afterTurn 回调 (fire-and-forget)
-  │  safeCall(() => config.afterTurn?.(result))
+  │  ④ emit('turnComplete', { result })
   │
   │  ⑤ everyNTurns 调度检查
   │  if (!options?.skipScheduling) {
@@ -650,30 +646,42 @@ private toolAwareStream(sessionId: string, input: string, options?: TurnOptions)
 
 ## 11. 事件系统
 
+所有事件由 Engine（编排层）发出，Session 层无事件。
+
 ### Engine 事件
 
 ```typescript
 type EngineEventName =
-  | 'turnComplete'          // 每轮 turn 完成后
+  | 'turnComplete'          // turn() 完成后（含 tool call 循环）
+  | 'sessionSwitched'       // Session 切换检测到时（turn 开始前）
+  | 'sessionCreated'        // 新 Session 创建后
+  | 'sessionArchived'       // Session 归档后
   | 'consolidated'          // consolidation 完成后
   | 'integrated'            // integration 完成后
-  | 'sessionSwitched'       // Session 切换发生时
   | 'error'                 // 异步操作出错时
 
 interface EngineEventPayloads {
   turnComplete: { result: TurnResult }
+  sessionSwitched: { from: string; to: string }
+  sessionCreated: { session: SessionMeta }
+  sessionArchived: { sessionId: string }
   consolidated: { sessionId: string; memory: string }
   integrated: { result: IntegrateResult }
-  sessionSwitched: { from: string; to: string }
-  error: { source: 'consolidate' | 'integrate' | 'afterTurn' | 'toolExecute'; error: unknown }
+  error: { source: 'consolidate' | 'integrate' | 'toolExecute'; sessionId?: string; error: unknown }
 }
 ```
 
-### 事件与 Session 事件的关系
+### 事件分类
 
-Engine 事件是编排层级别的。Session 层自己的事件（`session.on('consolidated', ...)`）仍然正常触发。两层事件独立，Engine 不转发 Session 事件。
-
-应用层如需监听某个 Session 的细粒度事件，直接 `session.on()`。如需监听全局编排事件（所有 Session 的 consolidation），用 `engine.on('consolidated', ...)`。
+| 类别 | 事件 | 时机 | 说明 |
+|------|------|------|------|
+| 对话 | `turnComplete` | turn 返回前 | HTTP 层可用于构造响应 |
+| 生命周期 | `sessionCreated` | createSession 返回前 | |
+| 生命周期 | `sessionArchived` | archive 返回前 | |
+| 切换 | `sessionSwitched` | turn 开始时 | 用于日志/追踪 |
+| 记忆 | `consolidated` | fire-and-forget 完成后 | 通知前端 L2 已更新 |
+| 记忆 | `integrated` | fire-and-forget 完成后 | 通知前端 synthesis 已更新 |
+| 错误 | `error` | fire-and-forget 失败时 | 不中断对话 |
 
 ---
 
@@ -689,7 +697,6 @@ Engine 事件是编排层级别的。Session 层自己的事件（`session.on('c
 | `tool.execute()` 失败 | 捕获异常，将错误信息作为 tool result 返回给 LLM，继续循环 |
 | `consolidate()` 失败 | 捕获异常，emit `error` 事件，不影响 turn() 返回 |
 | `integrate()` 失败 | 捕获异常，emit `error` 事件，不影响 turn() 返回 |
-| `afterTurn` 回调失败 | 捕获异常，emit `error` 事件 |
 
 ### 安全执行包装
 

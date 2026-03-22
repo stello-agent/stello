@@ -177,30 +177,6 @@ describe('MainSession systemPrompt()', () => {
   })
 })
 
-describe('MainSession events', () => {
-  it('integrated 事件在 integrate 时触发', async () => {
-    const { main } = await makeWithChildren()
-    const handler = vi.fn()
-    main.on('integrated', handler)
-
-    await main.integrate(async () => ({
-      synthesis: 'test',
-      insights: [],
-    }))
-
-    expect(handler).toHaveBeenCalledTimes(1)
-    expect(handler.mock.calls[0]![0].result.synthesis).toBe('test')
-  })
-
-  it('archived 事件在 archive 时触发', async () => {
-    const { main } = await makeMainSession()
-    const handler = vi.fn()
-    main.on('archived', handler)
-    await main.archive()
-    expect(handler).toHaveBeenCalledTimes(1)
-  })
-})
-
 describe('MainSession send/stream (NotImplemented)', () => {
   it('send() 抛出 NotImplementedError', async () => {
     const { main } = await makeMainSession()

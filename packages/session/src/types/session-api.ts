@@ -2,36 +2,13 @@ import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './session.js'
 import type { Message } from './llm.js'
 import type { ConsolidateFn, SendResult, StreamResult } from './functions.js'
 
+
 /** 消息查询选项 */
 export interface MessageQueryOptions {
   limit?: number
   offset?: number
   role?: Message['role']
 }
-
-/** 所有 Session 事件名 */
-export type SessionEventName =
-  | 'sent'
-  | 'consolidated'
-  | 'archived'
-  | 'insightUpdated'
-  | 'systemPromptUpdated'
-  | 'metaUpdated'
-
-/** 各事件携带的 payload 映射 */
-export interface SessionEventPayloads {
-  sent: { result: SendResult }
-  consolidated: { memory: string }
-  archived: Record<string, never>
-  insightUpdated: { content: string }
-  systemPromptUpdated: { content: string }
-  metaUpdated: { updates: SessionMetaUpdate }
-}
-
-/** 事件处理函数类型 */
-export type SessionEventHandler<E extends SessionEventName> = (
-  payload: SessionEventPayloads[E]
-) => void
 
 /** Session 错误：操作归档中的 Session */
 export class SessionArchivedError extends Error {
@@ -93,9 +70,4 @@ export interface Session {
   /** 归档当前 Session */
   archive(): Promise<void>
 
-  /** 订阅事件 */
-  on<E extends SessionEventName>(event: E, handler: SessionEventHandler<E>): void
-
-  /** 取消订阅事件 */
-  off<E extends SessionEventName>(event: E, handler: SessionEventHandler<E>): void
 }

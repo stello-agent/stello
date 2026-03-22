@@ -174,31 +174,6 @@ if (!main) throw new Error('MainSession not found')
 
 ---
 
-## 事件
-
-### Session 事件
-
-| 事件 | 触发时机 | Payload |
-|------|----------|---------|
-| `sent` | send/stream 完成后 | `{ result: SendResult }` |
-| `consolidated` | consolidate 完成后 | `{ memory: string }` |
-| `archived` | archive 完成后 | `{}` |
-| `insightUpdated` | setInsight 完成后 | `{ content: string }` |
-| `systemPromptUpdated` | setSystemPrompt 完成后 | `{ content: string }` |
-| `metaUpdated` | updateMeta 完成后 | `{ updates: SessionMetaUpdate }` |
-
-### MainSession 事件
-
-| 事件 | 触发时机 | Payload |
-|------|----------|---------|
-| `sent` | send/stream 完成后 | `{ result: SendResult }` |
-| `integrated` | integrate 完成后 | `{ result: IntegrateResult }` |
-| `archived` | archive 完成后 | `{}` |
-| `systemPromptUpdated` | setSystemPrompt 完成后 | `{ content: string }` |
-| `metaUpdated` | updateMeta 完成后 | `{ updates: SessionMetaUpdate }` |
-
----
-
 ## API 速查
 
 ### Session 接口
@@ -215,7 +190,6 @@ if (!main) throw new Error('MainSession not found')
 | `insight()` / `setInsight(content)` | insights（被动接收） |
 | `fork(options)` | 派生子 Session |
 | `updateMeta(updates)` / `archive()` | 生命周期 |
-| `on(event, handler)` / `off(...)` | 事件 |
 
 ### MainSession 接口
 
@@ -229,7 +203,6 @@ if (!main) throw new Error('MainSession not found')
 | `synthesis()` | 读取 synthesis（integration 产出） |
 | `integrate(fn)` | 所有子 L2 → synthesis + insights |
 | `updateMeta(updates)` / `archive()` | 生命周期 |
-| `on(event, handler)` / `off(...)` | 事件 |
 
 ### IntegrateFn / IntegrateResult
 

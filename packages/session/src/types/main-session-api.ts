@@ -3,28 +3,6 @@ import type { Message } from './llm.js'
 import type { SendResult, StreamResult, IntegrateFn, IntegrateResult } from './functions.js'
 import type { MessageQueryOptions } from './session-api.js'
 
-/** Main Session 事件名 */
-export type MainSessionEventName =
-  | 'sent'
-  | 'integrated'
-  | 'archived'
-  | 'systemPromptUpdated'
-  | 'metaUpdated'
-
-/** Main Session 各事件携带的 payload */
-export interface MainSessionEventPayloads {
-  sent: { result: SendResult }
-  integrated: { result: IntegrateResult }
-  archived: Record<string, never>
-  systemPromptUpdated: { content: string }
-  metaUpdated: { updates: SessionMetaUpdate }
-}
-
-/** Main Session 事件处理函数 */
-export type MainSessionEventHandler<E extends MainSessionEventName> = (
-  payload: MainSessionEventPayloads[E]
-) => void
-
 /**
  * MainSession — 全局意识层对话单元
  *
@@ -64,10 +42,4 @@ export interface MainSession {
 
   /** 归档 */
   archive(): Promise<void>
-
-  /** 订阅事件 */
-  on<E extends MainSessionEventName>(event: E, handler: MainSessionEventHandler<E>): void
-
-  /** 取消订阅事件 */
-  off<E extends MainSessionEventName>(event: E, handler: MainSessionEventHandler<E>): void
 }

@@ -7,9 +7,6 @@ export type {
 export type {
   Session,
   MessageQueryOptions,
-  SessionEventName,
-  SessionEventHandler,
-  SessionEventPayloads,
 } from './types/session-api.js'
 export {
   SessionArchivedError,
@@ -19,9 +16,6 @@ export {
 // 类型导出 — MainSession
 export type {
   MainSession,
-  MainSessionEventName,
-  MainSessionEventHandler,
-  MainSessionEventPayloads,
 } from './types/main-session-api.js'
 
 // 类型导出 — 函数签名与选项
