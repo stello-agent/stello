@@ -122,8 +122,6 @@ SessionMeta:
   label: string
   role: 'standard' | 'main'
   status: 'active' | 'archived'
-  turnCount: number
-  consolidatedTurn: number
   tags: string[]
   metadata: Record<string, unknown>
   createdAt: string

@@ -5,9 +5,6 @@ export interface SessionMeta {
   /** 'standard' 为普通会话，'main' 为根主会话 */
   role: 'standard' | 'main'
   status: 'active' | 'archived'
-  turnCount: number
-  /** 上次 consolidation 时的 turnCount，用于判断是否需要重新 consolidate */
-  consolidatedTurn: number
   tags: string[]
   metadata: Record<string, unknown>
   createdAt: string

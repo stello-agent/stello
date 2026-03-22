@@ -70,14 +70,6 @@ function buildSession(
       const messages = await storage.listRecords(currentMeta.id)
       const newMemory = await fn(currentMemory, messages)
       await storage.putMemory(currentMeta.id, newMemory)
-
-      const updatedMeta: SessionMeta = {
-        ...currentMeta,
-        consolidatedTurn: currentMeta.turnCount,
-        updatedAt: new Date().toISOString(),
-      }
-      await storage.putSession(updatedMeta)
-      currentMeta = updatedMeta
     },
 
     async fork(forkOptions: ForkOptions): Promise<Session> {
@@ -89,8 +81,6 @@ function buildSession(
         label: forkOptions.label,
         role: 'standard',
         status: 'active',
-        turnCount: 0,
-        consolidatedTurn: 0,
         tags: forkOptions.tags ?? [],
         metadata: forkOptions.metadata ?? {},
         createdAt: now,
@@ -140,8 +130,6 @@ export async function createSession(options: CreateSessionOptions): Promise<Sess
     label: options.label ?? 'New Session',
     role: 'standard',
     status: 'active',
-    turnCount: 0,
-    consolidatedTurn: 0,
     tags: options.tags ?? [],
     metadata: options.metadata ?? {},
     createdAt: now,

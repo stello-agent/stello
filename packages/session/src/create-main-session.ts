@@ -119,8 +119,6 @@ export async function createMainSession(options: CreateMainSessionOptions): Prom
     label: options.label ?? 'Main Session',
     role: 'main',
     status: 'active',
-    turnCount: 0,
-    consolidatedTurn: 0,
     tags: options.tags ?? [],
     metadata: options.metadata ?? {},
     createdAt: now,

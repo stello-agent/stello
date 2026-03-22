@@ -34,7 +34,6 @@ describe('send() 契约', () => {
     it.todo('send() 调用 LLMAdapter.complete')
     it.todo('send() 返回 SendResult，content 为 LLM 文本响应')
     it.todo('send() 自动存 L3（用户消息 + LLM 响应）')
-    it.todo('send() 后 turnCount 自增 1')
     it.todo('send() 返回 toolCalls 时由上层决定后续')
     it.todo('send() 结束后触发 sent 事件')
   })
