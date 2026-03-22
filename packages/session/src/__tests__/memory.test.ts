@@ -31,12 +31,6 @@ describe('memory() + consolidate()', () => {
     ]))
   })
 
-  it('consolidate 后 consolidatedTurn 等于 turnCount', async () => {
-    const { session } = await makeSession()
-    await session.consolidate(async () => 'mem')
-    expect(session.meta.consolidatedTurn).toBe(session.meta.turnCount)
-  })
-
   it('多次 consolidate 覆盖记忆', async () => {
     const { session } = await makeSession()
     await session.consolidate(async () => 'first')

@@ -25,13 +25,14 @@ export function createMockLLM(responses: LLMResult[]): LLMAdapter {
  * 使用 InMemoryStorageAdapter，可传入覆盖选项
  */
 export async function makeSession(
-  opts?: Partial<Omit<CreateSessionOptions, 'storage'>>
+  opts?: Partial<Omit<CreateSessionOptions, 'storage'>> & { storage?: InMemoryStorageAdapter }
 ): Promise<{ session: Session; storage: InMemoryStorageAdapter }> {
-  const storage = new InMemoryStorageAdapter()
+  const storage = opts?.storage ?? new InMemoryStorageAdapter()
+  const { storage: _ignored, ...rest } = opts ?? {}
   const session = await createSession({
     storage,
     label: 'Test Session',
-    ...opts,
+    ...rest,
   })
   return { session, storage }
 }

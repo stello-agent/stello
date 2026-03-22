@@ -42,5 +42,11 @@ export { createSession, loadSession } from './create-session.js'
 // MainSession 工厂函数
 export { createMainSession, loadMainSession } from './create-main-session.js'
 
+// LLM Adapter 实现
+export type { OpenAICompatibleOptions } from './adapters/openai-compatible.js'
+export { createOpenAICompatibleAdapter } from './adapters/openai-compatible.js'
+export type { AnthropicAdapterOptions } from './adapters/anthropic.js'
+export { createAnthropicAdapter } from './adapters/anthropic.js'
+
 // Mock 实现（用于测试）
 export { InMemoryStorageAdapter } from './mocks/in-memory-storage.js'

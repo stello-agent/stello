@@ -12,17 +12,58 @@ function buildSession(
 ): Session {
   let currentMeta = { ...meta }
   const { storage } = options
+  const llm = options.llm
 
   const session: Session = {
     get meta(): Readonly<SessionMeta> {
       return currentMeta
     },
 
-    async send(_content: string): Promise<SendResult> {
+    async send(content: string): Promise<SendResult> {
       if (currentMeta.status === 'archived') {
         throw new SessionArchivedError(currentMeta.id)
       }
-      throw new NotImplementedError('send()')
+      if (!llm) {
+        throw new Error('LLMAdapter is required for send()')
+      }
+
+      // 组装上下文：system prompt → insights → L3 历史 → 当前用户消息
+      const messages: Message[] = []
+
+      const sysPrompt = await storage.getSystemPrompt(currentMeta.id)
+      if (sysPrompt) {
+        messages.push({ role: 'system', content: sysPrompt })
+      }
+
+      const insightContent = await storage.getInsight(currentMeta.id)
+      if (insightContent) {
+        messages.push({ role: 'system', content: insightContent })
+      }
+
+      const history = await storage.listRecords(currentMeta.id)
+      messages.push(...history)
+
+      const now = new Date().toISOString()
+      messages.push({ role: 'user', content, timestamp: now })
+
+      // 调 LLM
+      const result = await llm.complete(messages)
+
+      // 存 L3：用户消息 + assistant 响应
+      const userRecord: Message = { role: 'user', content, timestamp: now }
+      const assistantRecord: Message = {
+        role: 'assistant',
+        content: result.content ?? '',
+        timestamp: new Date().toISOString(),
+      }
+      await storage.appendRecord(currentMeta.id, userRecord)
+      await storage.appendRecord(currentMeta.id, assistantRecord)
+
+      return {
+        content: result.content,
+        toolCalls: result.toolCalls,
+        usage: result.usage,
+      }
     },
 
     stream(_content: string): StreamResult {
@@ -70,14 +111,6 @@ function buildSession(
       const messages = await storage.listRecords(currentMeta.id)
       const newMemory = await fn(currentMemory, messages)
       await storage.putMemory(currentMeta.id, newMemory)
-
-      const updatedMeta: SessionMeta = {
-        ...currentMeta,
-        consolidatedTurn: currentMeta.turnCount,
-        updatedAt: new Date().toISOString(),
-      }
-      await storage.putSession(updatedMeta)
-      currentMeta = updatedMeta
     },
 
     async fork(forkOptions: ForkOptions): Promise<Session> {
@@ -89,8 +122,6 @@ function buildSession(
         label: forkOptions.label,
         role: 'standard',
         status: 'active',
-        turnCount: 0,
-        consolidatedTurn: 0,
         tags: forkOptions.tags ?? [],
         metadata: forkOptions.metadata ?? {},
         createdAt: now,
@@ -140,8 +171,6 @@ export async function createSession(options: CreateSessionOptions): Promise<Sess
     label: options.label ?? 'New Session',
     role: 'standard',
     status: 'active',
-    turnCount: 0,
-    consolidatedTurn: 0,
     tags: options.tags ?? [],
     metadata: options.metadata ?? {},
     createdAt: now,

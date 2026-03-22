@@ -2,13 +2,25 @@ import { describe, it, expect, vi } from 'vitest'
 import { createMainSession } from '../create-main-session.js'
 import { createSession } from '../create-session.js'
 import { InMemoryStorageAdapter } from '../mocks/in-memory-storage.js'
-import { NotImplementedError, SessionArchivedError } from '../types/session-api.js'
+import { SessionArchivedError } from '../types/session-api.js'
 import type { IntegrateFn } from '../types/functions.js'
+import type { LLMAdapter, LLMResult } from '../types/llm.js'
+
+/** 创建 mock LLMAdapter */
+function makeMockLLM(response: Partial<LLMResult> = {}): LLMAdapter {
+  return {
+    complete: vi.fn(async () => ({
+      content: response.content ?? 'mock response',
+      toolCalls: response.toolCalls,
+      usage: response.usage ?? { promptTokens: 10, completionTokens: 5 },
+    })),
+  }
+}
 
 /** 快速创建测试用 MainSession */
-async function makeMainSession() {
+async function makeMainSession(options?: { llm?: LLMAdapter }) {
   const storage = new InMemoryStorageAdapter()
-  const main = await createMainSession({ storage, label: 'Test Main' })
+  const main = await createMainSession({ storage, label: 'Test Main', llm: options?.llm })
   return { main, storage }
 }
 
@@ -177,18 +189,66 @@ describe('MainSession systemPrompt()', () => {
   })
 })
 
-describe('MainSession send/stream (NotImplemented)', () => {
-  it('send() 抛出 NotImplementedError', async () => {
-    const { main } = await makeMainSession()
-    await expect(main.send('hello')).rejects.toThrow(NotImplementedError)
+describe('MainSession send()', () => {
+  it('调用 LLM 并返回 SendResult', async () => {
+    const llm = makeMockLLM({ content: 'hello back' })
+    const { main } = await makeMainSession({ llm })
+
+    const result = await main.send('hello')
+
+    expect(result.content).toBe('hello back')
+    expect(result.usage).toBeDefined()
+    expect(llm.complete).toHaveBeenCalledTimes(1)
   })
 
-  it('archived 时 send() 抛 SessionArchivedError', async () => {
+  it('自动存 L3（user + assistant）', async () => {
+    const llm = makeMockLLM()
+    const { main } = await makeMainSession({ llm })
+
+    await main.send('hello')
+
+    const messages = await main.messages()
+    expect(messages).toHaveLength(2)
+    expect(messages[0]!.role).toBe('user')
+    expect(messages[0]!.content).toBe('hello')
+    expect(messages[1]!.role).toBe('assistant')
+    expect(messages[1]!.content).toBe('mock response')
+  })
+
+  it('上下文使用 synthesis 而非 insights', async () => {
+    const llm = makeMockLLM()
+    const storage = new InMemoryStorageAdapter()
+    const main = await createMainSession({
+      storage, llm, systemPrompt: 'You are helpful',
+    })
+
+    // 写入 synthesis
+    await storage.putMemory(main.meta.id, 'synthesis content')
+    // 写入 insight（不应出现在上下文中）
+    await storage.putInsight(main.meta.id, 'insight content')
+
+    await main.send('hello')
+
+    const calledMessages = (llm.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0]
+    const systemMessages = calledMessages.filter((m: { role: string }) => m.role === 'system')
+    expect(systemMessages).toHaveLength(2)
+    expect(systemMessages[0].content).toBe('You are helpful')
+    expect(systemMessages[1].content).toBe('synthesis content')
+    // insights 不应出现
+    expect(calledMessages.every((m: { content: string }) => m.content !== 'insight content')).toBe(true)
+  })
+
+  it('无 LLM 时抛错', async () => {
     const { main } = await makeMainSession()
+    await expect(main.send('hello')).rejects.toThrow('LLMAdapter is required for send()')
+  })
+
+  it('archived 时抛 SessionArchivedError', async () => {
+    const llm = makeMockLLM()
+    const { main } = await makeMainSession({ llm })
     await main.archive()
     await expect(main.send('hello')).rejects.toThrow(SessionArchivedError)
   })
 
-  it.todo('send() 上下文使用 synthesis 而非 insights')
   it.todo('stream() 流式输出')
 })
