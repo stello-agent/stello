@@ -7,6 +7,8 @@
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
     "smoke": "tsx scripts/smoke-test.ts",
+    "smoke:engine": "tsx scripts/engine-smoke.ts",
+    "demo:engine:openai": "tsx scripts/engine-openai-demo.ts",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

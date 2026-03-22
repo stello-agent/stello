@@ -56,6 +56,37 @@ export { SplitGuard } from './session/split-guard';
 export type { SplitCheckResult } from './session/split-guard';
 export { SkillRouterImpl } from './skill/skill-router';
 export { AgentTools } from './tools/agent-tools';
+export { TurnRunner } from './engine/turn-runner';
+export { Scheduler } from './engine/scheduler';
+export { StelloEngineImpl, createStelloEngine } from './engine/stello-engine';
+export type {
+  TurnRunnerToolCall,
+  TurnRunnerSendResult,
+  TurnRunnerSession,
+  TurnRunnerToolExecutor,
+  TurnRunnerOptions,
+  TurnRunnerResult,
+} from './engine/turn-runner';
+export type {
+  ConsolidationPolicy,
+  IntegrationPolicy,
+  SchedulerSession,
+  SchedulerMainSession,
+  SchedulerOptions,
+  SchedulerResult,
+} from './engine/scheduler';
+export type {
+  EngineRuntimeSession,
+  EngineLifecycle,
+  EngineTools,
+  EngineSessionResolver,
+  EngineSplitGuard,
+  EngineTurnResult,
+  EngineSwitchResult,
+  EngineArchiveResult,
+  EngineForkResult,
+  StelloEngineImplOptions,
+} from './engine/stello-engine';
 
 // 导出辅助函数
 export { toVisualizerFormat } from './utils/export';
