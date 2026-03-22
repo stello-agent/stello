@@ -138,7 +138,7 @@ Session 自己只需要一个稳定身份：
 也就是说：
 
 - `session.send()` 是原子行为
-- `turn / switch / fork / archive / round end` 是编排层行为
+- `turn / fork / archive / round end` 是编排层行为
 
 ### 4. 默认按轮总结，不按条总结
 
@@ -218,12 +218,13 @@ Stello 的架构应优先保留足够多的生命周期钩子。
 
 职责：
 
-- 持有当前活跃 `sessionId`
-- 驱动单个 Session 的对话周期
+- 通过 `sessionId` 找到对应 Session 或 Engine
+- 驱动单个 Session 的整轮对话周期
 - 驱动 tool loop
-- 管理 fork / switch / archive / consolidate / integrate
+- 管理 fork / leave / archive / consolidate / integrate
 - 触发各类生命周期钩子
 - 管理“单条”和“整轮”之间的边界
+- 保证同 Session 串行、跨 Session 并行
 
 不负责：
 
@@ -408,43 +409,71 @@ Session Tree 的职责是：
 - 汇报和 summary 沿层级逐步上卷
 - 更适合层级式目标推进，而不是平铺技能调用
 
+当前状态：
+
+- 这一范式在设计上已经成立
+- 代码里已预留策略接口 TODO
+- 具体实现暂未落地
+
 ---
 
-## 七、编排层 Engine 的最终形态
+## 七、编排层 Engine 与 Orchestrator 的最终形态
 
-编排层最终应围绕一个统一入口展开，例如：
+编排层最终建议拆成两层，而不是只围绕一个全局 Engine。
+
+### 1. Session Engine
+
+例如：
 
 - `StelloEngine`
 
-它负责：
+它只绑定一个 Session runtime，负责：
 
-- 持有当前活跃 `sessionId`
 - 驱动当前 Session 的单条对话
-- 驱动 tool loop
-- 管理 `fork / switch / archive / consolidate / integrate`
-- 判断 round 的开始与结束
-- 触发 hooks
+- 驱动当前 Session 的 tool loop
+- 管理当前 Session 的 `enter / leave / fork / archive`
+- 判断当前 Session round 的开始与结束
+- 触发当前 Session 的 hooks
+- 在当前 Session 范围内调度 `consolidate / integrate`
 
 建议保留这些核心入口：
 
 - `turn(input)`
-- `switchSession(targetId)`
+- `enterSession()`
+- `leaveSession()`
 - `forkSession(options)`
-- `archiveSession(sessionId?)`
+- `archiveSession()`
+
+### 2. Multi-Session Orchestrator
+
+例如：
+
+- `StelloAgent`
+- `SessionOrchestrator`
+- `DefaultEngineFactory`
+
+它负责：
+
+- 作为 core 对外推荐的最高层对象
+- 通过 `sessionId` 找到对应 Engine
+- 协调多个 Session / Engine
+- 保证同 Session 串行、跨 Session 并行
+- 提供多 Session 的高层入口
+
+例如：
+
 - `enterSession(sessionId)`
+- `turn(sessionId, input)`
 - `leaveSession(sessionId)`
-- `flush()`
+- `forkSession(sessionId, options)`
+- `archiveSession(sessionId)`
 
 强调一点：
 
-- Engine 负责“编排”
-- 不等于 Engine 必须替用户决定 topology 的组织方式
-
-也就是：
-
-- Engine 提供编排能力
-- 用户自己选择 topology 结构
-- 库只提供少量默认 orchestrator / topology 模板
+- Engine 是单 Session 生命周期编排器
+- `StelloAgent` 是当前 core 推荐的顶层门面对象
+- Orchestrator 才是多 Session 协调器
+- 但 Orchestrator 也不应该替用户决定唯一的 topology 组织方式
 
 ---
 
@@ -745,7 +774,7 @@ Engine 是工具调用协议的真正执行者。
 
 ## 一句话总结
 
-Session 是自治的对话组件，Tree 是解耦的拓扑结构，Engine 是负责整轮周期与多 Session 管理的编排层；Server 提供服务接口，SDK 只是对这些接口的薄封装。
+Session 是自治的对话组件，Tree 是解耦的拓扑结构，Engine 是单 Session 生命周期编排器，Orchestrator 是多 Session 协调层；Server 提供服务接口，SDK 只是对这些接口的薄封装。
 
 补一句更贴近最终推荐：
 

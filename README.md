@@ -48,6 +48,15 @@ yarn add @stello-ai/core @stello-ai/visualizer
 
 > `@stello-ai/visualizer` has `react` and `react-dom` as peer dependencies. `@stello-ai/core` has zero dependencies.
 
+## Current Docs
+
+The repository has evolved beyond the original quickstart below. If you want the current architecture and usage entrypoints, start with:
+
+- [Stello Usage Overview](./docs/stello-usage.md)
+- [StelloAgent API](./docs/stello-agent-api.md)
+- [Config Design](./docs/config-design.md)
+- [Orchestrator Usage](./docs/orchestrator-usage.md)
+
 ## 5-Minute Quickstart
 
 ### 1. Initialize the engine
