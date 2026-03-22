@@ -166,35 +166,35 @@ export class StelloEngineImpl implements StelloEngine {
 
   /** 处理一轮编排：当前 session send + tool loop + 调度 */
   async turn(input: string, options?: TurnRunnerOptions): Promise<EngineTurnResult> {
-    await this.runHook('onMessageReceived', { sessionId: this.session.id, input });
-    await this.runHook('onRoundStart', { sessionId: this.session.id, input });
+    this.fireHook('onMessageReceived', { sessionId: this.session.id, input });
+    this.fireHook('onRoundStart', { sessionId: this.session.id, input });
     let turn: TurnRunnerResult;
     try {
       turn = await this.turnRunner.run(this.session, input, this.tools, {
         ...options,
-        onToolCall: async (toolCall) => {
-          await options?.onToolCall?.(toolCall);
-          await this.runHook('onToolCall', { sessionId: this.session.id, toolCall });
+        onToolCall: (toolCall) => {
+          this.fireCallback(options?.onToolCall, toolCall);
+          this.fireHook('onToolCall', { sessionId: this.session.id, toolCall });
         },
-        onToolResult: async (result) => {
-          await options?.onToolResult?.(result);
-          await this.runHook('onToolResult', { sessionId: this.session.id, result });
+        onToolResult: (result) => {
+          this.fireCallback(options?.onToolResult, result);
+          this.fireHook('onToolResult', { sessionId: this.session.id, result });
         },
       });
     } catch (error) {
-      await this.handleEngineError('engine.turn', error);
+      this.handleEngineError('engine.turn', error);
       throw error;
     }
     const schedule = await this.scheduler.afterTurn(this.session, this.mainSession, {
       observedTurnCount: this.session.meta.turnCount + 1,
     });
-    await this.runHook('onAssistantReply', {
+    this.fireHook('onAssistantReply', {
       sessionId: this.session.id,
       input,
       content: turn.finalContent,
       rawResponse: turn.rawResponse,
     });
-    await this.runHook('onRoundEnd', {
+    this.fireHook('onRoundEnd', {
       sessionId: this.session.id,
       input,
       turn,
@@ -207,38 +207,38 @@ export class StelloEngineImpl implements StelloEngine {
   stream(input: string, options?: TurnRunnerOptions): EngineStreamResult {
     const source: TurnRunnerStreamResult = this.turnRunner.runStream(this.session, input, this.tools, {
       ...options,
-      onToolCall: async (toolCall) => {
-        await options?.onToolCall?.(toolCall);
-        await this.runHook('onToolCall', { sessionId: this.session.id, toolCall });
+      onToolCall: (toolCall) => {
+        this.fireCallback(options?.onToolCall, toolCall);
+        this.fireHook('onToolCall', { sessionId: this.session.id, toolCall });
       },
-      onToolResult: async (result) => {
-        await options?.onToolResult?.(result);
-        await this.runHook('onToolResult', { sessionId: this.session.id, result });
+      onToolResult: (result) => {
+        this.fireCallback(options?.onToolResult, result);
+        this.fireHook('onToolResult', { sessionId: this.session.id, result });
       },
     });
 
     const result = (async () => {
-      await this.runHook('onMessageReceived', { sessionId: this.session.id, input });
-      await this.runHook('onRoundStart', { sessionId: this.session.id, input });
+      this.fireHook('onMessageReceived', { sessionId: this.session.id, input });
+      this.fireHook('onRoundStart', { sessionId: this.session.id, input });
 
       let turn: TurnRunnerResult;
       try {
         turn = await source.result;
       } catch (error) {
-        await this.handleEngineError('engine.stream', error);
+        this.handleEngineError('engine.stream', error);
         throw error;
       }
 
       const schedule = await this.scheduler.afterTurn(this.session, this.mainSession, {
         observedTurnCount: this.session.meta.turnCount + 1,
       });
-      await this.runHook('onAssistantReply', {
+      this.fireHook('onAssistantReply', {
         sessionId: this.session.id,
         input,
         content: turn.finalContent,
         rawResponse: turn.rawResponse,
       });
-      await this.runHook('onRoundEnd', {
+      this.fireHook('onRoundEnd', {
         sessionId: this.session.id,
         input,
         turn,
@@ -260,7 +260,7 @@ export class StelloEngineImpl implements StelloEngine {
   /** 显式进入一个 session，作为整轮开始入口 */
   async enterSession(): Promise<BootstrapResult> {
     const bootstrap = await this.lifecycle.bootstrap(this.session.id);
-    await this.runHook('onSessionEnter', { sessionId: this.session.id });
+    this.fireHook('onSessionEnter', { sessionId: this.session.id });
     return bootstrap;
   }
 
@@ -286,7 +286,7 @@ export class StelloEngineImpl implements StelloEngine {
     schedule: SchedulerResult;
   }> {
     const schedule = await this.scheduler.onSessionLeave(this.session, this.mainSession);
-    await this.runHook('onSessionLeave', { sessionId: this.session.id, schedule });
+    this.fireHook('onSessionLeave', { sessionId: this.session.id, schedule });
     return { sessionId: this.session.id, schedule };
   }
 
@@ -297,7 +297,7 @@ export class StelloEngineImpl implements StelloEngine {
   }> {
     await this.sessions.archive(this.session.id);
     const schedule = await this.scheduler.onSessionArchive(this.session, this.mainSession);
-    await this.runHook('onSessionArchive', { sessionId: this.session.id, schedule });
+    this.fireHook('onSessionArchive', { sessionId: this.session.id, schedule });
     return { sessionId: this.session.id, schedule };
   }
 
@@ -320,7 +320,7 @@ export class StelloEngineImpl implements StelloEngine {
       this.splitGuard.recordSplit(parentId, this.session.meta.turnCount);
     }
 
-    await this.runHook('onSessionFork', { parentId, child });
+    this.fireHook('onSessionFork', { parentId, child });
     return child;
   }
 
@@ -349,25 +349,52 @@ export class StelloEngineImpl implements StelloEngine {
     }
   }
 
-  private async runHook(key: keyof EngineHooks, payload: unknown): Promise<void> {
-    const hook = this.hooks[key];
-    if (!hook) return;
+  /** fire-and-forget 触发外部回调，不阻塞调用方 */
+  private fireCallback<T>(fn: ((arg: T) => Promise<void> | void) | undefined, arg: T): void {
+    if (!fn) return;
     try {
-      await (hook as (ctx: unknown) => Promise<void> | void)(payload);
+      const result = fn(arg);
+      if (result && typeof (result as Promise<void>).catch === 'function') {
+        (result as Promise<void>).catch((error) => {
+          this.handleEngineError('engine.callback', error);
+        });
+      }
     } catch (error) {
-      await this.handleEngineError(`engine.${String(key)}`, error);
+      this.handleEngineError('engine.callback', error);
     }
   }
 
-  private async handleEngineError(source: string, error: unknown): Promise<void> {
+  /** fire-and-forget 触发 hook，不阻塞调用方 */
+  private fireHook(key: keyof EngineHooks, payload: unknown): void {
+    const hook = this.hooks[key];
+    if (!hook) return;
+    try {
+      const result = (hook as (ctx: unknown) => Promise<void> | void)(payload);
+      if (result && typeof (result as Promise<void>).catch === 'function') {
+        (result as Promise<void>).catch((error) => {
+          this.handleEngineError(`engine.${String(key)}`, error);
+        });
+      }
+    } catch (error) {
+      this.handleEngineError(`engine.${String(key)}`, error);
+    }
+  }
+
+  /** 错误处理：emit error 事件 + 调用 onError hook */
+  private handleEngineError(source: string, error: unknown): void {
     const normalized = error instanceof Error ? error : new Error(String(error));
     this.emit('error', { source, error: normalized });
     const onError = this.hooks.onError;
     if (!onError) return;
     try {
-      await onError({ source, error: normalized });
+      const result = onError({ source, error: normalized });
+      if (result && typeof (result as Promise<void>).catch === 'function') {
+        (result as Promise<void>).catch(() => {
+          // 避免 onError 自身异常再次递归触发错误回调
+        });
+      }
     } catch {
-      // 避免 onError 自身异常再次递归触发错误回调
+      // 同步 onError 抛错，静默吞掉
     }
   }
 }
