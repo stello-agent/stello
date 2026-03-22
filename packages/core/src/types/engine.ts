@@ -21,6 +21,8 @@ import type {
   UpdateProposal,
   ConfirmProtocol,
 } from './lifecycle';
+import type { EngineStreamResult, EngineTurnResult } from '../engine/stello-engine';
+import type { TurnRunnerOptions } from '../engine/turn-runner';
 
 // ─── 策略配置 ───
 
@@ -113,8 +115,8 @@ export interface StelloConfig {
  * 开发者通过此接口驱动整个对话拓扑引擎。
  */
 export interface StelloEngine {
-  /** 当前活跃 Session ID */
-  readonly currentSessionId: string;
+  /** 当前绑定的 Session ID */
+  readonly sessionId: string;
   /** Session 树操作 */
   readonly sessions: SessionTree;
   /** 记忆系统 */
@@ -130,8 +132,14 @@ export interface StelloEngine {
   assemble(): Promise<AssembledContext>;
   /** 轮次结束处理：提取写 L1 + 提炼 L2 + 追加 L3 */
   afterTurn(userMsg: TurnRecord, assistantMsg: TurnRecord): Promise<AfterTurnResult>;
-  /** 切换到另一个 Session */
-  switchSession(targetId: string): Promise<BootstrapResult>;
+  /** 进入当前绑定 Session 的整轮对话 */
+  enterSession(): Promise<BootstrapResult>;
+  /** 离开当前绑定 Session 的整轮对话 */
+  leaveSession(): Promise<{ sessionId: string }>;
+  /** 流式处理当前绑定 Session 的一轮对话 */
+  stream(input: string, options?: TurnRunnerOptions): EngineStreamResult;
+  /** 非流式处理当前绑定 Session 的一轮对话 */
+  turn?(input: string, options?: TurnRunnerOptions): Promise<EngineTurnResult>;
   /** 导出 Agent Tool 定义（兼容 OpenAI / Claude tool use） */
   getToolDefinitions(): ToolDefinition[];
   /** 执行 Agent Tool */

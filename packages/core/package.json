@@ -11,7 +11,17 @@
   },
   "homepage": "https://github.com/stello-agent/stello#readme",
   "bugs": "https://github.com/stello-agent/stello/issues",
-  "keywords": ["ai", "agent", "conversation", "session", "memory", "tree", "branching", "llm", "topology"],
+  "keywords": [
+    "ai",
+    "agent",
+    "conversation",
+    "session",
+    "memory",
+    "tree",
+    "branching",
+    "llm",
+    "topology"
+  ],
   "sideEffects": false,
   "type": "module",
   "main": "./dist/index.cjs",
@@ -43,5 +53,8 @@
     "tsup": "^8.4.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "@stello-ai/session": "workspace:^"
   }
 }
