@@ -1,68 +1,95 @@
 import { describe, it, expect } from 'vitest'
-import { makeSession } from './helpers.js'
-import { NotImplementedError, SessionArchivedError } from '../types/session-api.js'
+import { makeSession, createMockLLM } from './helpers.js'
+import { SessionArchivedError } from '../types/session-api.js'
+import type { LLMResult } from '../types/llm.js'
 
-/**
- * send/stream 契约测试 — RED phase
- *
- * 当前 send()/stream() 抛出 NotImplementedError。
- * - 验证"抛 NotImplementedError"的测试会通过
- * - 验证实际对话行为的测试标记为 todo
- */
 describe('send() 契约', () => {
-  describe('NotImplementedError（当前预期行为）', () => {
-    it('调用 send() 抛出 NotImplementedError', async () => {
-      const { session } = await makeSession()
-      await expect(session.send('hello')).rejects.toThrow(NotImplementedError)
-    })
+  const simpleResponse: LLMResult = {
+    content: '你好！',
+    usage: { promptTokens: 10, completionTokens: 5 },
+  }
 
-    it('NotImplementedError 消息包含 send', async () => {
-      const { session } = await makeSession()
-      await expect(session.send('hello')).rejects.toThrow(/send/i)
-    })
+  it('send() 调用 LLMAdapter.complete 并返回 SendResult', async () => {
+    const llm = createMockLLM([simpleResponse])
+    const { session } = await makeSession({ llm })
+
+    const result = await session.send('hello')
+
+    expect(result.content).toBe('你好！')
+    expect(result.usage).toEqual({ promptTokens: 10, completionTokens: 5 })
   })
 
-  describe('SessionArchivedError（当前可验证）', () => {
-    it('archived session 上调用 send() 抛 SessionArchivedError', async () => {
-      const { session } = await makeSession()
-      await session.archive()
-      await expect(session.send('hello')).rejects.toThrow(SessionArchivedError)
+  it('send() 自动存 L3（用户消息 + LLM 响应）', async () => {
+    const llm = createMockLLM([simpleResponse])
+    const { session } = await makeSession({ llm })
+
+    await session.send('hello')
+
+    const messages = await session.messages()
+    expect(messages).toHaveLength(2)
+    expect(messages[0]!.role).toBe('user')
+    expect(messages[0]!.content).toBe('hello')
+    expect(messages[1]!.role).toBe('assistant')
+    expect(messages[1]!.content).toBe('你好！')
+  })
+
+  it('send() 上下文组装包含 system prompt + insights + L3 历史', async () => {
+    const capturedMessages: unknown[] = []
+    const llm = createMockLLM([simpleResponse, { content: '第二次回复' }])
+    // 劫持 complete 以捕获消息
+    const originalComplete = llm.complete.bind(llm)
+    llm.complete = async (msgs) => {
+      capturedMessages.push([...msgs])
+      return originalComplete(msgs)
+    }
+
+    const { session } = await makeSession({
+      llm,
+      systemPrompt: '你是助手',
     })
+    await session.setInsight('用户偏好简洁回答')
+
+    // 第一次 send
+    await session.send('问题1')
+    // 第二次 send — 应包含第一轮的 L3 历史
+    await session.send('问题2')
+
+    // 验证第二次调用的上下文
+    const secondCall = capturedMessages[1] as Array<{ role: string; content: string }>
+    expect(secondCall[0]).toEqual({ role: 'system', content: '你是助手' })
+    expect(secondCall[1]).toEqual({ role: 'system', content: '用户偏好简洁回答' })
+    // L3 历史：user + assistant from first round
+    expect(secondCall[2]!.role).toBe('user')
+    expect(secondCall[2]!.content).toBe('问题1')
+    expect(secondCall[3]!.role).toBe('assistant')
+    // 当前用户消息
+    expect(secondCall[4]!.role).toBe('user')
+    expect(secondCall[4]!.content).toBe('问题2')
   })
 
-  describe('TODO: 实现后补全的 send() 契约', () => {
-    it.todo('send() 调用 LLMAdapter.complete')
-    it.todo('send() 返回 SendResult，content 为 LLM 文本响应')
-    it.todo('send() 自动存 L3（用户消息 + LLM 响应）')
-    it.todo('send() 返回 toolCalls 时由上层决定后续')
-    it.todo('send() 结束后触发 sent 事件')
-  })
-})
+  it('send() 返回 toolCalls 时透传', async () => {
+    const responseWithTools: LLMResult = {
+      content: null,
+      toolCalls: [{ id: 'tc_1', name: 'search', input: { q: 'test' } }],
+    }
+    const llm = createMockLLM([responseWithTools])
+    const { session } = await makeSession({ llm })
 
-describe('stream() 契约', () => {
-  describe('NotImplementedError（当前预期行为）', () => {
-    it('调用 stream() 抛出 NotImplementedError', () => {
-      // stream() 是同步返回，不需要 await
-      const makeStream = async () => {
-        const { session } = await makeSession()
-        session.stream('hello')
-      }
-      expect(makeStream()).rejects.toThrow(NotImplementedError)
-    })
+    const result = await session.send('搜索 test')
+
+    expect(result.content).toBeNull()
+    expect(result.toolCalls).toHaveLength(1)
+    expect(result.toolCalls![0]!.name).toBe('search')
   })
 
-  describe('SessionArchivedError（当前可验证）', () => {
-    it('archived session 上调用 stream() 抛 SessionArchivedError', async () => {
-      const { session } = await makeSession()
-      await session.archive()
-      expect(() => session.stream('hello')).toThrow(SessionArchivedError)
-    })
+  it('send() 无 LLM 时抛错', async () => {
+    const { session } = await makeSession()
+    await expect(session.send('hello')).rejects.toThrow('LLMAdapter is required for send()')
   })
 
-  describe('TODO: 实现后补全的 stream() 契约', () => {
-    it.todo('stream() 返回 AsyncIterable，逐 chunk 输出')
-    it.todo('stream().result 在流结束后 resolve 为 SendResult')
-    it.todo('stream 结束后自动存 L3')
-    it.todo('LLMAdapter 无 stream 方法时退化为 complete + 单次 yield')
+  it('archived session 上调用 send() 抛 SessionArchivedError', async () => {
+    const { session } = await makeSession()
+    await session.archive()
+    await expect(session.send('hello')).rejects.toThrow(SessionArchivedError)
   })
 })
