@@ -1,1 +1,0 @@
-../.claude/skills/orchestration-design/SKILL.md
