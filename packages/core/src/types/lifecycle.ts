@@ -42,8 +42,6 @@ export interface LifecycleHooks {
   bootstrap?(sessionId: string): Promise<BootstrapResult>;
   /** 每条消息进来时：意图识别，匹配 Skill */
   ingest?(sessionId: string, message: TurnRecord): Promise<IngestResult>;
-  /** 组装 prompt：按继承策略筛选 memory.md 注入，注入当前 Session 的 scope.md */
-  assemble?(sessionId: string): Promise<AssembledContext>;
   /** 每轮结束：提取写 L1 + 更新 memory.md + 追加 records.jsonl + 触发父 index.md 更新 */
   afterTurn?(
     sessionId: string,
