@@ -1,0 +1,60 @@
+{
+  "name": "@stello-ai/server",
+  "version": "0.1.0",
+  "description": "Stello server — PG-backed multi-user multi-space service layer",
+  "license": "Apache-2.0",
+  "author": "Stello Contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/stello-agent/stello.git",
+    "directory": "packages/server"
+  },
+  "homepage": "https://github.com/stello-agent/stello#readme",
+  "bugs": "https://github.com/stello-agent/stello/issues",
+  "keywords": [
+    "ai",
+    "agent",
+    "stello",
+    "server",
+    "postgres",
+    "multi-tenant"
+  ],
+  "sideEffects": false,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@stello-ai/core": "workspace:^",
+    "@stello-ai/session": "workspace:^",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
