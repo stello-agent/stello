@@ -12,7 +12,7 @@ import type {
 import type { StelloEngine, StelloEventMap } from '../types/engine';
 import type { CreateSessionOptions, SessionMeta } from '../types/session';
 import type { SplitGuard } from '../session/split-guard';
-import { Scheduler, type SchedulerMainSession, type SchedulerResult, type SchedulerSession } from './scheduler';
+import type { SchedulerSession } from './scheduler';
 import {
   TurnRunner,
   type ToolCallParser,
@@ -65,16 +65,13 @@ export interface StelloEngineOptions {
   lifecycle: EngineLifecycleAdapter;
   tools: EngineToolRuntime;
   splitGuard?: SplitGuard;
-  mainSession?: SchedulerMainSession | null;
   turnRunner?: TurnRunner;
-  scheduler?: Scheduler;
   hooks?: Partial<EngineHooks>;
 }
 
 /** turn 的聚合结果 */
 export interface EngineTurnResult {
   turn: TurnRunnerResult;
-  schedule: SchedulerResult;
 }
 
 /** 流式 turn 的聚合结果 */
@@ -91,7 +88,6 @@ export interface EngineRoundContext {
 /** round 结束上下文 */
 export interface EngineRoundResultContext extends EngineRoundContext {
   turn: TurnRunnerResult;
-  schedule: SchedulerResult;
 }
 
 /** engine hooks */
@@ -106,10 +102,10 @@ export interface EngineHooks {
   onToolCall(ctx: { sessionId: string; toolCall: ToolCall }): Promise<void> | void;
   onToolResult(ctx: { sessionId: string; result: ToolCallResult }): Promise<void> | void;
   onSessionEnter(ctx: { sessionId: string }): Promise<void> | void;
-  onSessionLeave(ctx: { sessionId: string; schedule: SchedulerResult }): Promise<void> | void;
+  onSessionLeave(ctx: { sessionId: string }): Promise<void> | void;
   onRoundStart(ctx: EngineRoundContext): Promise<void> | void;
   onRoundEnd(ctx: EngineRoundResultContext): Promise<void> | void;
-  onSessionArchive(ctx: { sessionId: string; schedule: SchedulerResult }): Promise<void> | void;
+  onSessionArchive(ctx: { sessionId: string }): Promise<void> | void;
   onSessionFork(ctx: { parentId: string; child: SessionMeta }): Promise<void> | void;
   onError(ctx: { source: string; error: Error }): Promise<void> | void;
 }
@@ -133,9 +129,7 @@ export class StelloEngineImpl implements StelloEngine {
   private readonly lifecycle: EngineLifecycleAdapter;
   private readonly tools: EngineToolRuntime;
   private readonly splitGuard?: SplitGuard;
-  private readonly mainSession?: SchedulerMainSession | null;
   private readonly turnRunner: TurnRunner;
-  private readonly scheduler: Scheduler;
   private readonly hooks: Partial<EngineHooks>;
   private readonly handlers = new Map<keyof StelloEventMap, Set<(data: unknown) => void>>();
 
@@ -148,7 +142,6 @@ export class StelloEngineImpl implements StelloEngine {
     this.lifecycle = options.lifecycle;
     this.tools = options.tools;
     this.splitGuard = options.splitGuard;
-    this.mainSession = options.mainSession ?? null;
     this.hooks = options.hooks ?? {};
     this.turnRunner =
       options.turnRunner ??
@@ -157,7 +150,6 @@ export class StelloEngineImpl implements StelloEngine {
           return { content: raw, toolCalls: [] };
         },
       } satisfies ToolCallParser);
-    this.scheduler = options.scheduler ?? new Scheduler();
   }
 
   get sessionId(): string {
@@ -185,9 +177,6 @@ export class StelloEngineImpl implements StelloEngine {
       this.handleEngineError('engine.turn', error);
       throw error;
     }
-    const schedule = await this.scheduler.afterTurn(this.session, this.mainSession, {
-      observedTurnCount: this.session.meta.turnCount + 1,
-    });
     this.fireHook('onAssistantReply', {
       sessionId: this.session.id,
       input,
@@ -198,12 +187,11 @@ export class StelloEngineImpl implements StelloEngine {
       sessionId: this.session.id,
       input,
       turn,
-      schedule,
     });
-    return { turn, schedule };
+    return { turn };
   }
 
-  /** 流式处理一轮编排：先输出增量文本，完成后再返回完整 turn + schedule */
+  /** 流式处理一轮编排：先输出增量文本，完成后再返回完整 turn */
   stream(input: string, options?: TurnRunnerOptions): EngineStreamResult {
     const source: TurnRunnerStreamResult = this.turnRunner.runStream(this.session, input, this.tools, {
       ...options,
@@ -229,9 +217,6 @@ export class StelloEngineImpl implements StelloEngine {
         throw error;
       }
 
-      const schedule = await this.scheduler.afterTurn(this.session, this.mainSession, {
-        observedTurnCount: this.session.meta.turnCount + 1,
-      });
       this.fireHook('onAssistantReply', {
         sessionId: this.session.id,
         input,
@@ -242,9 +227,8 @@ export class StelloEngineImpl implements StelloEngine {
         sessionId: this.session.id,
         input,
         turn,
-        schedule,
       });
-      return { turn, schedule };
+      return { turn };
     })();
 
     return {
@@ -281,24 +265,16 @@ export class StelloEngineImpl implements StelloEngine {
   }
 
   /** 显式离开一个 session，作为 round end 默认触发点 */
-  async leaveSession(): Promise<{
-    sessionId: string;
-    schedule: SchedulerResult;
-  }> {
-    const schedule = await this.scheduler.onSessionLeave(this.session, this.mainSession);
-    this.fireHook('onSessionLeave', { sessionId: this.session.id, schedule });
-    return { sessionId: this.session.id, schedule };
+  async leaveSession(): Promise<{ sessionId: string }> {
+    this.fireHook('onSessionLeave', { sessionId: this.session.id });
+    return { sessionId: this.session.id };
   }
 
   /** 归档一个 session，并触发 onArchive 调度 */
-  async archiveSession(): Promise<{
-    sessionId: string;
-    schedule: SchedulerResult;
-  }> {
+  async archiveSession(): Promise<{ sessionId: string }> {
     await this.sessions.archive(this.session.id);
-    const schedule = await this.scheduler.onSessionArchive(this.session, this.mainSession);
-    this.fireHook('onSessionArchive', { sessionId: this.session.id, schedule });
-    return { sessionId: this.session.id, schedule };
+    this.fireHook('onSessionArchive', { sessionId: this.session.id });
+    return { sessionId: this.session.id };
   }
 
   /** 从当前 session 发起 fork，请求创建子 session */

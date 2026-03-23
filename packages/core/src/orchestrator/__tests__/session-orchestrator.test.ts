@@ -57,7 +57,6 @@ describe('SessionOrchestrator', () => {
     const engine = {
       turn: vi.fn().mockResolvedValue({
         turn: { finalContent: 'done', toolRoundCount: 0, toolCallsExecuted: 0, rawResponse: 'done' },
-        schedule: { consolidated: false, integrated: false, errors: [] },
       }),
     };
     const runtimeManager = {
@@ -150,7 +149,7 @@ describe('SessionOrchestrator', () => {
       get: vi.fn().mockResolvedValue(sessionMeta),
     } as unknown as SessionTree;
     const engine = {
-      archiveSession: vi.fn().mockResolvedValue({ sessionId: 's1', schedule: {} }),
+      archiveSession: vi.fn().mockResolvedValue({ sessionId: 's1' }),
     };
     const runtimeManager = {
       acquire: vi.fn().mockResolvedValue(engine),
@@ -200,8 +199,7 @@ describe('SessionOrchestrator', () => {
           callOrder.push(`end:${input}`);
           return {
             turn: { finalContent: input, toolRoundCount: 0, toolCallsExecuted: 0, rawResponse: input },
-            schedule: { consolidated: false, integrated: false, errors: [] },
-          };
+              };
         }),
       })),
       release: vi.fn().mockResolvedValue(undefined),
@@ -241,8 +239,7 @@ describe('SessionOrchestrator', () => {
           activeCount -= 1;
           return {
             turn: { finalContent: sessionId, toolRoundCount: 0, toolCallsExecuted: 0, rawResponse: sessionId },
-            schedule: { consolidated: false, integrated: false, errors: [] },
-          };
+              };
         }),
       })),
       release: vi.fn().mockResolvedValue(undefined),

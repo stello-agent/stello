@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import type { SessionTree } from '../../types/session';
 import type { MemoryEngine } from '../../types/memory';
 import type { ConfirmProtocol, SkillRouter } from '../../types/lifecycle';
-import { Scheduler } from '../scheduler';
 import { StelloEngineImpl } from '../stello-engine';
 import { TurnRunner, type ToolCallParser } from '../turn-runner';
 
@@ -28,7 +27,7 @@ describe('StelloEngineImpl', () => {
   } as unknown as SkillRouter;
   const confirm = {} as ConfirmProtocol;
 
-  it('turn 会串联 turnRunner 和 scheduler', async () => {
+  it('turn 会串联 turnRunner 并触发 hooks', async () => {
     const session = {
       id: 's1',
       meta: { id: 's1', turnCount: 0, status: 'active' as const },
@@ -44,13 +43,6 @@ describe('StelloEngineImpl', () => {
         rawResponse: 'done',
       }),
     } as unknown as TurnRunner;
-    const scheduler = {
-      afterTurn: vi.fn().mockResolvedValue({
-        consolidated: false,
-        integrated: false,
-        errors: [],
-      }),
-    } as unknown as Scheduler;
 
     const onRoundStart = vi.fn();
     const onRoundEnd = vi.fn();
@@ -76,7 +68,6 @@ describe('StelloEngineImpl', () => {
         executeTool: vi.fn(),
       },
       turnRunner,
-      scheduler,
       hooks: {
         onMessageReceived,
         onAssistantReply,
@@ -90,7 +81,6 @@ describe('StelloEngineImpl', () => {
     const result = await engine.turn('hello');
 
     expect(turnRunner.run).toHaveBeenCalledTimes(1);
-    expect(scheduler.afterTurn).toHaveBeenCalledTimes(1);
     expect(onMessageReceived).toHaveBeenCalledWith({ sessionId: 's1', input: 'hello' });
     expect(onRoundStart).toHaveBeenCalledWith({ sessionId: 's1', input: 'hello' });
     expect(onAssistantReply).toHaveBeenCalledWith({
@@ -103,7 +93,6 @@ describe('StelloEngineImpl', () => {
       sessionId: 's1',
       input: 'hello',
       turn: result.turn,
-      schedule: result.schedule,
     });
     expect(onToolCall).not.toHaveBeenCalled();
     expect(onToolResult).not.toHaveBeenCalled();
@@ -259,7 +248,7 @@ describe('StelloEngineImpl', () => {
     expect(result.session.id).toBe('s1');
   });
 
-  it('leaveSession 会触发 onLeave 调度和 onSessionLeave hook', async () => {
+  it('leaveSession 会触发 onSessionLeave hook', async () => {
     const session = {
       id: 's1',
       meta: { id: 's1', turnCount: 2, status: 'active' as const },
@@ -267,13 +256,6 @@ describe('StelloEngineImpl', () => {
       send: vi.fn(),
       consolidate: vi.fn(),
     };
-    const scheduler = {
-      onSessionLeave: vi.fn().mockResolvedValue({
-        consolidated: true,
-        integrated: false,
-        errors: [],
-      }),
-    } as unknown as Scheduler;
     const onSessionLeave = vi.fn();
 
     const engine = new StelloEngineImpl({
@@ -292,21 +274,16 @@ describe('StelloEngineImpl', () => {
         getToolDefinitions: vi.fn().mockReturnValue([]),
         executeTool: vi.fn(),
       },
-      scheduler,
       hooks: { onSessionLeave },
     });
 
     const result = await engine.leaveSession();
 
-    expect((scheduler as unknown as { onSessionLeave: ReturnType<typeof vi.fn> }).onSessionLeave).toHaveBeenCalledTimes(1);
-    expect(onSessionLeave).toHaveBeenCalledWith({
-      sessionId: 's1',
-      schedule: result.schedule,
-    });
-    expect(result.schedule.consolidated).toBe(true);
+    expect(onSessionLeave).toHaveBeenCalledWith({ sessionId: 's1' });
+    expect(result.sessionId).toBe('s1');
   });
 
-  it('archiveSession 会归档指定 session 并触发 onArchive 调度', async () => {
+  it('archiveSession 会归档指定 session 并触发 onSessionArchive hook', async () => {
     const session = {
       id: 's1',
       meta: { id: 's1', turnCount: 2, status: 'active' as const },
@@ -314,14 +291,8 @@ describe('StelloEngineImpl', () => {
       send: vi.fn(),
       consolidate: vi.fn(),
     };
-    const scheduler = {
-      onSessionArchive: vi.fn().mockResolvedValue({
-        consolidated: false,
-        integrated: false,
-        errors: [],
-      }),
-    } as unknown as Scheduler;
     const archive = vi.fn().mockResolvedValue(undefined);
+    const onSessionArchive = vi.fn();
 
     const engine = new StelloEngineImpl({
       session,
@@ -339,16 +310,13 @@ describe('StelloEngineImpl', () => {
         getToolDefinitions: vi.fn().mockReturnValue([]),
         executeTool: vi.fn(),
       },
-      scheduler,
-      hooks: {
-        onSessionArchive: vi.fn(),
-      },
+      hooks: { onSessionArchive },
     });
 
     const result = await engine.archiveSession();
 
     expect(archive).toHaveBeenCalledWith('s1');
-    expect(scheduler.onSessionArchive).toHaveBeenCalledTimes(1);
+    expect(onSessionArchive).toHaveBeenCalledWith({ sessionId: 's1' });
     expect(result.sessionId).toBe('s1');
   });
 

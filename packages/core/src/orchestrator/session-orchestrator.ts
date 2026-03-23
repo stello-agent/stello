@@ -14,7 +14,7 @@ export interface OrchestratorEngine extends StelloEngine {
   /** 流式运行当前 session 的一轮对话 */
   stream(input: string, options?: TurnRunnerOptions): EngineStreamResult;
   /** 归档当前绑定 session */
-  archiveSession(): Promise<{ sessionId: string; schedule: unknown }>;
+  archiveSession(): Promise<{ sessionId: string }>;
   /** 从当前绑定 session 发起 fork */
   forkSession(options: Omit<CreateSessionOptions, 'parentId'>): Promise<SessionMeta>;
 }
@@ -166,7 +166,7 @@ export class SessionOrchestrator {
   }
 
   /** 归档指定 session */
-  async archiveSession(sessionId: string): Promise<{ sessionId: string; schedule: unknown }> {
+  async archiveSession(sessionId: string): Promise<{ sessionId: string }> {
     return this.runSerial(sessionId, async () => {
       await this.requireSession(sessionId);
       return this.withRuntime(sessionId, (engine) => engine.archiveSession());
