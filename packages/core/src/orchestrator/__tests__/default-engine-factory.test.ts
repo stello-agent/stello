@@ -22,12 +22,6 @@ describe('DefaultEngineFactory', () => {
         context: { core: {}, memories: [], currentMemory: null, scope: null },
         session: { id: 's1' },
       }),
-      assemble: vi.fn().mockResolvedValue({
-        core: {},
-        memories: [],
-        currentMemory: null,
-        scope: null,
-      }),
       afterTurn: vi.fn(),
       prepareChildSpawn: vi.fn(),
     },

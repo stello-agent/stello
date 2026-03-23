@@ -45,7 +45,7 @@ export interface TurnRecord {
 /**
  * 组装后的上下文
  *
- * bootstrap / assemble 的产物，包含按继承策略筛选的记忆。
+ * bootstrap 的产物，包含按继承策略筛选的记忆。
  */
 export interface AssembledContext {
   /** L1 核心档案 */

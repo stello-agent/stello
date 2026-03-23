@@ -50,12 +50,6 @@ describe('StelloAgent', () => {
             context: { core: {}, memories: [], currentMemory: null, scope: null },
             session: rootSession,
           }),
-          assemble: vi.fn().mockResolvedValue({
-            core: {},
-            memories: [],
-            currentMemory: null,
-            scope: null,
-          }),
           afterTurn: vi.fn(),
           prepareChildSpawn: vi.fn(),
         },
@@ -170,7 +164,6 @@ describe('StelloAgent', () => {
       capabilities: {
         lifecycle: {
           bootstrap: vi.fn(),
-          assemble: vi.fn(),
           afterTurn: vi.fn(),
           prepareChildSpawn,
         },
@@ -300,12 +293,6 @@ describe('StelloAgent', () => {
           bootstrap: vi.fn().mockResolvedValue({
             context: { core: {}, memories: [], currentMemory: null, scope: null },
             session: rootSession,
-          }),
-          assemble: vi.fn().mockResolvedValue({
-            core: {},
-            memories: [],
-            currentMemory: null,
-            scope: null,
           }),
           afterTurn: vi.fn(),
           prepareChildSpawn: vi.fn(),

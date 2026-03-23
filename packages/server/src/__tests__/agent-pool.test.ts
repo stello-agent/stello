@@ -22,7 +22,6 @@ function createPoolOptions(overrides?: Partial<AgentPoolOptions>): AgentPoolOpti
               metadata: {}, tags: [], createdAt: '', updatedAt: '', lastActiveAt: '',
             },
           }),
-          assemble: async () => ({ core: {}, memories: [], currentMemory: null, scope: null }),
           afterTurn: async () => ({ coreUpdated: false, memoryUpdated: false, recordAppended: false }),
           prepareChildSpawn: async (opts) => ({ ...opts, id: 'mock', parentId: null, children: [], refs: [], index: 0, scope: null, status: 'active' as const, depth: 0, turnCount: 0, metadata: {}, tags: [], createdAt: '', updatedAt: '', lastActiveAt: '' }),
         },

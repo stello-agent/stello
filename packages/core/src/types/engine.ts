@@ -3,7 +3,6 @@
 import type { SessionTree } from './session';
 import type {
   TurnRecord,
-  AssembledContext,
   MemoryEngine,
 } from './memory';
 import type {
@@ -85,8 +84,6 @@ export interface StelloEngine {
 
   /** 处理用户消息：意图识别 + 漂移检测 */
   ingest(message: TurnRecord): Promise<IngestResult>;
-  /** 组装 prompt 上下文：按 scope + 继承策略注入记忆 */
-  assemble(): Promise<AssembledContext>;
   /** 轮次结束处理：提取写 L1 + 提炼 L2 + 追加 L3 */
   afterTurn(userMsg: TurnRecord, assistantMsg: TurnRecord): Promise<AfterTurnResult>;
   /** 进入当前绑定 Session 的整轮对话 */

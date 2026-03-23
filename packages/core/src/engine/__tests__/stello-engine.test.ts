@@ -59,7 +59,6 @@ describe('StelloEngineImpl', () => {
       confirm,
       lifecycle: {
         bootstrap: vi.fn(),
-        assemble: vi.fn(),
         afterTurn: vi.fn(),
         prepareChildSpawn: vi.fn(),
       },
@@ -126,7 +125,6 @@ describe('StelloEngineImpl', () => {
       confirm,
       lifecycle: {
         bootstrap: vi.fn(),
-        assemble: vi.fn(),
         afterTurn: vi.fn(),
         prepareChildSpawn: vi.fn(),
       },
@@ -182,7 +180,6 @@ describe('StelloEngineImpl', () => {
       confirm,
       lifecycle: {
         bootstrap: vi.fn(),
-        assemble: vi.fn(),
         afterTurn: vi.fn(),
         prepareChildSpawn: vi.fn(),
       },
@@ -215,7 +212,6 @@ describe('StelloEngineImpl', () => {
         context: { core: {}, memories: [], currentMemory: null, scope: null },
         session: { id: 's1' },
       }),
-      assemble: vi.fn(),
       afterTurn: vi.fn(),
       prepareChildSpawn: vi.fn(),
     };
@@ -266,7 +262,6 @@ describe('StelloEngineImpl', () => {
       confirm,
       lifecycle: {
         bootstrap: vi.fn(),
-        assemble: vi.fn(),
         afterTurn: vi.fn(),
         prepareChildSpawn: vi.fn(),
       },
@@ -302,7 +297,6 @@ describe('StelloEngineImpl', () => {
       confirm,
       lifecycle: {
         bootstrap: vi.fn(),
-        assemble: vi.fn(),
         afterTurn: vi.fn(),
         prepareChildSpawn: vi.fn(),
       },
@@ -345,7 +339,6 @@ describe('StelloEngineImpl', () => {
       confirm,
       lifecycle: {
         bootstrap: vi.fn(),
-        assemble: vi.fn(),
         afterTurn: vi.fn(),
         prepareChildSpawn,
       },
@@ -392,7 +385,6 @@ describe('StelloEngineImpl', () => {
       confirm,
       lifecycle: {
         bootstrap: vi.fn(),
-        assemble: vi.fn(),
         afterTurn: vi.fn(),
         prepareChildSpawn,
       },

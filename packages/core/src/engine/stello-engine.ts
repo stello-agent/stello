@@ -1,5 +1,5 @@
 import type { SessionTree } from '../types/session';
-import type { MemoryEngine, TurnRecord, AssembledContext } from '../types/memory';
+import type { MemoryEngine, TurnRecord } from '../types/memory';
 import type {
   BootstrapResult,
   IngestResult,
@@ -41,8 +41,6 @@ export interface EngineRuntimeSession extends SchedulerSession {
 export interface EngineLifecycleAdapter {
   /** 进入 session 时做 bootstrap */
   bootstrap(sessionId: string): Promise<BootstrapResult>;
-  /** 读取当前 Session 的上下文 */
-  assemble(sessionId: string): Promise<AssembledContext>;
   /** 兼容旧的 afterTurn 流程 */
   afterTurn(sessionId: string, userMsg: TurnRecord, assistantMsg: TurnRecord): Promise<AfterTurnResult>;
   /** fork 子 Session */
@@ -252,11 +250,6 @@ export class StelloEngineImpl implements StelloEngine {
   async ingest(message: TurnRecord): Promise<IngestResult> {
     const skill = this.skills.match(message);
     return { matchedSkill: skill?.name ?? null };
-  }
-
-  /** 组装当前 session 上下文 */
-  async assemble(): Promise<AssembledContext> {
-    return this.lifecycle.assemble(this.session.id);
   }
 
   /** 兼容旧的 afterTurn 流程 */
