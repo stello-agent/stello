@@ -130,8 +130,6 @@ export type {
 export { StelloAgent, createStelloAgent } from './agent/stello-agent';
 export type {
   StelloAgentConfig,
-  StelloAgentCreateConfig,
-  StelloAgentLegacyConfig,
   StelloAgentSessionConfig,
   StelloAgentCapabilitiesConfig,
   StelloAgentRuntimeConfig,

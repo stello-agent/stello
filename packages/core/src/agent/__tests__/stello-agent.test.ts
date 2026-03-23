@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { SessionTree } from '../../types/session';
 import type { MemoryEngine } from '../../types/memory';
 import type { ConfirmProtocol, SkillRouter } from '../../types/lifecycle';
-import { createStelloAgent } from '../stello-agent';
+import { createStelloAgent, type StelloAgentConfig } from '../stello-agent';
 
 describe('StelloAgent', () => {
   const rootSession = {
@@ -23,6 +23,63 @@ describe('StelloAgent', () => {
     lastActiveAt: '2026-01-01T00:00:00Z',
   };
 
+  /** 构建基础 config，减少测试中的重复 */
+  function baseConfig(overrides?: {
+    sessions?: Partial<SessionTree>;
+    runtimeSession?: Record<string, unknown>;
+    recyclePolicy?: { idleTtlMs: number };
+    orchestration?: StelloAgentConfig['orchestration'];
+  }): StelloAgentConfig {
+    const runtimeSession = overrides?.runtimeSession ?? {
+      id: 'root',
+      meta: { id: 'root', turnCount: 0, status: 'active' as const },
+      turnCount: 0,
+      send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
+      consolidate: vi.fn(),
+    };
+    return {
+      sessions: {
+        get: vi.fn().mockResolvedValue(rootSession),
+        archive: vi.fn(),
+        ...overrides?.sessions,
+      } as unknown as SessionTree,
+      memory: {} as MemoryEngine,
+      capabilities: {
+        lifecycle: {
+          bootstrap: vi.fn().mockResolvedValue({
+            context: { core: {}, memories: [], currentMemory: null, scope: null },
+            session: rootSession,
+          }),
+          assemble: vi.fn().mockResolvedValue({
+            core: {},
+            memories: [],
+            currentMemory: null,
+            scope: null,
+          }),
+          afterTurn: vi.fn(),
+          prepareChildSpawn: vi.fn(),
+        },
+        tools: {
+          getToolDefinitions: vi.fn().mockReturnValue([]),
+          executeTool: vi.fn(),
+        },
+        skills: {
+          match: vi.fn().mockReturnValue(null),
+          register: vi.fn(),
+          getAll: vi.fn().mockReturnValue([]),
+        } as unknown as SkillRouter,
+        confirm: {} as ConfirmProtocol,
+      },
+      runtime: {
+        resolver: {
+          resolve: vi.fn().mockResolvedValue(runtimeSession),
+        },
+        recyclePolicy: overrides?.recyclePolicy,
+      },
+      orchestration: overrides?.orchestration,
+    };
+  }
+
   it('可以根据配置完成初始化，并通过顶层对象运行 session turn', async () => {
     const runtimeSession = {
       id: 'root',
@@ -32,41 +89,7 @@ describe('StelloAgent', () => {
       consolidate: vi.fn(),
     };
 
-    const agent = createStelloAgent({
-      sessions: {
-        get: vi.fn().mockResolvedValue(rootSession),
-        archive: vi.fn(),
-      } as unknown as SessionTree,
-      memory: {} as MemoryEngine,
-      skills: {
-        match: vi.fn().mockReturnValue(null),
-        register: vi.fn(),
-        getAll: vi.fn().mockReturnValue([]),
-      } as unknown as SkillRouter,
-      confirm: {} as ConfirmProtocol,
-      lifecycle: {
-        bootstrap: vi.fn().mockResolvedValue({
-          context: { core: {}, memories: [], currentMemory: null, scope: null },
-          session: rootSession,
-        }),
-        assemble: vi.fn().mockResolvedValue({
-          core: {},
-          memories: [],
-          currentMemory: null,
-          scope: null,
-        }),
-        afterTurn: vi.fn(),
-        prepareChildSpawn: vi.fn(),
-      },
-      tools: {
-        getToolDefinitions: vi.fn().mockReturnValue([]),
-        executeTool: vi.fn(),
-      },
-      sessionRuntimeResolver: {
-        resolve: vi.fn().mockResolvedValue(runtimeSession),
-      },
-    });
-
+    const agent = createStelloAgent(baseConfig({ runtimeSession }));
     const result = await agent.turn('root', 'hello');
 
     expect(agent.sessions).toBeDefined();
@@ -90,40 +113,7 @@ describe('StelloAgent', () => {
       consolidate: vi.fn(),
     };
 
-    const agent = createStelloAgent({
-      sessions: {
-        get: vi.fn().mockResolvedValue(rootSession),
-        archive: vi.fn(),
-      } as unknown as SessionTree,
-      memory: {} as MemoryEngine,
-      skills: {
-        match: vi.fn().mockReturnValue(null),
-        register: vi.fn(),
-        getAll: vi.fn().mockReturnValue([]),
-      } as unknown as SkillRouter,
-      confirm: {} as ConfirmProtocol,
-      lifecycle: {
-        bootstrap: vi.fn().mockResolvedValue({
-          context: { core: {}, memories: [], currentMemory: null, scope: null },
-          session: rootSession,
-        }),
-        assemble: vi.fn().mockResolvedValue({
-          core: {},
-          memories: [],
-          currentMemory: null,
-          scope: null,
-        }),
-        afterTurn: vi.fn(),
-        prepareChildSpawn: vi.fn(),
-      },
-      tools: {
-        getToolDefinitions: vi.fn().mockReturnValue([]),
-        executeTool: vi.fn(),
-      },
-      sessionRuntimeResolver: {
-        resolve: vi.fn().mockResolvedValue(runtimeSession),
-      },
-    });
+    const agent = createStelloAgent(baseConfig({ runtimeSession }));
 
     const stream = await agent.stream('root', 'hello')
     const chunks: string[] = []
@@ -177,41 +167,39 @@ describe('StelloAgent', () => {
         archive: vi.fn(),
       } as unknown as SessionTree,
       memory: {} as MemoryEngine,
-      skills: {
-        match: vi.fn().mockReturnValue(null),
-        register: vi.fn(),
-        getAll: vi.fn().mockReturnValue([]),
-      } as unknown as SkillRouter,
-      confirm: {} as ConfirmProtocol,
-      lifecycle: {
-        bootstrap: vi.fn().mockResolvedValue({
-          context: { core: {}, memories: [], currentMemory: null, scope: null },
-          session: rootSession,
-        }),
-        assemble: vi.fn().mockResolvedValue({
-          core: {},
-          memories: [],
-          currentMemory: null,
-          scope: null,
-        }),
-        afterTurn: vi.fn(),
-        prepareChildSpawn,
+      capabilities: {
+        lifecycle: {
+          bootstrap: vi.fn(),
+          assemble: vi.fn(),
+          afterTurn: vi.fn(),
+          prepareChildSpawn,
+        },
+        tools: {
+          getToolDefinitions: vi.fn().mockReturnValue([]),
+          executeTool: vi.fn(),
+        },
+        skills: {
+          match: vi.fn().mockReturnValue(null),
+          register: vi.fn(),
+          getAll: vi.fn().mockReturnValue([]),
+        } as unknown as SkillRouter,
+        confirm: {} as ConfirmProtocol,
       },
-      tools: {
-        getToolDefinitions: vi.fn().mockReturnValue([]),
-        executeTool: vi.fn(),
+      runtime: {
+        resolver: {
+          resolve: vi.fn().mockImplementation(async (id: string) => {
+            if (id === 'root') return rootRuntime;
+            if (id === 'child-1') return childRuntime;
+            throw new Error(`unexpected session: ${id}`);
+          }),
+        },
       },
-      sessionRuntimeResolver: {
-        resolve: vi.fn().mockImplementation(async (id: string) => {
-          if (id === 'root') return rootRuntime;
-          if (id === 'child-1') return childRuntime;
-          throw new Error(`unexpected session: ${id}`);
-        }),
+      orchestration: {
+        splitGuard: {
+          checkCanSplit: vi.fn().mockResolvedValue({ canSplit: true }),
+          recordSplit: vi.fn(),
+        } as never,
       },
-      splitGuard: {
-        checkCanSplit: vi.fn().mockResolvedValue({ canSplit: true }),
-        recordSplit: vi.fn(),
-      } as never,
     });
 
     const result = await agent.forkSession('child-1', { label: 'UI 2', scope: 'ui' });
@@ -225,48 +213,7 @@ describe('StelloAgent', () => {
   });
 
   it('可以显式 attach/detach session engine，并复用同一运行时', async () => {
-    const runtimeSession = {
-      id: 'root',
-      meta: { id: 'root', turnCount: 0, status: 'active' as const },
-      turnCount: 0,
-      send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
-      consolidate: vi.fn(),
-    };
-
-    const agent = createStelloAgent({
-      sessions: {
-        get: vi.fn().mockResolvedValue(rootSession),
-        archive: vi.fn(),
-      } as unknown as SessionTree,
-      memory: {} as MemoryEngine,
-      skills: {
-        match: vi.fn().mockReturnValue(null),
-        register: vi.fn(),
-        getAll: vi.fn().mockReturnValue([]),
-      } as unknown as SkillRouter,
-      confirm: {} as ConfirmProtocol,
-      lifecycle: {
-        bootstrap: vi.fn().mockResolvedValue({
-          context: { core: {}, memories: [], currentMemory: null, scope: null },
-          session: rootSession,
-        }),
-        assemble: vi.fn().mockResolvedValue({
-          core: {},
-          memories: [],
-          currentMemory: null,
-          scope: null,
-        }),
-        afterTurn: vi.fn(),
-        prepareChildSpawn: vi.fn(),
-      },
-      tools: {
-        getToolDefinitions: vi.fn().mockReturnValue([]),
-        executeTool: vi.fn(),
-      },
-      sessionRuntimeResolver: {
-        resolve: vi.fn().mockResolvedValue(runtimeSession),
-      },
-    });
+    const agent = createStelloAgent(baseConfig());
 
     await agent.attachSession('root', 'ws-1');
     expect(agent.hasActiveEngine('root')).toBe(true);
@@ -283,51 +230,10 @@ describe('StelloAgent', () => {
 
   it('支持通过配置启用 idleTtlMs 延迟回收', async () => {
     vi.useFakeTimers();
-    const runtimeSession = {
-      id: 'root',
-      meta: { id: 'root', turnCount: 0, status: 'active' as const },
-      turnCount: 0,
-      send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
-      consolidate: vi.fn(),
-    };
 
-    const agent = createStelloAgent({
-      sessions: {
-        get: vi.fn().mockResolvedValue(rootSession),
-        archive: vi.fn(),
-      } as unknown as SessionTree,
-      memory: {} as MemoryEngine,
-      skills: {
-        match: vi.fn().mockReturnValue(null),
-        register: vi.fn(),
-        getAll: vi.fn().mockReturnValue([]),
-      } as unknown as SkillRouter,
-      confirm: {} as ConfirmProtocol,
-      lifecycle: {
-        bootstrap: vi.fn().mockResolvedValue({
-          context: { core: {}, memories: [], currentMemory: null, scope: null },
-          session: rootSession,
-        }),
-        assemble: vi.fn().mockResolvedValue({
-          core: {},
-          memories: [],
-          currentMemory: null,
-          scope: null,
-        }),
-        afterTurn: vi.fn(),
-        prepareChildSpawn: vi.fn(),
-      },
-      tools: {
-        getToolDefinitions: vi.fn().mockReturnValue([]),
-        executeTool: vi.fn(),
-      },
-      sessionRuntimeResolver: {
-        resolve: vi.fn().mockResolvedValue(runtimeSession),
-      },
-      runtimeRecyclePolicy: {
-        idleTtlMs: 1_000,
-      },
-    });
+    const agent = createStelloAgent(baseConfig({
+      recyclePolicy: { idleTtlMs: 1_000 },
+    }));
 
     await agent.attachSession('root', 'ws-1');
     await agent.detachSession('root', 'ws-1');
@@ -340,115 +246,13 @@ describe('StelloAgent', () => {
     vi.useRealTimers();
   });
 
-  it('支持新的分组式 StelloAgentConfig', async () => {
-    const runtimeSession = {
-      id: 'root',
-      meta: { id: 'root', turnCount: 0, status: 'active' as const },
-      turnCount: 0,
-      send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
-      consolidate: vi.fn(),
-    };
-
-    const agent = createStelloAgent({
-      sessions: {
-        get: vi.fn().mockResolvedValue(rootSession),
-        archive: vi.fn(),
-      } as unknown as SessionTree,
-      memory: {} as MemoryEngine,
-      capabilities: {
-        lifecycle: {
-          bootstrap: vi.fn().mockResolvedValue({
-            context: { core: {}, memories: [], currentMemory: null, scope: null },
-            session: rootSession,
-          }),
-          assemble: vi.fn().mockResolvedValue({
-            core: {},
-            memories: [],
-            currentMemory: null,
-            scope: null,
-          }),
-          afterTurn: vi.fn(),
-          prepareChildSpawn: vi.fn(),
-        },
-        tools: {
-          getToolDefinitions: vi.fn().mockReturnValue([]),
-          executeTool: vi.fn(),
-        },
-        skills: {
-          match: vi.fn().mockReturnValue(null),
-          register: vi.fn(),
-          getAll: vi.fn().mockReturnValue([]),
-        } as unknown as SkillRouter,
-        confirm: {} as ConfirmProtocol,
-      },
-      runtime: {
-        resolver: {
-          resolve: vi.fn().mockResolvedValue(runtimeSession),
-        },
-        recyclePolicy: {
-          idleTtlMs: 1_000,
-        },
-      },
-      orchestration: {
-        strategy: undefined,
-      },
-    });
-
-    await agent.attachSession('root', 'ws-1');
-    expect(agent.hasActiveEngine('root')).toBe(true);
-    expect(agent.getEngineRefCount('root')).toBe(1);
-  });
-
   it('会保留 session 预留配置接入点', async () => {
-    const runtimeSession = {
-      id: 'root',
-      meta: { id: 'root', turnCount: 0, status: 'active' as const },
-      turnCount: 0,
-      send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
-      consolidate: vi.fn(),
-    };
-
     const agent = createStelloAgent({
-      sessions: {
-        get: vi.fn().mockResolvedValue(rootSession),
-        archive: vi.fn(),
-      } as unknown as SessionTree,
-      memory: {} as MemoryEngine,
+      ...baseConfig(),
       session: {
         options: {
           provider: 'session-team',
           mode: 'preview',
-        },
-      },
-      capabilities: {
-        lifecycle: {
-          bootstrap: vi.fn().mockResolvedValue({
-            context: { core: {}, memories: [], currentMemory: null, scope: null },
-            session: rootSession,
-          }),
-          assemble: vi.fn().mockResolvedValue({
-            core: {},
-            memories: [],
-            currentMemory: null,
-            scope: null,
-          }),
-          afterTurn: vi.fn(),
-          prepareChildSpawn: vi.fn(),
-        },
-        tools: {
-          getToolDefinitions: vi.fn().mockReturnValue([]),
-          executeTool: vi.fn(),
-        },
-        skills: {
-          match: vi.fn().mockReturnValue(null),
-          register: vi.fn(),
-          getAll: vi.fn().mockReturnValue([]),
-        } as unknown as SkillRouter,
-        confirm: {} as ConfirmProtocol,
-      },
-      runtime: {
-        resolver: {
-          resolve: vi.fn().mockResolvedValue(runtimeSession),
         },
       },
     });

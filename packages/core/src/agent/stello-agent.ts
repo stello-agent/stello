@@ -6,7 +6,6 @@ import type { EngineTurnResult } from '../engine/stello-engine';
 import type { EngineStreamResult } from '../engine/stello-engine';
 import {
   DefaultEngineFactory,
-  type DefaultEngineFactoryOptions,
   type EngineHookProvider,
   type SessionRuntimeResolver,
 } from '../orchestrator/default-engine-factory';
@@ -19,7 +18,6 @@ import {
 import {
   MainSessionFlatStrategy,
   SessionOrchestrator,
-  type EngineFactory,
   type OrchestrationStrategy,
 } from '../orchestrator/session-orchestrator';
 import {
@@ -104,65 +102,6 @@ export interface StelloAgentConfig {
   orchestration?: StelloAgentOrchestrationConfig;
 }
 
-/**
- * 兼容旧版扁平配置。
- *
- * 暂时保留：
- * - 避免当前 smoke / test / demo 大量改动
- * - 先让新 config 形状稳定下来
- */
-export interface StelloAgentLegacyConfig extends DefaultEngineFactoryOptions {
-  strategy?: OrchestrationStrategy;
-  runtimeRecyclePolicy?: RuntimeRecyclePolicy;
-}
-
-export type StelloAgentCreateConfig = StelloAgentConfig | StelloAgentLegacyConfig;
-
-function isGroupedConfig(config: StelloAgentCreateConfig): config is StelloAgentConfig {
-  return 'capabilities' in config;
-}
-
-function normalizeConfig(config: StelloAgentCreateConfig): StelloAgentConfig {
-  if (isGroupedConfig(config)) {
-    return {
-      sessions: config.sessions,
-      memory: config.memory,
-      session: config.session,
-      capabilities: config.capabilities,
-      runtime: config.runtime
-        ? {
-            resolver: config.runtime.resolver,
-            recyclePolicy: config.runtime.recyclePolicy,
-          }
-        : undefined,
-      orchestration: config.orchestration,
-    };
-  }
-
-  return {
-    sessions: config.sessions,
-    memory: config.memory,
-    session: undefined,
-    capabilities: {
-      lifecycle: config.lifecycle,
-      tools: config.tools,
-      skills: config.skills,
-      confirm: config.confirm,
-    },
-    runtime: {
-      resolver: config.sessionRuntimeResolver,
-      recyclePolicy: config.runtimeRecyclePolicy,
-    },
-    orchestration: {
-      strategy: config.strategy,
-      splitGuard: config.splitGuard,
-      mainSession: config.mainSession,
-      turnRunner: config.turnRunner,
-      scheduler: config.scheduler,
-      hooks: config.hooks,
-    },
-  };
-}
 
 function resolveRuntimeResolver(config: StelloAgentConfig): SessionRuntimeResolver {
   if (config.runtime?.resolver) {
@@ -234,23 +173,16 @@ export class StelloAgent {
   /** 归一化后的顶层配置 */
   readonly config: StelloAgentConfig;
 
-  /** 当前使用的多 Session 协调器 */
-  readonly orchestrator: SessionOrchestrator;
-
-  /** 当前使用的 Engine 装配器 */
-  readonly engineFactory: EngineFactory;
-
-  /** 当前使用的 engine 运行时管理器 */
-  readonly runtimeManager: EngineRuntimeManager;
-
   /** 暴露 SessionTree，方便调用方做拓扑查询 */
   readonly sessions: StelloAgentConfig['sessions'];
 
-  constructor(inputConfig: StelloAgentCreateConfig) {
-    const config = normalizeConfig(inputConfig);
+  private readonly orchestrator: SessionOrchestrator;
+  private readonly runtimeManager: EngineRuntimeManager;
+
+  constructor(config: StelloAgentConfig) {
     this.config = config;
     this.sessions = config.sessions;
-    this.engineFactory = new DefaultEngineFactory({
+    const engineFactory = new DefaultEngineFactory({
       sessions: config.sessions,
       memory: config.memory,
       lifecycle: config.capabilities.lifecycle,
@@ -265,7 +197,7 @@ export class StelloAgent {
       hooks: config.orchestration?.hooks,
     });
     this.runtimeManager = new DefaultEngineRuntimeManager(
-      this.engineFactory,
+      engineFactory,
       config.runtime?.recyclePolicy,
     );
     this.orchestrator = new SessionOrchestrator(
@@ -341,15 +273,9 @@ export class StelloAgent {
     return this.runtimeManager.getRefCount(sessionId);
   }
 
-  /** 按需拿到底层单-session engine，供高级用法扩展 */
-  createEngine(sessionId: string) {
-    return this.engineFactory.create(sessionId);
-  }
 }
 
 /** create 函数风格的便捷入口 */
-export function createStelloAgent(config: StelloAgentConfig): StelloAgent;
-export function createStelloAgent(config: StelloAgentLegacyConfig): StelloAgent;
-export function createStelloAgent(config: StelloAgentCreateConfig): StelloAgent {
+export function createStelloAgent(config: StelloAgentConfig): StelloAgent {
   return new StelloAgent(config);
 }

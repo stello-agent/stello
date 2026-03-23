@@ -136,13 +136,17 @@ StelloAgent
 
 ## 推荐继续阅读
 
-如果需要更细设计，按这个顺序：
+Skills（架构设计）：
+- **orchestrator-usage** — Orchestrator 层定位、公开 API、配置
+- **engine-design** — Engine 职责和设计决策
+- **scheduler-design** — Scheduler 调度策略
+- **session-usage** — Session 原语层
+- **server-design** — Server 层设计
 
-1. `docs/stello-usage.md`
-2. `docs/stello-agent-api.md`
-3. `docs/config-design.md`
-4. `docs/orchestrator-usage.md`
-5. `docs/sdk-final-vision.md`
+文档（使用指南）：
+- `docs/stello-usage.md`
+- `docs/stello-agent-api.md`
+- `docs/config-design.md`
 
 ---
 
