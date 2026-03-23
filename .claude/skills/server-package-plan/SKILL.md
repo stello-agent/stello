@@ -1,133 +1,105 @@
 ---
 name: server-package-plan
-description: `@stello-ai/server` 的包设计约束：如何承接 core 对象、如何暴露 REST/WS、以及 server 不该做什么。
+description: "@stello-ai/server 的包结构、职责边界、依赖关系。Server 只做服务化适配，不重写编排逻辑。"
 ---
 
-# `@stello-ai/server` 设计约束
+# `@stello-ai/server` 包设计
+
+> 状态：**Phase 1-3 已实现，Phase 4-5 进行中**（2026-03-24）
+
+---
 
 ## 定位
 
-`@stello-ai/server` 应该作为独立包存在，用来把 `@stello-ai/core` 的能力服务化。
-
-它不是新的编排核心，而是：
-
-- transport adapter
-- service adapter
-- connection manager
-
-一句话：
+`@stello-ai/server` 把 `@stello-ai/core` 的能力服务化。
 
 **server 负责协议与连接，core 负责语义与编排。**
 
 ---
 
-## server 应该承接什么
+## 包结构（已实现 + 进行中）
 
-推荐承接：
-
-- `StelloAgent`
-- 或由 `StelloAgent` 包装起来的高层 runtime 对象
-
-或者后续更高层的 runtime 对象。
-
-但重点不在名字，而在职责：
-
-- 按 `sessionId` 找到对应 Session / Engine
-- 调用 agent / orchestrator
-- 对外暴露 REST / WS
-
----
-
-## server 不应该做什么
-
-绝对不要在 `server` 里：
-
-- 重写 `Engine`
-- 重写 tool loop
-- 重写 topology 规则
-- 重写 Session 语义
-- 自己偷偷加第二套编排逻辑
-
-否则 `core` 和 `server` 会出现双重语义源。
-
----
-
-## 推荐接口映射
-
-REST：
-
-- `POST /sessions/:id/enter`
-- `POST /sessions/:id/leave`
-- `POST /sessions/:id/messages`
-- `POST /sessions/:id/fork`
-- `POST /sessions/:id/archive`
-- `GET /sessions/:id`
-- `GET /topology`
-
-WebSocket：
-
-- 客户端事件：
-  - `session.enter`
-  - `session.leave`
-  - `session.message`
-  - `session.fork`
-- 服务端事件：
-  - `session.entered`
-  - `session.left`
-  - `message.completed`
-  - `tool.called`
-  - `tool.result`
-  - `session.forked`
-  - `error`
-
-推荐的 WS 生命周期映射：
-
-- `session.enter` -> `agent.attachSession(sessionId, connectionId)` + `agent.enterSession(sessionId)`
-- `session.message` -> `agent.turn(sessionId, input)`
-- `session.leave` -> `agent.leaveSession(sessionId)` + `agent.detachSession(sessionId, connectionId)`
-- `socket.close` -> 至少执行 `agent.detachSession(sessionId, connectionId)`
+```
+packages/server/
+  package.json
+  tsconfig.json
+  tsup.config.ts
+  vitest.config.ts                  -- fileParallelism: false
+  docker-compose.yml                -- PG 16-alpine 测试用
+  src/
+    index.ts                        -- 公开导出
+    types.ts                        -- Space, SpaceConfig, ServerOptions, WS 消息类型
+    db/
+      pool.ts                       -- pg.Pool 工厂
+      migrate.ts                    -- SQL 迁移执行器
+      migrations/
+        001_init.sql                -- 7 张表
+    storage/                        -- ✅ 已实现
+      pg-session-storage.ts         -- SessionStorage 实现
+      pg-main-storage.ts            -- MainStorage 实现（extends above）
+      pg-session-tree.ts            -- SessionTree 实现
+      pg-memory-engine.ts           -- MemoryEngine 实现
+    space/                          -- ✅ 已实现
+      space-manager.ts              -- Space CRUD + root session 自动创建
+      agent-pool.ts                 -- 懒 StelloAgent 缓存 + TTL 驱逐
+    http/                           -- 🔨 Phase 4
+      app.ts                        -- createApp() Hono 工厂
+      middleware/
+        auth.ts                     -- X-API-Key 认证中间件
+      routes/
+        spaces.ts                   -- Space CRUD 路由
+        sessions.ts                 -- Session 查询 + agent 操作路由
+    ws/                             -- 🔨 Phase 5
+      gateway.ts                    -- WS 升级 + 消息分发
+      connection-manager.ts         -- connectionId ↔ sessionId 映射
+    create-server.ts                -- 🔨 createStelloServer() 入口
+  __tests__/
+    helpers.ts                      -- 测试工具（pool, setupDB, cleanDB, createUser/Space）
+    pg-session-storage.test.ts      -- ✅ 12 tests
+    pg-main-storage.test.ts         -- ✅ 8 tests
+    pg-session-tree.test.ts         -- ✅ 20 tests
+    pg-memory-engine.test.ts        -- ✅ 9 tests
+    space-manager.test.ts           -- ✅ 7 tests
+    agent-pool.test.ts              -- ✅ 5 tests + 3 idle
+    rest-spaces.test.ts             -- 🔨 Phase 4
+    rest-sessions.test.ts           -- 🔨 Phase 4
+    ws-gateway.test.ts              -- 🔨 Phase 5
+```
 
 ---
 
-## 连接态原则
+## 依赖
 
-连接态应留在 `server`，不要塞回 `core`。
-
-推荐映射：
-
-- `connectionId -> sessionId`
-
-断线时：
-
-- 由 `server` 决定是否调用 `agent.leaveSession(sessionId)`
-- 但必须调用 `agent.detachSession(sessionId, connectionId)`
-
-运行时回收策略应直接复用 `core` 的 `runtimeRecyclePolicy`，不要在 server 里再发明一套。
-
----
-
-## 与 SDK 的关系
-
-SDK 只封装 `server` API。
-
-不要让 SDK：
-
-- 直接 import `core`
-- 自己装配 Engine
-- 本地重跑编排逻辑
-
-SDK 只负责：
-
-- HTTP client
-- WebSocket client
-- 协议薄封装
+```json
+{
+  "dependencies": {
+    "@stello-ai/core": "workspace:^",
+    "@stello-ai/session": "workspace:^",
+    "pg": "^8.13.0",
+    "hono": "^4.7.0",
+    "@hono/node-server": "^1.13.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.0",
+    "@types/ws": "^8.5.0"
+  }
+}
+```
 
 ---
 
-## 当前建议
+## Server 不该做的事
 
-如果后续任务涉及 server 设计，应坚持下面三条：
+- 不重写 Engine / tool loop / topology 规则 / Session 语义
+- 不自己发明第二套编排逻辑
+- 连接态留在 server，不塞回 core
+- 运行时回收复用 core 的 `runtimeRecyclePolicy`
 
-1. `core` 先稳定语义
-2. `server` 只做服务化适配
-3. `SDK` 最后做薄封装
+---
+
+## 与上下游的关系
+
+- **Core** 先稳定语义 → **Server** 做服务化适配 → **SDK** 最后做薄封装
+- Server 通过 `StelloAgent` 的公开 API 操作（turn/stream/enterSession/attachSession 等）
+- Server 通过 `AgentPool.getAgent(spaceId)` 获取 per-space 的 StelloAgent

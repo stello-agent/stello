@@ -12,5 +12,11 @@ export { migrate } from './db/migrate.js'
 export { SpaceManager } from './space/space-manager.js'
 export { AgentPool, type AgentPoolOptions } from './space/agent-pool.js'
 
+// Server
+export { createStelloServer } from './create-server.js'
+
+// WebSocket
+export { ConnectionManager, type ConnectionState } from './ws/connection-manager.js'
+
 // Types
-export type { Space, SpaceConfig } from './types.js'
+export type { Space, SpaceConfig, StelloServerOptions, StelloServer } from './types.js'

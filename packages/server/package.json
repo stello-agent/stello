@@ -46,13 +46,17 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.11",
     "@stello-ai/core": "workspace:^",
     "@stello-ai/session": "workspace:^",
-    "pg": "^8.13.0"
+    "hono": "^4.12.9",
+    "pg": "^8.13.0",
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/pg": "^8.11.0",
+    "@types/ws": "^8.18.1",
     "tsup": "^8.4.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

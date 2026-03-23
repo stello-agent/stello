@@ -1,187 +1,133 @@
 ---
 name: server-design
-description: Server 层设计：WS 连接管理、Engine 创建销毁、HTTP API 路由。Engine 细节见 engine-design，Scheduler 细节见 scheduler-design。
+description: Server 层设计：传输层架构（REST/Hono + WS）、StelloAgent 映射、连接态管理。存储层见 server-storage，Engine 细节见 engine-design。
 ---
 
 # Server 层（Service Layer）技术设计
 
-> Server 是最外层服务壳，负责 WS/HTTP 连接管理、Engine 生命周期、以及内嵌 Scheduler。
+> 状态：**Phase 1-3 已实现**（存储 + Space 管理 + Agent 池），**Phase 4-5 实现中**（传输层）
 >
-> 相关 skill：**engine-design**（Engine 内部职责）、**scheduler-design**（跨 Session 协调）
->
-> 状态：**设计草案**（2026-03-22）
+> 相关 skill：**server-storage**（PG 持久化）、**engine-design**（Engine 内部）、**orchestrator-usage**（StelloAgent API）
 
 ---
 
-## 1. 四层执行模型
+## 1. 架构总览
 
 ```
-Session    = 一次 LLM 调用（原子操作）
-Engine     = 一个 Session 的多轮对话生命周期（per-session-round）→ 见 engine-design
-Scheduler  = 跨 Session 协调（per-space）→ 见 scheduler-design
-Server     = WS/HTTP 服务层，管理连接和路由
+┌─────────────────────────────────────────────────┐
+│  Transport Layer（Phase 4-5）                    │
+│  Hono REST + ws WebSocket                       │
+├─────────────────────────────────────────────────┤
+│  Space 管理层（Phase 3，已实现）                  │
+│  SpaceManager · AgentPool                       │
+├─────────────────────────────────────────────────┤
+│  PG Storage Layer（Phase 2，已实现）              │
+│  PgSessionStorage · PgMainStorage               │
+│  PgSessionTree · PgMemoryEngine                 │
+├─────────────────────────────────────────────────┤
+│  Core（@stello-ai/core）                         │
+│  StelloAgent → SessionOrchestrator → Engine     │
+└─────────────────────────────────────────────────┘
 ```
 
-### 职责分界
-
-| 职责 | Session | Engine | Factory | Scheduler | Server |
-|------|---------|--------|---------|-----------|--------|
-| 单次 LLM 调用 | send() | — | — | — | — |
-| Tool call 循环 | — | turn() | — | — | — |
-| 调度闭包注入 | — | — | 构建+注入 | — | — |
-| 调度时机判断 | — | — | — | 判断 | — |
-| Session 切换检测 | — | — | — | — | 检测 |
-| WS 连接管理 | — | — | — | — | 管理 |
-| Engine 创建/销毁 | — | — | 创建 | — | 管理生命周期 |
-| HTTP 路由 | — | — | — | — | 处理 |
+核心约束：**一个 space = 一个 StelloAgent = 一棵 session 树**。
 
 ---
 
-## 2. Engine 生命周期
+## 2. REST API（Hono）
 
-Engine 是**有状态的、动态的**，与 WS 连接绑定。
+认证：`X-API-Key` header → users 表 → userId
 
-```
-用户打开 Session 页面
-  → WS connect
-  → Server 创建 Engine(sessionId)
-  → Engine 从 storage 加载 session 上下文（L3, insights, system prompt）
-  → 缓存在内存中
-  │
-  ├─ user msg → engine.turn(msg)
-  │               ├─ session.send(msg) → LLM
-  │               ├─ tool call? → execute → session.send(result)
-  │               └─ 返回响应（WS 流式推送）
-  ├─ user msg → engine.turn(msg)  ← 使用缓存，不重新加载
-  ├─ ...
-  │
-  ├─ Server 推送 insight → engine.receiveInsight(insight)
-  │
-  用户关闭页面 / 切换 Session
-  → WS close
-  → Engine emit 'leave' 事件
-  → Server 收到事件 → 触发 consolidation → 销毁 Engine
-```
+### Space 路由
 
-### 内存开销
+| 路由 | StelloAgent 映射 |
+|------|-----------------|
+| `POST /spaces` | SpaceManager.createSpace |
+| `GET /spaces` | SpaceManager.listSpaces |
+| `GET /spaces/:spaceId` | SpaceManager.getSpace + 所有权校验 |
+| `PATCH /spaces/:spaceId` | SpaceManager.updateSpace |
+| `DELETE /spaces/:spaceId` | SpaceManager.deleteSpace + AgentPool.evict |
 
-| 阶段 | 内存 | 持续时间 |
-|------|------|---------|
-| 空闲（用户阅读中） | ~10-50 KB（WS fd + session 引用） | 秒～分钟 |
-| turn() 执行中 | + L3 历史 + prompt + LLM 缓冲 | 几秒 |
-| turn() 结束后 | 可保留缓存或释放，回到空闲 | — |
+### Session 路由
 
-10,000 并发用户 ≈ 100-500 MB，可忽略。瓶颈在 LLM 调用，不在 Engine 内存。
-
-### 空闲超时
-
-设合理超时（如 30 分钟），主动关闭僵尸 Engine，避免连接积累。
+| 路由 | StelloAgent 映射 |
+|------|-----------------|
+| `GET /spaces/:spaceId/sessions` | PgSessionTree.listAll() |
+| `GET /spaces/:spaceId/sessions/:id` | PgSessionTree.get(id) |
+| `POST /spaces/:spaceId/sessions/:id/fork` | agent.forkSession(id, body) |
+| `POST /spaces/:spaceId/sessions/:id/archive` | agent.archiveSession(id) |
+| `GET /spaces/:spaceId/sessions/:id/messages` | PgMemoryEngine.readRecords(id) |
+| `POST /spaces/:spaceId/sessions/:id/turn` | agent.turn(id, body.input) |
 
 ---
 
-## 3. WebSocket 连接模型
+## 3. WebSocket 协议
 
-### 为什么用 WS 而不是纯 REST + SSE
+URL: `ws://host/spaces/:spaceId/ws`
+认证: `X-API-Key` header（升级请求时验证，不用 query param）
+库: `ws`（Node.js 标准库，`noServer: true` 共享 HTTP server）
 
-| 理由 | 说明 |
-|------|------|
-| Round 边界 | WS connect/close 天然给出 enter/leave 信号 |
-| 流式响应 | turn() 中 LLM 流式输出直接推送 |
-| 服务端推送 | insight 更新、consolidation 完成通知 |
-| 前端星空图 | 实时拓扑变更推送 |
+### 客户端 → 服务端
 
-业界参考：ChatGPT / Discord / Slack 的前端对话均使用 WebSocket。
+| 消息类型 | StelloAgent 映射 |
+|---------|-----------------|
+| `session.enter { sessionId }` | attachSession + enterSession |
+| `session.message { input }` | turn(sessionId, input) |
+| `session.stream { input }` | stream(sessionId, input) |
+| `session.leave` | leaveSession + detachSession |
+| `session.fork { options }` | forkSession(sessionId, options) |
 
-### 边界情况
+### 服务端 → 客户端
 
-| 场景 | 处理 |
-|------|------|
-| 网络抖动断连 | 短暂重连窗口（~30s），不立即触发 leave |
-| 用户刷新页面 | 同上，重连后恢复 Engine |
-| 用户切换 Session | 关旧 WS → open 新 WS → Server 检测 switch |
-| 服务端重启 | 所有 WS 断开，客户端自动重连，Engine 冷启动 |
+| 消息类型 | 说明 |
+|---------|------|
+| `session.entered { bootstrap }` | enterSession 返回值 |
+| `turn.complete { result }` | 非流式 turn 结果 |
+| `stream.delta { chunk }` | 流式增量 token |
+| `stream.end { result }` | 流式完成 + 完整结果 |
+| `session.left { sessionId }` | leave 确认 |
+| `session.forked { child }` | fork 后的新 SessionMeta |
+| `error { message, code? }` | 错误 |
 
----
+### 断连处理
 
-## 4. Server 内部架构
-
-```
-┌─────────────────────────────────────────────┐
-│  Server                                      │
-│                                              │
-│  SpaceRegistry: Map<spaceId, SpaceContext>   │
-│                                              │
-│  SpaceContext:                                │
-│    config (adapters, triggers, tools...)     │
-│    storage: MainStorage                      │
-│    activeEngines: Map<sessionId, Engine>     │
-│    scheduler: Scheduler  → 详见 scheduler-design
-└──────────────────────────────────────────────┘
-```
-
-Scheduler 是 Server 内部的 per-space 组件，负责跨 Session 协调（切换检测、integration 调度、onSwitch consolidation 触发）。详细职责和流程见 **scheduler-design** skill。
+socket close → 只执行 `agent.detachSession(sessionId, connectionId)`，不 leave。runtime 通过 recyclePolicy 自然回收。
 
 ---
 
-## 5. HTTP API
+## 4. 连接态管理
 
-所有接口在 `spaceId` 下，一个 space = 一棵拓扑树。
-
-### 对话（WebSocket）
+ConnectionManager（纯内存，不持久化）：
 
 ```
-WS /spaces/:spaceId/sessions/:sessionId
-  → 建立连接 → 创建 Engine
-  → 双向消息：
-    client → server: { type: 'message', content: '...' }
-    server → client: { type: 'chunk', content: '...' }      // 流式
-    server → client: { type: 'turnComplete', result: ... }
-    server → client: { type: 'insight', content: '...' }     // 推送
-    server → client: { type: 'consolidated', sessionId }
-  → 断开连接 → 销毁 Engine → 触发 leave 钩子
+connectionId → { userId, spaceId, sessionId | null }
 ```
 
-### 管理接口（REST）
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `GET` | `/spaces/:spaceId/sessions` | 返回树状列表（id, parentId, label） |
-| `POST` | `/spaces/:spaceId/sessions` | 创建子 Session |
-| `GET` | `/spaces/:spaceId/sessions/:id` | Session 详情 |
-| `POST` | `/spaces/:spaceId/sessions/:id/fork` | fork Session |
-| `DELETE` | `/spaces/:spaceId/sessions/:id` | 归档 Session |
-| `POST` | `/spaces/:spaceId/main/messages` | Main Session 对话 |
-| `POST` | `/spaces/:spaceId/main/integrate` | 手动触发 integration |
-| `GET` | `/spaces/:spaceId/main/synthesis` | 读取 synthesis |
-| `GET` | `/spaces/:spaceId/kv/:key` | 全局键值读 |
-| `PUT` | `/spaces/:spaceId/kv/:key` | 全局键值写 |
-
-### 对话走 WS，管理走 REST
-
-- 用户在 Session 页面的持续对话 → WebSocket（Engine 生命周期绑定）
-- 前端获取列表、创建 Session、读取状态 → REST（无状态，简单）
-- Main Session 对话也可走 WS（同样创建 Engine）
+- WS upgrade 时 bind(connId, userId, spaceId)
+- session.enter 时 attachSession(connId, sessionId)
+- session.leave / socket close 时 detachSession(connId)
+- socket close 时 unbind(connId)
 
 ---
 
-## 6. 业界对比
+## 5. createStelloServer 入口
 
-### Engine 生命周期模型
+```typescript
+createStelloServer(options) → StelloServer
+  .app          // Hono instance（可用 app.request() 测试）
+  .listen(port) // 启动 HTTP + WS，返回 { port, close() }
+  .spaceManager
+  .agentPool
+```
 
-| 模式 | 框架 | Stello |
-|------|------|--------|
-| 无状态单例，state from storage per request | LangGraph, OpenAI, Mastra | — |
-| Per-session-round，WS 绑定 | ChatGPT Web, Discord | **采用** |
+`listen()` 内部用 `@hono/node-server` 的 `serve()` 创建 HTTP server，再附着 `ws.WebSocketServer({ noServer: true })`。
 
-Stello 选择 per-session-round 的原因：
-- 有前端 UI（星空图），不是纯 API 服务
-- 需要 Round 生命周期边界（consolidation 挂在轮上）
-- WS 天然提供 enter/leave 信号
-- Engine 可缓存 session 上下文，避免每轮重复加载
+---
 
-### 如果未来需要纯 REST 模式
+## 6. 设计决策
 
-保留 Engine 的 per-turn 无状态使用方式作为降级路径：
-- 不建立 WS → 每次 REST 请求临时创建 Engine → turn() → 销毁
-- 退化为 LangGraph 模式，switch 检测靠 `lastActiveSessionId` 持久化到 storage
-- 不推荐但可行
+- **WS 用 `ws` 库** — Hono 内置 WS 面向 edge，不适合 Node.js
+- **WS 认证用 header** — API key 不暴露在 URL
+- **stream 和 message 是独立消息类型** — 客户端显式选择
+- **Space 级 WS 连接** — URL 中确定 spaceId，匹配 AgentPool per-space 缓存
+- **REST 降级路径** — `/turn` 端点支持无 WS 的非流式对话

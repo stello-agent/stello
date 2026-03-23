@@ -38,9 +38,19 @@ export async function cleanDatabase(pool: pg.Pool): Promise<void> {
 export async function createTestUser(pool: pg.Pool, name = 'test-user'): Promise<string> {
   const { rows } = await pool.query(
     `INSERT INTO users (api_key, name) VALUES ($1, $2) RETURNING id`,
-    [`test-key-${Date.now()}`, name],
+    [`test-key-${Date.now()}-${Math.random()}`, name],
   )
   return rows[0]!['id'] as string
+}
+
+/** 创建测试用 user，返回 { userId, apiKey } */
+export async function createTestUserWithKey(pool: pg.Pool, name = 'test-user'): Promise<{ userId: string; apiKey: string }> {
+  const apiKey = `test-key-${uuid()}`
+  const { rows } = await pool.query(
+    `INSERT INTO users (api_key, name) VALUES ($1, $2) RETURNING id`,
+    [apiKey, name],
+  )
+  return { userId: rows[0]!['id'] as string, apiKey }
 }
 
 /** 创建测试用 space，返回 spaceId */
