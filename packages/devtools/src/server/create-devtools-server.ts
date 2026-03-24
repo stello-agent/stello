@@ -17,13 +17,22 @@ function resolveWebDir(): string {
   } catch {
     currentDir = __dirname
   }
-  /* tsup flat output: dist/index.js → dist/web/ */
-  const candidate1 = resolve(currentDir, 'web')
-  if (existsSync(join(candidate1, 'index.html'))) return candidate1
-  /* 子目录 output: dist/server/xxx.js → dist/web/ */
-  const candidate2 = resolve(currentDir, '..', 'web')
-  if (existsSync(join(candidate2, 'index.html'))) return candidate2
-  return candidate1
+
+  const candidates = [
+    /* tsup flat output: dist/index.js → dist/web/ */
+    resolve(currentDir, 'web'),
+    /* 子目录 output: dist/server/xxx.js → dist/web/ */
+    resolve(currentDir, '..', 'web'),
+    /* 从源码运行（tsx）: src/server/xxx.ts → dist/web/ */
+    resolve(currentDir, '..', '..', 'dist', 'web'),
+    /* 从源码运行（tsx）: src/xxx.ts → dist/web/ */
+    resolve(currentDir, '..', 'dist', 'web'),
+  ]
+
+  for (const dir of candidates) {
+    if (existsSync(join(dir, 'index.html'))) return dir
+  }
+  return candidates[0]!
 }
 
 /** MIME 类型映射 */
