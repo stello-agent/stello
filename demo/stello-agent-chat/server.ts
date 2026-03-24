@@ -17,6 +17,7 @@ import {
   type StelloAgentConfig,
   type TurnRecord,
 } from '../../packages/core/src/index'
+import { startDevtools } from '../../packages/devtools/src/index'
 import {
   createOpenAICompatibleAdapter,
 } from '../../packages/session/src/adapters/openai-compatible.ts'
@@ -381,6 +382,16 @@ async function main() {
     console.log('StelloAgent chat demo bootstrap succeeded.')
     console.log(`Root/current session: ${app.getCurrentSessionId()}`)
     return
+  }
+
+  /* 启动 DevTools 调试面板 */
+  if (process.env.DEVTOOLS !== '0') {
+    const devtoolsPort = Number(process.env.DEVTOOLS_PORT ?? 4800)
+    startDevtools(app.agent, { port: devtoolsPort, open: false }).then((dt) => {
+      console.log(`Stello DevTools running at http://${host}:${dt.port}`)
+    }).catch((err) => {
+      console.warn('DevTools failed to start:', err instanceof Error ? err.message : err)
+    })
   }
 
   const server = createServer(async (req, res) => {
