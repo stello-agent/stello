@@ -1,9 +1,74 @@
-import type { Server as HttpServer } from 'node:http'
+import { readFileSync, existsSync } from 'node:fs'
+import { resolve, join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import type { Server as HttpServer, IncomingMessage, ServerResponse } from 'node:http'
 import { Hono } from 'hono'
 import type { StelloAgent } from '@stello-ai/core'
 import { createRoutes } from './routes.js'
 import { createWsHandler } from './ws-handler.js'
 import type { DevtoolsOptions, DevtoolsInstance } from './types.js'
+
+/** 定位前端打包产物目录 */
+function resolveWebDir(): string {
+  /* 兼容 ESM 和 CJS */
+  let currentDir: string
+  try {
+    currentDir = dirname(fileURLToPath(import.meta.url))
+  } catch {
+    currentDir = __dirname
+  }
+  /* tsup flat output: dist/index.js → dist/web/ */
+  const candidate1 = resolve(currentDir, 'web')
+  if (existsSync(join(candidate1, 'index.html'))) return candidate1
+  /* 子目录 output: dist/server/xxx.js → dist/web/ */
+  const candidate2 = resolve(currentDir, '..', 'web')
+  if (existsSync(join(candidate2, 'index.html'))) return candidate2
+  return candidate1
+}
+
+/** MIME 类型映射 */
+const MIME: Record<string, string> = {
+  '.html': 'text/html',
+  '.js': 'application/javascript',
+  '.css': 'text/css',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+}
+
+/** 从 webDir serve 静态文件的 Hono 中间件 */
+function createStaticMiddleware(webDir: string) {
+  return async (c: { req: { path: string }; body: (data: string | null, init?: ResponseInit) => Response; notFound: () => Response }) => {
+    let filePath = c.req.path === '/' ? '/index.html' : c.req.path
+    const fullPath = join(webDir, filePath)
+
+    /* 安全检查：不能跳出 webDir */
+    if (!fullPath.startsWith(webDir)) return c.notFound()
+
+    if (existsSync(fullPath)) {
+      const ext = filePath.substring(filePath.lastIndexOf('.'))
+      const mime = MIME[ext] ?? 'application/octet-stream'
+      const content = readFileSync(fullPath)
+      return new Response(content, {
+        headers: { 'Content-Type': mime, 'Cache-Control': 'public, max-age=3600' },
+      })
+    }
+
+    /* SPA fallback: 所有未匹配路径返回 index.html */
+    const indexPath = join(webDir, 'index.html')
+    if (existsSync(indexPath)) {
+      const content = readFileSync(indexPath, 'utf-8')
+      return new Response(content, {
+        headers: { 'Content-Type': 'text/html' },
+      })
+    }
+
+    return c.notFound()
+  }
+}
 
 /** 启动 DevTools 调试服务器 */
 export async function startDevtools(
@@ -13,13 +78,14 @@ export async function startDevtools(
   const { port = 4800, open = true } = options
 
   const app = new Hono()
+  const webDir = resolveWebDir()
 
   /* API 路由 */
   const api = createRoutes(agent)
   app.route('/api', api)
 
-  /* 前端静态文件（构建后内嵌） */
-  // TODO: Phase 1 Task 6 集成时配置静态文件 serve
+  /* 前端静态文件 */
+  app.all('/*', createStaticMiddleware(webDir) as never)
 
   const { serve } = await import('@hono/node-server')
 
@@ -29,10 +95,15 @@ export async function startDevtools(
       createWsHandler(server as unknown as HttpServer, agent)
 
       const url = `http://localhost:${info.port}`
-      console.log(`\n  Stello DevTools running at ${url}\n`)
+      const hasWeb = existsSync(join(webDir, 'index.html'))
+      console.log(`\n  Stello DevTools running at ${url}`)
+      if (!hasWeb) {
+        console.log(`  ⚠ Frontend not built. Run: cd packages/devtools/web && pnpm exec vite build`)
+      }
+      console.log()
 
       /* 自动打开浏览器 */
-      if (open) {
+      if (open && hasWeb) {
         import('node:child_process').then(({ exec }) => {
           const cmd = process.platform === 'darwin'
             ? 'open'
