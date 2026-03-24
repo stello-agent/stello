@@ -6,7 +6,6 @@ import {
   Wrench,
   Terminal,
   ArrowUp,
-  ArrowDownRight,
   Loader2,
 } from 'lucide-react'
 import { fetchSessions, fetchConfig, fetchSessionDetail, sendTurn, enterSession, type AgentConfig } from '@/lib/api'
@@ -346,14 +345,12 @@ export function Conversation() {
         </div>
       </div>
 
-      {/* 右侧上下文面板 */}
+      {/* 右侧上下文面板——从 API detail 读取 */}
       <div className="w-75 bg-card border-l border-border flex flex-col shrink-0">
-        {/* Header */}
         <div className="flex items-center h-13 px-4 border-b border-border">
           <span className="text-sm font-semibold text-text">Context</span>
         </div>
 
-        {/* Tabs */}
         <div className="flex px-4 border-b border-border">
           {(['l3', 'l2', 'insights', 'prompt'] as const).map((tab) => (
             <button
@@ -370,81 +367,53 @@ export function Conversation() {
           ))}
         </div>
 
-        {/* Tab 内容 */}
         <div className="flex-1 overflow-y-auto bg-surface p-4 space-y-3">
           {activeTab === 'l3' && (
             <>
-              <p className="text-[10px] font-semibold text-text-muted tracking-wide">SYSTEM PROMPT</p>
-              <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30">
-                <p className="text-[11px] text-text-secondary leading-relaxed">
-                  You are a research assistant specialized in finding and summarizing academic papers...
-                </p>
-              </div>
-              <p className="text-[10px] font-semibold text-text-muted tracking-wide">INSIGHTS FROM MAIN</p>
-              <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30">
-                <div className="flex items-center gap-1 mb-1.5">
-                  <ArrowDownRight size={10} className="text-primary" />
-                  <span className="text-[10px] font-medium text-primary">Latest integration</span>
+              <p className="text-[10px] font-semibold text-text-muted tracking-wide">
+                L3 HISTORY ({messages.length} RECORDS)
+              </p>
+              {messages.length > 0 ? (
+                <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30 space-y-2">
+                  {messages.map((m, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <RoleBadge role={m.role === 'user' ? 'user' : 'asst'} />
+                      <span className="text-[11px] text-text-secondary">
+                        {m.content.length > 80 ? m.content.slice(0, 80) + '...' : m.content}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-                <p className="text-[11px] text-text-secondary leading-relaxed">
-                  Focus on recent 2024 publications. The coding session has identified key APIs that may relate to your findings.
-                </p>
-              </div>
-              <p className="text-[10px] font-semibold text-text-muted tracking-wide">L3 HISTORY ({mockL3Records.length} RECORDS)</p>
-              <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30 space-y-2">
-                {mockL3Records.map((r, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <RoleBadge role={r.role} />
-                    <span className="text-[11px] text-text-secondary">{r.text}</span>
-                  </div>
-                ))}
-              </div>
+              ) : (
+                <p className="text-[11px] text-text-muted italic">No records yet</p>
+              )}
             </>
           )}
 
           {activeTab === 'l2' && (
             <>
               <p className="text-[10px] font-semibold text-text-muted tracking-wide">L2 MEMORY</p>
-              <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30">
-                <div className="flex items-center gap-1 mb-2">
-                  <span className="text-[10px] font-medium text-success bg-[#E8F5E9] px-1.5 py-0.5 rounded">consolidated</span>
-                </div>
-                <p className="text-[11px] text-text-secondary leading-relaxed">
-                  This session focuses on academic research in conversation topology. Key findings include
-                  tree-structured dialogue management, cross-branch knowledge transfer via synthesis, and
-                  session lifecycle patterns.
-                </p>
-              </div>
+              <p className="text-[11px] text-text-muted italic">
+                Use Inspector for detailed L2/scope data
+              </p>
             </>
           )}
 
           {activeTab === 'insights' && (
             <>
-              <p className="text-[10px] font-semibold text-text-muted tracking-wide">INSIGHTS FROM MAIN</p>
-              <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30">
-                <div className="flex items-center gap-1 mb-1.5">
-                  <ArrowDownRight size={10} className="text-primary" />
-                  <span className="text-[10px] font-medium text-primary">Latest integration</span>
-                </div>
-                <p className="text-[11px] text-text-secondary leading-relaxed">
-                  Focus on recent 2024 publications. The coding session has identified key APIs
-                  that may relate to your research findings. Consider cross-referencing with the
-                  implementation patterns found.
-                </p>
-              </div>
+              <p className="text-[10px] font-semibold text-text-muted tracking-wide">INSIGHTS</p>
+              <p className="text-[11px] text-text-muted italic">
+                Use Inspector for detailed insights data
+              </p>
             </>
           )}
 
           {activeTab === 'prompt' && (
             <>
               <p className="text-[10px] font-semibold text-text-muted tracking-wide">SYSTEM PROMPT</p>
-              <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30">
-                <p className="text-[11px] text-text-secondary leading-relaxed">
-                  You are a research assistant specialized in finding and summarizing academic
-                  papers on AI conversation systems, dialogue management, and multi-session
-                  architectures.
-                </p>
-              </div>
+              <p className="text-[11px] text-text-muted italic">
+                View in Settings page
+              </p>
             </>
           )}
         </div>
