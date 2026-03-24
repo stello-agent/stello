@@ -15,7 +15,7 @@ export function createSpaceRoutes(
   /** 创建 space */
   app.post('/', async (c) => {
     const userId = c.get('userId')
-    const body = await c.req.json<{ label: string; systemPrompt?: string; consolidatePrompt?: string }>()
+    const body = await c.req.json<{ label: string; systemPrompt?: string; consolidatePrompt?: string; integratePrompt?: string }>()
 
     if (!body.label) {
       return c.json({ error: 'label is required' }, 400)
@@ -25,6 +25,7 @@ export function createSpaceRoutes(
       label: body.label,
       systemPrompt: body.systemPrompt,
       consolidatePrompt: body.consolidatePrompt,
+      integratePrompt: body.integratePrompt,
     })
     return c.json(space, 201)
   })
@@ -57,7 +58,7 @@ export function createSpaceRoutes(
     if (!space) return c.json({ error: 'Space not found' }, 404)
     if (space.userId !== userId) return c.json({ error: 'Forbidden' }, 403)
 
-    const body = await c.req.json<{ label?: string; systemPrompt?: string; consolidatePrompt?: string }>()
+    const body = await c.req.json<{ label?: string; systemPrompt?: string; consolidatePrompt?: string; integratePrompt?: string }>()
     const updated = await spaceManager.updateSpace(spaceId, body)
     return c.json(updated)
   })

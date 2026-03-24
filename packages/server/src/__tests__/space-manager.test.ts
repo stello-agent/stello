@@ -29,11 +29,13 @@ describe('SpaceManager', () => {
         label: 'Test Space',
         systemPrompt: 'You are helpful.',
         consolidatePrompt: 'Summarize.',
+        integratePrompt: 'Synthesize.',
       })
 
       expect(space.label).toBe('Test Space')
       expect(space.systemPrompt).toBe('You are helpful.')
       expect(space.consolidatePrompt).toBe('Summarize.')
+      expect(space.integratePrompt).toBe('Synthesize.')
 
       // 验证 root session 已创建
       const { rows } = await pool.query(
@@ -114,6 +116,12 @@ describe('SpaceManager', () => {
       const space = await manager.createSpace(userId, { label: 'Test' })
       const updated = await manager.updateSpace(space.id, { consolidatePrompt: 'New consolidate' })
       expect(updated.consolidatePrompt).toBe('New consolidate')
+    })
+
+    it('更新 integratePrompt', async () => {
+      const space = await manager.createSpace(userId, { label: 'Test' })
+      const updated = await manager.updateSpace(space.id, { integratePrompt: 'New integrate' })
+      expect(updated.integratePrompt).toBe('New integrate')
     })
   })
 

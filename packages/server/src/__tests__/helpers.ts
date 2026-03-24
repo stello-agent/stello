@@ -22,9 +22,12 @@ export function createTestPool(): pg.Pool {
 
 /** 执行迁移 + 清空数据（每个测试文件调用一次） */
 export async function setupDatabase(pool: pg.Pool): Promise<void> {
-  const migrationPath = join(__dirname, '..', 'db', 'migrations', '001_init.sql')
-  const sql = readFileSync(migrationPath, 'utf-8')
-  await pool.query(sql)
+  const migrationsDir = join(__dirname, '..', 'db', 'migrations')
+  const files = ['001_init.sql', '002_integrate_prompt.sql']
+  for (const file of files) {
+    const sql = readFileSync(join(migrationsDir, file), 'utf-8')
+    await pool.query(sql)
+  }
 }
 
 /** 清空所有表数据（每个测试用例前调用） */

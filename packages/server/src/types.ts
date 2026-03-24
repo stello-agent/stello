@@ -10,6 +10,7 @@ export interface SpaceConfig {
   label: string
   systemPrompt?: string
   consolidatePrompt?: string
+  integratePrompt?: string
   config?: Record<string, unknown>
 }
 
@@ -20,6 +21,7 @@ export interface Space {
   label: string
   systemPrompt: string | null
   consolidatePrompt: string | null
+  integratePrompt: string | null
   config: Record<string, unknown>
   createdAt: string
   updatedAt: string

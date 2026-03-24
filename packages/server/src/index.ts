@@ -10,7 +10,10 @@ export { migrate } from './db/migrate.js'
 
 // Space management
 export { SpaceManager } from './space/space-manager.js'
-export { AgentPool, type AgentPoolOptions } from './space/agent-pool.js'
+export { AgentPool, type AgentPoolOptions, type AgentBuildContext } from './space/agent-pool.js'
+
+// LLM defaults
+export { createDefaultConsolidateFn, createDefaultIntegrateFn, type LLMCallFn } from './llm/defaults.js'
 
 // Server
 export { createStelloServer } from './create-server.js'

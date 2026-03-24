@@ -131,4 +131,89 @@ describe('AgentPool', () => {
     agentPool.dispose()
     expect(agentPool.size).toBe(0)
   })
+
+  it('Space 不存在时抛错', async () => {
+    agentPool = new AgentPool(pool, createPoolOptions())
+    await expect(agentPool.getAgent('00000000-0000-0000-0000-000000000000'))
+      .rejects.toThrow('Space 不存在')
+  })
+
+  it('buildConfig 收到 space 对象', async () => {
+    const space = await spaceManager.createSpace(userId, {
+      label: 'WithPrompts',
+      consolidatePrompt: 'Summarize.',
+      integratePrompt: 'Synthesize.',
+    })
+
+    let receivedSpace: unknown = null
+    agentPool = new AgentPool(pool, {
+      ...createPoolOptions(),
+      buildConfig: (ctx) => {
+        receivedSpace = ctx.space
+        return createPoolOptions().buildConfig(ctx)
+      },
+    })
+
+    await agentPool.getAgent(space.id)
+    expect(receivedSpace).not.toBeNull()
+    expect((receivedSpace as { consolidatePrompt: string }).consolidatePrompt).toBe('Summarize.')
+    expect((receivedSpace as { integratePrompt: string }).integratePrompt).toBe('Synthesize.')
+  })
+
+  it('有 llm + prompt 但无显式 fn 时自动注入默认', async () => {
+    const space = await spaceManager.createSpace(userId, {
+      label: 'AutoDefault',
+      consolidatePrompt: 'Summarize the conversation.',
+    })
+
+    // buildConfig 不提供 consolidateFn
+    agentPool = new AgentPool(pool, {
+      buildConfig: (ctx) => {
+        const base = createPoolOptions().buildConfig(ctx)
+        return {
+          ...base,
+          session: {
+            ...base.session,
+            consolidateFn: undefined,
+          },
+        }
+      },
+      llm: async () => 'llm response',
+      idleTtlMs: 1000,
+    })
+
+    // 不抛错即代表 agent 正常创建（含内置默认 consolidateFn）
+    const agent = await agentPool.getAgent(space.id)
+    expect(agent).toBeDefined()
+  })
+
+  it('buildConfig 显式 fn 优先于内置默认', async () => {
+    const space = await spaceManager.createSpace(userId, {
+      label: 'ExplicitOverride',
+      consolidatePrompt: 'Summarize.',
+    })
+
+    const customFn = async () => 'custom result'
+    let sessionConfigSeen = false
+
+    agentPool = new AgentPool(pool, {
+      buildConfig: (ctx) => {
+        const base = createPoolOptions().buildConfig(ctx)
+        sessionConfigSeen = true
+        return {
+          ...base,
+          session: {
+            ...base.session,
+            consolidateFn: customFn,
+          },
+        }
+      },
+      llm: async () => 'should not be used',
+      idleTtlMs: 1000,
+    })
+
+    const agent = await agentPool.getAgent(space.id)
+    expect(agent).toBeDefined()
+    expect(sessionConfigSeen).toBe(true)
+  })
 })

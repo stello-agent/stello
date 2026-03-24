@@ -17,14 +17,15 @@ export class SpaceManager {
 
       // 插入 space
       const { rows } = await client.query(
-        `INSERT INTO spaces (user_id, label, system_prompt, consolidate_prompt, config)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO spaces (user_id, label, system_prompt, consolidate_prompt, integrate_prompt, config)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING *`,
         [
           userId,
           config.label,
           config.systemPrompt ?? null,
           config.consolidatePrompt ?? null,
+          config.integratePrompt ?? null,
           JSON.stringify(config.config ?? {}),
         ],
       )
@@ -84,6 +85,11 @@ export class SpaceManager {
       params.push(updates.consolidatePrompt)
       idx++
     }
+    if (updates.integratePrompt !== undefined) {
+      sets.push(`integrate_prompt = $${idx}`)
+      params.push(updates.integratePrompt)
+      idx++
+    }
     if (updates.config !== undefined) {
       sets.push(`config = $${idx}`)
       params.push(JSON.stringify(updates.config))
@@ -140,6 +146,7 @@ export class SpaceManager {
       label: row['label'] as string,
       systemPrompt: (row['system_prompt'] as string) ?? null,
       consolidatePrompt: (row['consolidate_prompt'] as string) ?? null,
+      integratePrompt: (row['integrate_prompt'] as string) ?? null,
       config: (row['config'] as Record<string, unknown>) ?? {},
       createdAt: (row['created_at'] as Date).toISOString(),
       updatedAt: (row['updated_at'] as Date).toISOString(),
