@@ -1,96 +1,34 @@
 ---
 name: server-storage
-description: "@stello-ai/server 的 PG 持久化层：7 表 Schema、4 个 Storage Adapter 的公开 API 和实现模式。触发条件：修改或引用 server 存储层。"
+description: "@stello-ai/server 的 PG 持久化层设计决策和实现模式。触发条件：修改或引用 server 存储层。"
 ---
 
 # Server Storage Layer — PG 持久化
 
-> 状态：**已实现**（2026-03-23）
->
 > 相关 skill：**storage-design**（接口定义）、**server-design**（传输层）
 
 ---
 
-## PG Schema — 7 张表
+## Schema 设计决策
 
-| 表 | 用途 | 主键 |
-|----|------|------|
-| `users` | API 认证 | UUID |
-| `spaces` | Space 配置（label, system_prompt, consolidate_prompt, config） | UUID |
-| `sessions` | Session 元数据超集（core + session 包共用） | UUID |
-| `records` | L3 对话记录（session 包 Message + core TurnRecord 共用） | BIGSERIAL |
-| `session_data` | 统一槽位（system_prompt / insight / memory / scope / index） | (session_id, key) |
-| `session_refs` | 跨分支引用 | (from_id, to_id) |
-| `core_data` | Space 级全局键值（L1-structured） | (space_id, path) |
+7 张表：users, spaces, sessions, records, session_data, session_refs, core_data
 
-### 设计决策
-
-- **不需要 topology_nodes 表** — TopologyNode 从 sessions 表派生 `SELECT id, parent_id, label`
+- **不需要 topology_nodes 表** — TopologyNode 从 sessions 表派生（`SELECT id, parent_id, label`）
 - **children/refs 不存列** — `WHERE parent_id=` 派生 children，JOIN session_refs 派生 refs
-- **session_data 统一槽位** — 不同 key 存不同语义，避免列爆炸
-- **records 表共享** — adapter 各自投影字段（Message 无 metadata，TurnRecord 有）
+- **session_data 统一槽位** — 不同 key 存不同语义（system_prompt / insight / memory / scope / index），避免列爆炸
+- **records 表共享** — session 包和 core 包各自投影字段（Message 无 metadata，TurnRecord 有）
 - **CASCADE 删除** — sessions ON DELETE CASCADE 级联到 records、session_data、session_refs
 
 ---
 
 ## 4 个 Storage Adapter
 
-### 1. PgSessionStorage — 实现 `SessionStorage`（@stello-ai/session）
-
-构造：`(client: Pool | PoolClient, spaceId: string)`
-
-| 方法 | 说明 |
-|------|------|
-| `getSession(id)` → SessionMeta \| null | 投影为 session 包 SessionMeta（无 parentId/depth） |
-| `putSession(session)` | UPSERT |
-| `appendRecord(sessionId, record)` | INSERT INTO records |
-| `listRecords(sessionId, options?)` | 支持 role/limit/offset 过滤 |
-| `getSystemPrompt / putSystemPrompt` | session_data key='system_prompt' |
-| `getInsight / putInsight / clearInsight` | key='insight' |
-| `getMemory / putMemory` | key='memory' |
-| `transaction(fn)` | BEGIN/COMMIT/ROLLBACK，传 PoolClient 版实例 |
-
-### 2. PgMainStorage extends PgSessionStorage — 实现 `MainStorage`
-
-| 方法 | 说明 |
-|------|------|
-| `getAllSessionL2s()` | JOIN sessions + session_data，status='active' role='standard' |
-| `listSessions(filter?)` | 动态 WHERE（status/role/tags @> 数组包含） |
-| `putNode / getChildren / removeNode` | sessions 表投影为 TopologyNode |
-| `getGlobal / putGlobal` | core_data 表 UPSERT |
-
-### 3. PgSessionTree — 实现 `SessionTree`（@stello-ai/core）
-
-构造：`(client: Pool | PoolClient, spaceId: string)`
-
-| 方法 | 说明 |
-|------|------|
-| `createRoot(label?)` | 额外方法，创建 space 时调用，返回 TopologyNode |
-| `createChild(options)` | 自动计算 index 和 depth，返回 TopologyNode |
-| `get(id)` | 返回精简 SessionMeta（无树字段） |
-| `getRoot()` | WHERE parent_id IS NULL，返回 SessionMeta |
-| `listAll()` | 全量 SessionMeta 列表（无树字段） |
-| `getNode(id)` | 返回 TopologyNode（含 parentId, children[], refs[], depth, index） |
-| `getTree()` | 返回递归嵌套 SessionTreeNode（API 返回用） |
-| `archive(id)` | SET status='archived' |
-| `addRef(fromId, toId)` | 递归 CTE 校验祖先/后代，幂等 INSERT |
-| `updateMeta(id, updates)` | 部分 UPDATE（label/scope/tags/metadata/turnCount） |
-| `getAncestors(id)` | WITH RECURSIVE CTE，返回 TopologyNode[] |
-| `getSiblings(id)` | 两步：查 parent → 查同 parent 兄弟，返回 TopologyNode[] |
-
-### 4. PgMemoryEngine — 实现 `MemoryEngine`（@stello-ai/core）
-
-构造：`(client: Pool | PoolClient, spaceId: string)`
-
-| 方法 | 说明 |
-|------|------|
-| `readCore(path?)` | 单路径或全量 core_data |
-| `writeCore(path, value)` | UPSERT core_data |
-| `readMemory / writeMemory` | session_data key='memory' |
-| `readScope / writeScope` | key='scope' |
-| `readIndex / writeIndex` | key='index' |
-| `appendRecord / readRecords` | records 表（TurnRecord 有 metadata） |
-| `assembleContext(sessionId)` | 递归 CTE 收集父链 memory + core + currentMemory + scope |
+| Adapter | 实现接口 | 职责 |
+|---------|---------|------|
+| PgSessionStorage | SessionStorage（@stello-ai/session） | 单个 Session 数据操作 |
+| PgMainStorage | MainStorage（extends SessionStorage） | 额外：批量 L2 收集、拓扑树、全局键值 |
+| PgSessionTree | SessionTree（@stello-ai/core） | 树操作：创建节点、递归树、祖先/兄弟查询 |
+| PgMemoryEngine | MemoryEngine（@stello-ai/core） | 核心数据读写、递归上下文组装 |
 
 ---
 
@@ -100,29 +38,15 @@ description: "@stello-ai/server 的 PG 持久化层：7 表 Schema、4 个 Stora
 所有 adapter 构造时绑定 spaceId，所有 SQL 查询 WHERE space_id = $1。多租户隔离在查询层保证。
 
 ### Slot 统一存储
-`session_data (session_id, key)` 表存储 system_prompt / insight / memory / scope / index 五种数据，通过 key 区分。UPSERT 模式 `ON CONFLICT (session_id, key) DO UPDATE`。
+`session_data (session_id, key)` 表，UPSERT 模式 `ON CONFLICT (session_id, key) DO UPDATE`。
 
-### 两种 SessionMeta + TopologyNode
-PG 存 sessions 表超集。PgSessionStorage 投影为 @stello-ai/session 的 SessionMeta（有 role，无 scope/turnCount），PgSessionTree 分别投影为：
-- **SessionMeta**（@stello-ai/core）：id, label, scope, status, turnCount, metadata, tags, 时间戳（无树字段）
-- **TopologyNode**：id, parentId, children[], refs[], depth, index, label（纯树结构）
+### 两种 SessionMeta 投影
+PG 存 sessions 表超集。不同 adapter 投影为不同类型：
+- PgSessionStorage → @stello-ai/session 的 SessionMeta（有 role，无 scope/turnCount）
+- PgSessionTree → @stello-ai/core 的 SessionMeta（有 scope/turnCount，无树字段）+ TopologyNode（纯树结构）
 
 ### 递归 CTE
 `getAncestors`、`getAllDescendantIds`、`assembleContext` 都用 `WITH RECURSIVE` 遍历树结构。
 
 ### 事务支持
-`PgSessionStorage.transaction()` 通过类型判断 `'connect' in this.client` 区分 Pool 与 PoolClient。Pool 时获取独占 client 开事务，PoolClient 时直接执行（已在事务中）。
-
----
-
-## SpaceManager + AgentPool
-
-### SpaceManager
-- `createSpace(userId, config)` — 事务内创建 space + root session + 可选写 system_prompt
-- `updateSpace(spaceId, updates)` — 更新 spaces 表 + 同步 system_prompt 到 root session_data
-- `deleteSpace(spaceId)` — CASCADE 删除
-
-### AgentPool
-- `getAgent(spaceId)` → StelloAgent — 懒创建，缓存命中直接返回
-- 创建时组装 4 个 PG adapter + buildConfig 工厂
-- TTL 驱逐（默认 5 min）、evict()、dispose()
+`PgSessionStorage.transaction()` 通过类型判断区分 Pool 与 PoolClient。Pool 时获取独占 client 开事务，PoolClient 时直接执行。

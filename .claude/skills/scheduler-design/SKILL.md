@@ -5,10 +5,6 @@ description: Scheduler 职责定义：调度策略组件，判断 consolidation 
 
 # Scheduler — 调度策略组件
 
-> 状态：**已实现**（2026-03-23 更新）
-
----
-
 ## 定位
 
 Scheduler 是纯粹的**调度策略判断器**，不直接驱动对话，不持有 Engine 引用。
@@ -51,7 +47,7 @@ Factory 是 Scheduler 和 Engine 之间的桥梁：
 
 ## 核心设计决策
 
-### 从 Engine 解耦到 Factory（2026-03-23）
+### 从 Engine 解耦到 Factory
 
 Engine 之前直接 await scheduler.afterTurn()，违反 fire-and-forget 原则。现在 Scheduler 通过 Factory 闭包注入，Engine 完全不知道调度的存在。
 

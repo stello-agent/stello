@@ -5,10 +5,6 @@ description: Engine 职责定义：per-session-round 生命周期管理器。驱
 
 # Engine — Per-Session-Round 生命周期管理器
 
-> 状态：**已实现**（2026-03-23 更新）
-
----
-
 ## 定位
 
 Engine 是 Session 原语之上的**单 Session 多轮对话管理器**。
@@ -32,7 +28,7 @@ Engine 不感知树结构，不知道其他 Session 的存在，**也不知道 S
 
 ## 核心设计决策
 
-### Engine 与 Scheduler 解耦（2026-03-23）
+### Engine 与 Scheduler 解耦
 
 Engine 不持有 Scheduler 和 MainSession。Factory 持有二者，构建闭包注入 EngineHooks。Engine 在事件点 fire-and-forget 调用 hooks，不知道背后有调度。
 
