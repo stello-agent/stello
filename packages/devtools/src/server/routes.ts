@@ -11,7 +11,7 @@ function withErrorHandler(app: Hono): void {
 }
 
 /** 创建 DevTools REST 路由 */
-export function createRoutes(agent: StelloAgent): Hono {
+export function createRoutes(agent: StelloAgent, onEvent?: (event: { type: string; sessionId?: string; data?: Record<string, unknown> }) => void): Hono {
   const app = new Hono()
   withErrorHandler(app)
 
@@ -71,8 +71,10 @@ export function createRoutes(agent: StelloAgent): Hono {
     }
     const currentMemory = await memory.readMemory(id).catch(() => null)
     const messages = records.map((r) => ({ role: r.role, content: r.content, timestamp: r.timestamp }))
+    onEvent?.({ type: 'consolidate.start', sessionId: id })
     const l2 = await consolidateFn(currentMemory, messages)
     await memory.writeMemory(id, l2)
+    onEvent?.({ type: 'consolidate.done', sessionId: id, data: { l2Length: l2.length } })
     return c.json({ ok: true, l2 })
   })
 

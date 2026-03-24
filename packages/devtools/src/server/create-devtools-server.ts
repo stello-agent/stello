@@ -6,6 +6,7 @@ import { Hono } from 'hono'
 import type { StelloAgent } from '@stello-ai/core'
 import { createRoutes } from './routes.js'
 import { createWsHandler } from './ws-handler.js'
+import { EventBus, wrapAgentWithEvents } from './event-bus.js'
 import type { DevtoolsOptions, DevtoolsInstance } from './types.js'
 
 /** 定位前端打包产物目录 */
@@ -88,9 +89,13 @@ export async function startDevtools(
 
   const app = new Hono()
   const webDir = resolveWebDir()
+  const eventBus = new EventBus()
 
-  /* API 路由 */
-  const api = createRoutes(agent)
+  /* Proxy 包装 agent，拦截操作自动广播事件 */
+  const wrappedAgent = wrapAgentWithEvents(agent, eventBus)
+
+  /* API 路由——用包装后的 agent + 事件回调 */
+  const api = createRoutes(wrappedAgent, (event) => eventBus.emit(event))
   app.route('/api', api)
 
   /* 前端静态文件 */
@@ -100,8 +105,16 @@ export async function startDevtools(
 
   return new Promise((resolve) => {
     const server = serve({ fetch: app.fetch, port }, (info) => {
-      /* 附着 WS */
-      createWsHandler(server as unknown as HttpServer, agent)
+      /* 附着 WS + 事件广播 */
+      const wss = createWsHandler(server as unknown as HttpServer, wrappedAgent)
+
+      /* 事件总线 → 广播到所有 WS 客户端 */
+      eventBus.on((event) => {
+        const msg = JSON.stringify(event)
+        wss.clients.forEach((client) => {
+          if (client.readyState === 1) client.send(msg)
+        })
+      })
 
       const url = `http://localhost:${info.port}`
       const hasWeb = existsSync(join(webDir, 'index.html'))

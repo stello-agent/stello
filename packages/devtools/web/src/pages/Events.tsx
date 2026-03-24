@@ -35,13 +35,22 @@ const filterOptions: Array<{ key: string; label: string; types: EventType[] }> =
 
 /* 无 mock 数据——全部从 WS 实时接收 */
 
-/** 将 WS 消息类型映射为 EventType */
+/** 将 EventBus 事件类型映射为 EventType */
 function wsTypeToEventType(type: string): EventType | null {
   const map: Record<string, EventType> = {
-    'turn.complete': 'turn:end',
+    'turn.start': 'turn:start',
+    'turn.end': 'turn:end',
+    'session.enter': 'turn:start',
     'session.entered': 'turn:start',
-    'stream.end': 'turn:end',
-    'session.forked': 'fork',
+    'session.leave': 'turn:end',
+    'session.left': 'turn:end',
+    'fork.start': 'fork',
+    'fork.created': 'fork',
+    'session.archived': 'turn:end',
+    'consolidate.start': 'consolidate',
+    'consolidate.done': 'consolidate',
+    'integrate.start': 'integrate',
+    'integrate.done': 'integrate',
     'error': 'error',
   }
   return map[type] ?? null
@@ -59,19 +68,25 @@ export function Events() {
   const [wsConnected, setWsConnected] = useState(false)
   const nextIdRef = useRef(100)
 
-  /* 订阅 WS 事件 */
+  /* 订阅 WS 事件（EventBus 格式：{type, sessionId, timestamp, data}） */
   useEffect(() => {
     const unsub = subscribeWs((msg) => {
       setWsConnected(true)
-      const type = wsTypeToEventType(String(msg['type'] ?? ''))
-      if (!type) return
+      const rawType = String(msg['type'] ?? '')
+      const eventType = wsTypeToEventType(rawType)
+      if (!eventType) return
+
+      const data = msg['data'] as Record<string, unknown> | undefined
+      const desc = data
+        ? Object.entries(data).map(([k, v]) => `${k}: ${String(v).slice(0, 50)}`).join(' · ')
+        : rawType
 
       const newEvent: StelloEvent = {
         id: String(nextIdRef.current++),
-        time: formatTime(new Date()),
-        type,
-        session: String(msg['sessionId'] ?? msg['session'] ?? '—'),
-        description: String(msg['description'] ?? msg['message'] ?? JSON.stringify(msg).slice(0, 80)),
+        time: msg['timestamp'] ? formatTime(new Date(String(msg['timestamp']))) : formatTime(new Date()),
+        type: eventType,
+        session: String(msg['sessionId'] ?? '—'),
+        description: `${rawType}${desc !== rawType ? ` — ${desc}` : ''}`,
       }
       setEvents((prev) => [newEvent, ...prev])
     })
