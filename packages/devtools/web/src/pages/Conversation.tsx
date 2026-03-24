@@ -251,7 +251,7 @@ export function Conversation() {
               type="text"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleSend() }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); handleSend() } }}
               placeholder="Send a message..."
               className="flex-1 bg-transparent text-xs outline-none placeholder:text-text-muted"
             />

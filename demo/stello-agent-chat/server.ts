@@ -316,8 +316,12 @@ async function bootstrap() {
         onRoundStart({ sessionId }) {
           currentToolSessionId = sessionId
         },
-        onRoundEnd() {
+        onRoundEnd({ sessionId, input, turn }) {
           currentToolSessionId = null
+          /* 持久化对话记录到 MemoryEngine */
+          const userRecord = { role: 'user' as const, content: input, timestamp: new Date().toISOString() }
+          const assistantRecord = { role: 'assistant' as const, content: turn.finalContent ?? turn.rawResponse, timestamp: new Date().toISOString() }
+          lifecycle.afterTurn(sessionId, userRecord, assistantRecord).catch(() => {})
         },
       },
     },
