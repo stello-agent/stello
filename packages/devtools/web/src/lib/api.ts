@@ -2,23 +2,70 @@
 
 const BASE = '/api'
 
-/** 拓扑节点 */
-export interface SessionNode {
+/** Session 元数据 */
+export interface SessionMeta {
   id: string
   label: string
-  parentId: string | null
+  scope: string | null
   status: 'active' | 'archived'
-  turns: number
+  turnCount: number
+  tags: string[]
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+  lastActiveAt: string
+}
+
+/** 拓扑节点 */
+export interface TopologyNode {
+  id: string
+  parentId: string | null
   children: string[]
   refs: string[]
+  depth: number
+  index: number
+  label: string
+}
+
+/** 递归树节点 */
+export interface SessionTreeNode {
+  node: TopologyNode
+  meta: SessionMeta
+  children: SessionTreeNode[]
+}
+
+/** L3 对话记录 */
+export interface TurnRecord {
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  timestamp: string
+  metadata?: Record<string, unknown>
+}
+
+/** Session 详细数据 */
+export interface SessionDetail {
+  meta: SessionMeta
+  records: TurnRecord[]
+  l2: string | null
+  scope: string | null
 }
 
 /** Agent 配置 */
 export interface AgentConfig {
   orchestration: { strategy: string }
   capabilities: {
-    tools: Array<{ name: string; description: string; parameters: Record<string, unknown> }>
+    tools: Array<{ name: string; description: string; parameters?: Record<string, unknown> }>
     skills: Array<{ name: string; description: string }>
+  }
+}
+
+/** Turn 结果 */
+export interface TurnResult {
+  turn: {
+    finalContent: string | null
+    toolRoundCount: number
+    toolCallsExecuted: number
+    rawResponse: string
   }
 }
 
@@ -28,23 +75,46 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   })
-  if (!res.ok) throw new Error(`API Error: ${res.status} ${res.statusText}`)
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`API ${res.status}: ${body || res.statusText}`)
+  }
   return res.json() as Promise<T>
 }
 
-/** 获取 session 树（扁平列表） */
-export function fetchSessions() {
-  return request<{ root: SessionNode; children: SessionNode[] }>('/sessions')
+/** 获取完整递归 session 树 */
+export function fetchSessionTree() {
+  return request<SessionTreeNode>('/sessions/tree')
 }
 
-/** 获取单个 session */
+/** 获取所有 session 列表（扁平） */
+export function fetchSessions() {
+  return request<{ sessions: SessionMeta[] }>('/sessions')
+}
+
+/** 获取单个 session 元数据 */
 export function fetchSession(id: string) {
-  return request<SessionNode>(`/sessions/${id}`)
+  return request<SessionMeta>(`/sessions/${id}`)
+}
+
+/** 获取拓扑节点 */
+export function fetchNode(id: string) {
+  return request<TopologyNode>(`/sessions/${id}/node`)
+}
+
+/** 获取 session 详细数据 */
+export function fetchSessionDetail(id: string) {
+  return request<SessionDetail>(`/sessions/${id}/detail`)
+}
+
+/** 进入 session */
+export function enterSession(id: string) {
+  return request<unknown>(`/sessions/${id}/enter`, { method: 'POST' })
 }
 
 /** 发送 turn */
 export function sendTurn(sessionId: string, input: string) {
-  return request<{ response: string }>(`/sessions/${sessionId}/turn`, {
+  return request<TurnResult>(`/sessions/${sessionId}/turn`, {
     method: 'POST',
     body: JSON.stringify({ input }),
   })
@@ -52,7 +122,7 @@ export function sendTurn(sessionId: string, input: string) {
 
 /** Fork session */
 export function forkSession(sessionId: string, label: string) {
-  return request<SessionNode>(`/sessions/${sessionId}/fork`, {
+  return request<TopologyNode>(`/sessions/${sessionId}/fork`, {
     method: 'POST',
     body: JSON.stringify({ label }),
   })
@@ -63,26 +133,6 @@ export function archiveSession(sessionId: string) {
   return request<{ ok: boolean }>(`/sessions/${sessionId}/archive`, {
     method: 'POST',
   })
-}
-
-/** L3 对话记录 */
-export interface TurnRecord {
-  role: string
-  content: string
-  timestamp?: string
-}
-
-/** Session 详细数据 */
-export interface SessionDetail {
-  node: SessionNode
-  records: TurnRecord[]
-  l2: string | null
-  scope: string | null
-}
-
-/** 获取 session 详细数据 */
-export function fetchSessionDetail(id: string) {
-  return request<SessionDetail>(`/sessions/${id}/detail`)
 }
 
 /** 获取 agent 配置 */

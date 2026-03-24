@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ChevronDown, Pencil, ArrowDownRight, Loader2 } from 'lucide-react'
-import { fetchSessions, fetchSessionDetail, type SessionNode, type SessionDetail } from '@/lib/api'
+import { fetchSessions, fetchSessionDetail, type SessionMeta, type SessionDetail } from '@/lib/api'
 
 /** 角色 badge */
 function RoleBadge({ role }: { role: string }) {
@@ -51,7 +51,7 @@ function DataCard({
 
 /** Inspector 检查器页面 */
 export function Inspector() {
-  const [sessions, setSessions] = useState<SessionNode[]>([])
+  const [sessions, setSessions] = useState<SessionMeta[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<SessionDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -60,10 +60,9 @@ export function Inspector() {
   /* 拉取 session 列表 */
   useEffect(() => {
     fetchSessions()
-      .then(({ root, children }) => {
-        const all = [root, ...children]
-        setSessions(all)
-        if (all.length > 0) setSelectedId(all[0]!.id)
+      .then(({ sessions: list }) => {
+        setSessions(list)
+        if (list.length > 0) setSelectedId(list[0]!.id)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -196,7 +195,7 @@ export function Inspector() {
                     { label: 'ID', value: selectedNode?.id ?? '—' },
                     { label: 'Status', value: selectedNode?.status ?? '—', color: selectedNode?.status === 'active' ? '#C4793D' : undefined },
                     { label: 'Turns', value: detail ? String(detail.records.length) : '—' },
-                    { label: 'Children', value: selectedNode?.children.length ? `${selectedNode.children.length} (${selectedNode.children.join(', ')})` : 'None' },
+                    { label: 'Tags', value: selectedNode?.tags?.join(', ') || 'None' },
                   ].map(({ label, value, color }) => (
                     <div key={label} className="flex justify-between">
                       <span className="text-[11px] font-medium text-text-muted">{label}</span>

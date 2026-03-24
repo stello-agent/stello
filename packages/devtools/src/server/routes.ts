@@ -1,35 +1,67 @@
 import { Hono } from 'hono'
 import type { StelloAgent } from '@stello-ai/core'
 
+/** 全局错误处理 */
+function withErrorHandler(app: Hono): void {
+  app.onError((err, c) => {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[devtools]', c.req.method, c.req.path, message)
+    return c.json({ error: message }, 500)
+  })
+}
+
 /** 创建 DevTools REST 路由 */
 export function createRoutes(agent: StelloAgent): Hono {
   const app = new Hono()
+  withErrorHandler(app)
 
-  /** 获取 session 树 */
-  app.get('/sessions', async (c) => {
-    const root = await agent.sessions.getRoot()
-    const children = await agent.sessions.getChildren(root.id)
-    return c.json({ root, children })
+  /** 获取完整 session 树（递归 SessionTreeNode） */
+  app.get('/sessions/tree', async (c) => {
+    const tree = await agent.sessions.getTree()
+    return c.json(tree)
   })
 
-  /** 获取单个 session 节点 */
+  /** 获取所有 session 列表（扁平 SessionMeta[]） */
+  app.get('/sessions', async (c) => {
+    const all = await agent.sessions.listAll()
+    return c.json({ sessions: all })
+  })
+
+  /** 获取单个 session 元数据 */
   app.get('/sessions/:id', async (c) => {
     const id = c.req.param('id')
-    const node = await agent.sessions.get(id)
+    const meta = await agent.sessions.get(id)
+    if (!meta) return c.json({ error: 'Session not found' }, 404)
+    return c.json(meta)
+  })
+
+  /** 获取单个 session 的拓扑节点 */
+  app.get('/sessions/:id/node', async (c) => {
+    const id = c.req.param('id')
+    const node = await agent.sessions.getNode(id)
+    if (!node) return c.json({ error: 'Node not found' }, 404)
     return c.json(node)
   })
 
-  /** 获取 session 详细数据（L3/L2/scope 等） */
+  /** 获取 session 详细数据（L3/L2/scope） */
   app.get('/sessions/:id/detail', async (c) => {
     const id = c.req.param('id')
     const memory = agent.config.memory
-    const [node, records, l2, scope] = await Promise.all([
+    const [meta, records, l2, scope] = await Promise.all([
       agent.sessions.get(id),
       memory.readRecords(id).catch(() => []),
       memory.readMemory(id).catch(() => null),
       memory.readScope(id).catch(() => null),
     ])
-    return c.json({ node, records, l2, scope })
+    if (!meta) return c.json({ error: 'Session not found' }, 404)
+    return c.json({ meta, records, l2, scope })
+  })
+
+  /** 进入 session */
+  app.post('/sessions/:id/enter', async (c) => {
+    const id = c.req.param('id')
+    const result = await agent.enterSession(id)
+    return c.json(result)
   })
 
   /** 非流式对话 */
@@ -37,6 +69,13 @@ export function createRoutes(agent: StelloAgent): Hono {
     const id = c.req.param('id')
     const { input } = await c.req.json<{ input: string }>()
     const result = await agent.turn(id, input)
+    return c.json(result)
+  })
+
+  /** 离开 session */
+  app.post('/sessions/:id/leave', async (c) => {
+    const id = c.req.param('id')
+    const result = await agent.leaveSession(id)
     return c.json(result)
   })
 
@@ -76,24 +115,12 @@ export function createRoutes(agent: StelloAgent): Hono {
   app.patch('/config', async (c) => {
     const updates = await c.req.json<Record<string, unknown>>()
     const applied: string[] = []
-
-    /* 调度策略更新 */
     if (updates['consolidationTrigger'] || updates['integrationTrigger'] ||
         updates['consolidationEveryN'] || updates['integrationEveryN']) {
-      // 调度参数需要通过 Scheduler 重建，当前只标记接收到
       applied.push('scheduling')
     }
-
-    /* runtime 更新 */
-    if (updates['idleTtlMs'] !== undefined) {
-      applied.push('runtime.idleTtlMs')
-    }
-
-    /* split guard 更新 */
-    if (updates['minTurns'] !== undefined || updates['cooldownTurns'] !== undefined) {
-      applied.push('splitGuard')
-    }
-
+    if (updates['idleTtlMs'] !== undefined) applied.push('runtime.idleTtlMs')
+    if (updates['minTurns'] !== undefined || updates['cooldownTurns'] !== undefined) applied.push('splitGuard')
     return c.json({ ok: true, applied, note: 'Config hot-reload is best-effort; some changes require restart.' })
   })
 

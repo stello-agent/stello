@@ -9,7 +9,7 @@ import {
   ArrowDownRight,
   Loader2,
 } from 'lucide-react'
-import { fetchSessions, fetchConfig, fetchSessionDetail, sendTurn, type SessionNode, type AgentConfig } from '@/lib/api'
+import { fetchSessions, fetchConfig, fetchSessionDetail, sendTurn, enterSession, type SessionMeta, type AgentConfig, type TurnResult } from '@/lib/api'
 import { sendWs, subscribeWs } from '@/lib/ws'
 
 /** Session 列表项 */
@@ -96,13 +96,13 @@ export function Conversation() {
   /* 从 API 拉取 session 列表 */
   useEffect(() => {
     fetchSessions()
-      .then(({ root, children }) => {
-        const all = [root, ...children].map((n) => ({
-          id: n.id,
-          label: n.label,
-          turns: n.turns ?? 0,
-          status: (n.status ?? 'active') as 'active' | 'archived',
-          color: n.parentId === null ? '#C4A882' : n.status === 'archived' ? '#D89575' : '#B8956A',
+      .then(({ sessions: list }) => {
+        const all = list.map((s, i) => ({
+          id: s.id,
+          label: s.label,
+          turns: s.turnCount ?? 0,
+          status: s.status,
+          color: i === 0 ? '#C4A882' : s.status === 'archived' ? '#D89575' : '#B8956A',
         }))
         if (all.length > 0) {
           setSessions(all)
@@ -212,18 +212,13 @@ export function Conversation() {
         sendWs({ type: 'session.stream', input: text })
       })
     } catch {
-      /* WS 失败，fallback REST */
+      /* WS 失败，fallback REST——先 enter 再 turn */
       try {
+        await enterSession(selectedSession.id).catch(() => {})
         const result = await sendTurn(selectedSession.id, text)
-        const response = typeof result === 'object' && result !== null && 'response' in result
-          ? String((result as { response: string }).response)
-          : JSON.stringify(result)
+        const response = result?.turn?.finalContent ?? result?.turn?.rawResponse ?? JSON.stringify(result)
         setMessages((prev) =>
           prev.map((m) => m.id === botId ? { ...m, content: response } : m)
-            .filter((m) => m.content !== '') /* 清除空占位 */
-            .concat(prev.find((m) => m.id === botId && m.content === '')
-              ? [{ id: botId, role: 'assistant' as const, content: response }]
-              : [])
         )
       } catch (err) {
         setMessages((prev) => {

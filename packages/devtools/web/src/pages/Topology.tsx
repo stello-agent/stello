@@ -1,10 +1,18 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { GitBranch, Archive, MessageSquare, Search, X } from 'lucide-react'
-import { fetchSessions, type SessionNode } from '@/lib/api'
+import { fetchSessions, type SessionMeta, type TopologyNode as ApiTopoNode } from '@/lib/api'
 
-/** 拓扑节点（兼容 API 和 mock） */
-type TopoNode = SessionNode
+/** 拓扑节点（前端渲染用，合并 meta + topology） */
+interface TopoNode {
+  id: string
+  label: string
+  parentId: string | null
+  status: 'active' | 'archived'
+  turns: number
+  children: string[]
+  refs: string[]
+}
 
 /** 布局后节点 */
 interface LayoutNode extends TopoNode {
@@ -286,9 +294,39 @@ export function Topology() {
   /* 从 API 拉取 session 数据 */
   useEffect(() => {
     fetchSessions()
-      .then(({ root, children }) => {
-        const all: TopoNode[] = [root, ...children]
-        if (all.length > 0) setTopoNodes(all)
+      .then(({ sessions }) => {
+        if (sessions.length === 0) return
+        /* SessionMeta 没有 parentId/children/refs，需要从 getNode 补充 */
+        /* 简化方案：用 listAll 的 SessionMeta 构建，parentId 等拓扑信息后续从 tree API 获取 */
+        const nodes: TopoNode[] = sessions.map((s) => ({
+          id: s.id,
+          label: s.label,
+          parentId: null, // 会被 tree API 覆盖
+          status: s.status,
+          turns: s.turnCount,
+          children: [],
+          refs: [],
+        }))
+        setTopoNodes(nodes)
+        /* 再拉完整拓扑树补充关系 */
+        import('@/lib/api').then(({ fetchSessionTree }) =>
+          fetchSessionTree().then((tree) => {
+            const flattenTree = (node: typeof tree): TopoNode[] => {
+              const topo: TopoNode = {
+                id: node.node.id,
+                label: node.node.label,
+                parentId: node.node.parentId,
+                status: node.meta.status,
+                turns: node.meta.turnCount,
+                children: node.node.children,
+                refs: node.node.refs,
+              }
+              return [topo, ...node.children.flatMap(flattenTree)]
+            }
+            const all = flattenTree(tree)
+            if (all.length > 0) setTopoNodes(all)
+          }).catch(() => {})
+        )
       })
       .catch(() => {})
   }, [])
