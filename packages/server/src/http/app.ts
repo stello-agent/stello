@@ -21,7 +21,7 @@ export function createApp(
   app.route('/spaces', createSpaceRoutes(pool, spaceManager, agentPool))
 
   // Session 路由（嵌套在 /spaces 下）
-  app.route('/spaces', createSessionRoutes(pool, spaceManager, agentPool))
+  app.route('/spaces', createSessionRoutes(spaceManager, agentPool))
 
   // 全局错误处理
   app.onError((err, c) => {

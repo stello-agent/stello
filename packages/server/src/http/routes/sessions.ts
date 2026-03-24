@@ -1,10 +1,7 @@
 import { Hono } from 'hono'
-import type pg from 'pg'
 import type { AuthEnv } from '../middleware/auth.js'
 import type { SpaceManager } from '../../space/space-manager.js'
 import type { AgentPool } from '../../space/agent-pool.js'
-import { PgSessionTree } from '../../storage/pg-session-tree.js'
-import { PgMemoryEngine } from '../../storage/pg-memory-engine.js'
 
 /** 验证 space 所有权，返回 spaceId 或抛 Response */
 async function requireOwnership(
@@ -21,7 +18,6 @@ async function requireOwnership(
 
 /** 创建 Session 相关路由（嵌套在 /spaces/:spaceId 下） */
 export function createSessionRoutes(
-  pool: pg.Pool,
   spaceManager: SpaceManager,
   agentPool: AgentPool,
 ): Hono<AuthEnv> {
@@ -33,8 +29,8 @@ export function createSessionRoutes(
     const err = await requireOwnership(c, spaceManager, spaceId)
     if (err) return err
 
-    const tree = new PgSessionTree(pool, spaceId)
-    const sessionTree = await tree.getTree()
+    const agent = await agentPool.getAgent(spaceId)
+    const sessionTree = await agent.sessions.getTree()
     return c.json(sessionTree)
   })
 
@@ -44,8 +40,8 @@ export function createSessionRoutes(
     const err = await requireOwnership(c, spaceManager, spaceId)
     if (err) return err
 
-    const tree = new PgSessionTree(pool, spaceId)
-    const session = await tree.get(c.req.param('id'))
+    const agent = await agentPool.getAgent(spaceId)
+    const session = await agent.sessions.get(c.req.param('id'))
     if (!session) return c.json({ error: 'Session not found' }, 404)
     return c.json(session)
   })
@@ -56,8 +52,8 @@ export function createSessionRoutes(
     const err = await requireOwnership(c, spaceManager, spaceId)
     if (err) return err
 
-    const memory = new PgMemoryEngine(pool, spaceId)
-    const records = await memory.readRecords(c.req.param('id'))
+    const agent = await agentPool.getAgent(spaceId)
+    const records = await agent.memory.readRecords(c.req.param('id'))
     return c.json(records)
   })
 
