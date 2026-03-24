@@ -54,14 +54,18 @@ function scheduleReconnect(): void {
 /** 连接 WS（幂等，多次调用安全） */
 export function connectWs(): void {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return
-  createConnection()
+  try {
+    createConnection()
+  } catch {
+    scheduleReconnect()
+  }
 }
 
 /** 订阅 WS 消息 */
 export function subscribeWs(listener: WsListener): () => void {
   listeners.add(listener)
-  /* 如果 WS 还没连，自动连 */
-  connectWs()
+  /* 如果 WS 还没连，延迟自动连（避免在 React 渲染周期中抛错） */
+  setTimeout(() => { try { connectWs() } catch { /* ignore */ } }, 0)
   return () => listeners.delete(listener)
 }
 

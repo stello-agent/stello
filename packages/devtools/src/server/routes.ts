@@ -89,6 +89,39 @@ export function createRoutes(
     return c.json(result)
   })
 
+  /** 流式对话（NDJSON） */
+  app.post('/sessions/:id/stream', async (c) => {
+    const id = c.req.param('id')
+    const { input } = await c.req.json<{ input: string }>()
+    try {
+      const stream = await agent.stream(id, input)
+      const encoder = new TextEncoder()
+      const readable = new ReadableStream({
+        async start(controller) {
+          try {
+            for await (const chunk of stream) {
+              controller.enqueue(encoder.encode(JSON.stringify({ type: 'delta', delta: chunk }) + '\n'))
+            }
+            const result = await stream.result
+            controller.enqueue(encoder.encode(JSON.stringify({ type: 'done', result }) + '\n'))
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            controller.enqueue(encoder.encode(JSON.stringify({ type: 'error', error: msg }) + '\n'))
+          } finally {
+            controller.close()
+          }
+        },
+      })
+      return new Response(readable, {
+        headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-cache' },
+      })
+    } catch {
+      /* agent.stream 不可用，fallback 到非流式 */
+      const result = await agent.turn(id, input)
+      return c.json(result)
+    }
+  })
+
   /** 非流式对话 */
   app.post('/sessions/:id/turn', async (c) => {
     const id = c.req.param('id')

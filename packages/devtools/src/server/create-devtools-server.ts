@@ -63,7 +63,7 @@ function createStaticMiddleware(webDir: string) {
       const mime = MIME[ext] ?? 'application/octet-stream'
       const content = readFileSync(fullPath)
       return new Response(content, {
-        headers: { 'Content-Type': mime, 'Cache-Control': 'public, max-age=3600' },
+        headers: { 'Content-Type': mime, 'Cache-Control': 'no-cache' },
       })
     }
 

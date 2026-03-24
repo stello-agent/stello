@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import {
   Search,
   Zap,
@@ -9,8 +11,7 @@ import {
   ArrowDownRight,
   Loader2,
 } from 'lucide-react'
-import { fetchSessions, fetchConfig, fetchSessionDetail, sendTurn, enterSession, consolidateSession, type AgentConfig, type SessionDetail } from '@/lib/api'
-import { sendWs, subscribeWs } from '@/lib/ws'
+import { fetchSessions, fetchConfig, fetchSessionDetail, enterSession, consolidateSession, type AgentConfig, type SessionDetail } from '@/lib/api'
 
 /** Session 列表项 */
 interface SessionItem {
@@ -26,7 +27,41 @@ interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
+  streaming?: boolean
   toolCall?: { name: string; args: string; duration: string }
+}
+
+/** 过滤 think 标签——提取 think 内容和正文 */
+function parseThinkContent(text: string): { think: string | null; content: string } {
+  const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/)
+  const think = thinkMatch ? thinkMatch[1]!.trim() : null
+  const content = text.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim()
+  return { think, content }
+}
+
+/** Markdown 渲染的 assistant 消息 */
+function MarkdownMessage({ text, streaming }: { text: string; streaming?: boolean }) {
+  const { think, content } = useMemo(() => parseThinkContent(text), [text])
+  const displayText = content || (streaming ? '' : text)
+
+  return (
+    <div className="space-y-2">
+      {think && (
+        <details className="group">
+          <summary className="text-[10px] text-text-muted cursor-pointer hover:text-text-secondary transition-colors">
+            Thinking...
+          </summary>
+          <div className="mt-1 px-3 py-2 bg-surface rounded-lg border border-border/30 text-[11px] text-text-muted leading-relaxed whitespace-pre-wrap">
+            {think}
+          </div>
+        </details>
+      )}
+      <div className="prose-sm max-w-none text-text [&_p]:my-1 [&_p]:text-[13px] [&_p]:leading-relaxed [&_p]:text-text [&_ul]:my-1 [&_ol]:my-1 [&_li]:text-[13px] [&_li]:text-text [&_strong]:text-text [&_strong]:font-semibold [&_h1]:text-base [&_h1]:text-text [&_h1]:font-semibold [&_h2]:text-sm [&_h2]:text-text [&_h3]:text-[13px] [&_h3]:text-text [&_code]:text-[11px] [&_code]:bg-surface [&_code]:text-primary-dark [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_pre]:bg-[#2a2520] [&_pre]:text-[#e5e4e1] [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:text-[11px] [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[#e5e4e1] [&_blockquote]:border-l-2 [&_blockquote]:border-primary/30 [&_blockquote]:pl-3 [&_blockquote]:text-text-secondary [&_a]:text-primary [&_a]:underline [&_table]:text-[12px] [&_th]:px-2 [&_th]:py-1 [&_td]:px-2 [&_td]:py-1 [&_th]:bg-surface [&_th]:border-b [&_th]:border-border [&_hr]:border-border">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayText}</ReactMarkdown>
+      </div>
+      {streaming && <span className="inline-block w-1.5 h-4 bg-primary/60 animate-pulse rounded-sm" />}
+    </div>
+  )
 }
 
 /** 角色 badge */
@@ -80,6 +115,7 @@ export function Conversation() {
 
   /* 初始加载 */
   useEffect(() => {
+    console.log('[Chat] mount, fetching sessions...')
     fetchSessions()
       .then(({ sessions: list }) => {
         const all = list.map((s, i) => ({
@@ -98,32 +134,53 @@ export function Conversation() {
     fetchConfig().then(setConfig).catch(() => {})
   }, [])
 
-  /* 监听 WS 事件——fork/archive 时刷新列表 + 10s 轮询兜底 */
+  /* 监听 WS 事件——fork/archive 时刷新列表 + 5s 轮询兜底 */
   useEffect(() => {
-    const unsub = subscribeWs((msg) => {
-      const type = msg['type'] as string
-      if (type === 'session.forked' || type === 'session.left') {
-        refreshSessions()
-      }
-    })
     const timer = setInterval(refreshSessions, 5_000)
-    return () => { unsub(); clearInterval(timer) }
+
+    /* 组件自管理 WS 连接 */
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const url = `${protocol}//${window.location.host}/ws`
+    let ws: WebSocket | null = null
+    let closed = false
+
+    function connect() {
+      if (closed) return
+      try { ws = new WebSocket(url) } catch { return }
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data as string) as Record<string, unknown>
+          const type = msg['type'] as string
+          if (type === 'fork.created' || type === 'session.left' || type === 'session.archived') {
+            refreshSessions()
+          }
+        } catch { /* ignore */ }
+      }
+      ws.onclose = () => { if (!closed) setTimeout(connect, 3000) }
+      ws.onerror = () => ws?.close()
+    }
+
+    connect()
+    return () => { closed = true; ws?.close(); clearInterval(timer) }
   }, [refreshSessions])
 
   /* 切换 session 时拉取 detail（L2/scope）+ 历史 records */
   useEffect(() => {
+    console.log('[Chat] selectedSession changed:', selectedSession?.id, selectedSession?.label)
     if (!selectedSession) return
     setMessages([])
     setDetail(null)
+    console.log('[Chat] fetching detail for', selectedSession.id)
     fetchSessionDetail(selectedSession.id)
       .then((d) => {
+        console.log('[Chat] detail loaded:', { records: d?.records?.length, l2: !!d?.l2 })
         setDetail(d)
-        /* 如果有 L3 records，加载为对话历史 */
-        if (d.records.length > 0) {
-          const msgs: ChatMessage[] = d.records.map((r, i) => ({
+        const records = d?.records ?? []
+        if (records.length > 0) {
+          const msgs: ChatMessage[] = records.map((r, i) => ({
             id: `hist-${i}`,
             role: r.role === 'user' ? 'user' as const : 'assistant' as const,
-            content: r.content,
+            content: r.content ?? '',
           }))
           setMessages(msgs)
         }
@@ -138,7 +195,7 @@ export function Conversation() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [selectedSession, messages])
 
-  /** 发送消息——优先 REST（更可靠） */
+  /** 发送消息——NDJSON 流式输出 */
   const handleSend = async () => {
     const text = inputValue.trim()
     if (!text || sending || !selectedSession) return
@@ -149,25 +206,76 @@ export function Conversation() {
     setSending(true)
 
     const botId = String(nextIdRef.current++)
+    /* 先创建空的 streaming 占位 */
+    setMessages((prev) => [...prev, { id: botId, role: 'assistant', content: '', streaming: true }])
 
     try {
-      /* 先 enter session */
+      /* enter session */
       await enterSession(selectedSession.id).catch(() => {})
-      /* 调用 turn */
-      const result = await sendTurn(selectedSession.id, text)
-      const response = result?.turn?.finalContent ?? result?.turn?.rawResponse ?? JSON.stringify(result)
-      setMessages((prev) => [...prev, { id: botId, role: 'assistant', content: response }])
-      /* 刷新 detail 和 session 列表（延迟确保 afterTurn hook 完成） */
+
+      /* 流式请求——用 demo server 的 /stream NDJSON 端点 */
+      const res = await fetch(`/api/sessions/${selectedSession.id}/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: text }),
+      })
+
+      if (!res.ok || !res.body) {
+        /* fallback REST turn */
+        const turnRes = await fetch(`/api/sessions/${selectedSession.id}/turn`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ input: text }),
+        })
+        const result = await turnRes.json()
+        const content = result?.turn?.finalContent ?? result?.turn?.rawResponse ?? JSON.stringify(result)
+        setMessages((prev) => prev.map((m) => m.id === botId ? { ...m, content, streaming: false } : m))
+      } else {
+        /* 逐行读取 NDJSON */
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let fullContent = ''
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() ?? ''
+
+          for (const line of lines) {
+            if (!line.trim()) continue
+            try {
+              const chunk = JSON.parse(line) as Record<string, unknown>
+              if (chunk['type'] === 'delta') {
+                const delta = String(chunk['delta'] ?? '')
+                fullContent += delta
+                setMessages((prev) => prev.map((m) => m.id === botId ? { ...m, content: fullContent } : m))
+              } else if (chunk['type'] === 'done') {
+                /* 流结束——用完整结果替换 */
+                const result = chunk['result'] as Record<string, unknown> | undefined
+                const turn = result?.['turn'] as Record<string, unknown> | undefined
+                const finalContent = turn?.['finalContent'] ?? turn?.['rawResponse'] ?? fullContent
+                setMessages((prev) => prev.map((m) => m.id === botId ? { ...m, content: String(finalContent), streaming: false } : m))
+              }
+            } catch { /* ignore parse error */ }
+          }
+        }
+        /* 确保 streaming 标记关闭 */
+        setMessages((prev) => prev.map((m) => m.id === botId ? { ...m, streaming: false } : m))
+      }
+
+      /* 刷新 detail 和 session 列表 */
       setTimeout(() => {
         fetchSessionDetail(selectedSession.id).then(setDetail).catch(() => {})
         refreshSessions()
       }, 500)
     } catch (err) {
-      setMessages((prev) => [...prev, {
-        id: botId,
-        role: 'assistant',
-        content: `⚠ Error: ${err instanceof Error ? err.message : 'Failed to send'}`,
-      }])
+      setMessages((prev) => prev.map((m) => m.id === botId
+        ? { ...m, content: `⚠ Error: ${err instanceof Error ? err.message : 'Failed to send'}`, streaming: false }
+        : m
+      ))
     } finally {
       setSending(false)
     }
@@ -262,7 +370,7 @@ export function Conversation() {
               ) : (
                 <div className="space-y-2">
                   <div className="bg-card rounded-xl rounded-bl-sm px-3.5 py-2.5 max-w-lg shadow-sm border border-border/30 transition-shadow hover:shadow-md">
-                    <p className="text-[13px] text-text leading-relaxed whitespace-pre-line">{msg.content}</p>
+                    <MarkdownMessage text={msg.content} streaming={msg.streaming} />
                   </div>
                   {msg.toolCall && (
                     <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-[#FFF5EE] rounded-lg border border-primary/20 transition-all hover:bg-[#FFF0E5] hover:shadow-sm cursor-pointer">
@@ -336,7 +444,7 @@ export function Conversation() {
                     <div key={i} className="flex items-start gap-2">
                       <RoleBadge role={r.role === 'user' ? 'user' : r.role === 'system' ? 'tool' : 'asst'} />
                       <span className="text-[11px] text-text-secondary">
-                        {r.content.length > 100 ? r.content.slice(0, 100) + '...' : r.content}
+                        {(() => { const c = parseThinkContent(r.content).content || r.content; return c.length > 100 ? c.slice(0, 100) + '...' : c })()}
                       </span>
                     </div>
                   ))}
@@ -347,7 +455,7 @@ export function Conversation() {
                     <div key={i} className="flex items-start gap-2">
                       <RoleBadge role={m.role === 'user' ? 'user' : 'asst'} />
                       <span className="text-[11px] text-text-secondary">
-                        {m.content.length > 100 ? m.content.slice(0, 100) + '...' : m.content}
+                        {(() => { const c = parseThinkContent(m.content).content || m.content; return c.length > 100 ? c.slice(0, 100) + '...' : c })()}
                       </span>
                     </div>
                   ))}
