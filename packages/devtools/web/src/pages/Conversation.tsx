@@ -6,9 +6,10 @@ import {
   Wrench,
   Terminal,
   ArrowUp,
+  ArrowDownRight,
   Loader2,
 } from 'lucide-react'
-import { fetchSessions, fetchConfig, fetchSessionDetail, sendTurn, enterSession, type AgentConfig } from '@/lib/api'
+import { fetchSessions, fetchConfig, fetchSessionDetail, sendTurn, enterSession, type AgentConfig, type SessionDetail } from '@/lib/api'
 import { sendWs, subscribeWs } from '@/lib/ws'
 
 /** Session 列表项 */
@@ -27,8 +28,6 @@ interface ChatMessage {
   content: string
   toolCall?: { name: string; args: string; duration: string }
 }
-
-/* 无 mock 数据——全部从 API 拉取 */
 
 /** 角色 badge */
 function RoleBadge({ role }: { role: 'user' | 'asst' | 'tool' }) {
@@ -51,10 +50,11 @@ export function Conversation() {
   const [sessions, setSessions] = useState<SessionItem[]>([])
   const [selectedSession, setSelectedSession] = useState<SessionItem | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [loadError, setLoadError] = useState<string | null>(null)
+  const [detail, setDetail] = useState<SessionDetail | null>(null)
   const [activeTab, setActiveTab] = useState<'l3' | 'l2' | 'insights' | 'prompt'>('l3')
   const [inputValue, setInputValue] = useState('')
   const [sending, setSending] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [config, setConfig] = useState<AgentConfig | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const nextIdRef = useRef(100)
@@ -79,21 +79,26 @@ export function Conversation() {
     fetchConfig().then(setConfig).catch(() => {})
   }, [])
 
-  /* 切换 session 时拉取该 session 的 L3 对话记录 */
+  /* 切换 session 时拉取 detail（L2/scope）+ 历史 records */
   useEffect(() => {
     if (!selectedSession) return
     setMessages([])
+    setDetail(null)
     fetchSessionDetail(selectedSession.id)
-      .then((detail) => {
-        const msgs: ChatMessage[] = detail.records.map((r, i) => ({
-          id: `hist-${i}`,
-          role: r.role === 'user' ? 'user' as const : 'assistant' as const,
-          content: r.content,
-        }))
-        setMessages(msgs)
+      .then((d) => {
+        setDetail(d)
+        /* 如果有 L3 records，加载为对话历史 */
+        if (d.records.length > 0) {
+          const msgs: ChatMessage[] = d.records.map((r, i) => ({
+            id: `hist-${i}`,
+            role: r.role === 'user' ? 'user' as const : 'assistant' as const,
+            content: r.content,
+          }))
+          setMessages(msgs)
+        }
       })
-      .catch((err: Error) => {
-        setMessages([{ id: 'err', role: 'assistant', content: `⚠ Failed to load history: ${err.message}` }])
+      .catch(() => {
+        setDetail(null)
       })
   }, [selectedSession?.id])
 
@@ -102,7 +107,7 @@ export function Conversation() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [selectedSession, messages])
 
-  /** 尝试流式发送（WS），fallback 非流式（REST） */
+  /** 发送消息——优先 REST（更可靠） */
   const handleSend = async () => {
     const text = inputValue.trim()
     if (!text || sending || !selectedSession) return
@@ -114,87 +119,21 @@ export function Conversation() {
 
     const botId = String(nextIdRef.current++)
 
-    /* 先尝试 WS 流式 */
     try {
-      /* 先 enter session（如果还没进） */
-      sendWs({ type: 'session.enter', sessionId: selectedSession.id })
-
-      /* 创建一个空的 assistant 消息占位 */
-      setMessages((prev) => [...prev, { id: botId, role: 'assistant', content: '' }])
-
-      /* 监听流式响应 */
-      let resolved = false
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          if (!resolved) { resolved = true; reject(new Error('Stream timeout')) }
-        }, 30000)
-
-        const unsub = subscribeWs((msg) => {
-          const type = msg['type'] as string
-          if (type === 'stream.delta') {
-            const chunk = String(msg['chunk'] ?? '')
-            setMessages((prev) =>
-              prev.map((m) => m.id === botId ? { ...m, content: m.content + chunk } : m)
-            )
-          } else if (type === 'stream.end') {
-            clearTimeout(timeout)
-            unsub()
-            resolved = true
-            /* 用完整结果替换 */
-            const result = msg['result']
-            if (result && typeof result === 'object' && 'response' in (result as Record<string, unknown>)) {
-              setMessages((prev) =>
-                prev.map((m) => m.id === botId ? { ...m, content: String((result as { response: string }).response) } : m)
-              )
-            }
-            resolve()
-          } else if (type === 'turn.complete') {
-            /* 非流式回退：server 返回了 turn.complete 而不是 stream */
-            clearTimeout(timeout)
-            unsub()
-            resolved = true
-            const result = msg['result']
-            const response = result && typeof result === 'object' && 'response' in (result as Record<string, unknown>)
-              ? String((result as { response: string }).response)
-              : JSON.stringify(result)
-            setMessages((prev) =>
-              prev.map((m) => m.id === botId ? { ...m, content: response } : m)
-            )
-            resolve()
-          } else if (type === 'error') {
-            clearTimeout(timeout)
-            unsub()
-            resolved = true
-            reject(new Error(String(msg['message'] ?? 'WS error')))
-          }
-        })
-
-        sendWs({ type: 'session.stream', input: text })
-      })
-    } catch {
-      /* WS 失败，fallback REST——先 enter 再 turn */
-      try {
-        await enterSession(selectedSession.id).catch(() => {})
-        const result = await sendTurn(selectedSession.id, text)
-        const response = result?.turn?.finalContent ?? result?.turn?.rawResponse ?? JSON.stringify(result)
-        setMessages((prev) =>
-          prev.map((m) => m.id === botId ? { ...m, content: response } : m)
-        )
-      } catch (err) {
-        setMessages((prev) => {
-          const existing = prev.find((m) => m.id === botId)
-          if (existing && existing.content === '') {
-            return prev.map((m) => m.id === botId
-              ? { ...m, content: `⚠ Error: ${err instanceof Error ? err.message : 'Failed to send'}` }
-              : m)
-          }
-          return [...prev, {
-            id: botId,
-            role: 'assistant' as const,
-            content: `⚠ Error: ${err instanceof Error ? err.message : 'Failed to send'}`,
-          }]
-        })
-      }
+      /* 先 enter session */
+      await enterSession(selectedSession.id).catch(() => {})
+      /* 调用 turn */
+      const result = await sendTurn(selectedSession.id, text)
+      const response = result?.turn?.finalContent ?? result?.turn?.rawResponse ?? JSON.stringify(result)
+      setMessages((prev) => [...prev, { id: botId, role: 'assistant', content: response }])
+      /* 刷新 detail（可能有新的 L2/records） */
+      fetchSessionDetail(selectedSession.id).then(setDetail).catch(() => {})
+    } catch (err) {
+      setMessages((prev) => [...prev, {
+        id: botId,
+        role: 'assistant',
+        content: `⚠ Error: ${err instanceof Error ? err.message : 'Failed to send'}`,
+      }])
     } finally {
       setSending(false)
     }
@@ -215,23 +154,16 @@ export function Conversation() {
     <div className="flex h-full">
       {/* 左侧 Session 列表 */}
       <div className="w-60 bg-card border-r border-border flex flex-col shrink-0">
-        {/* 列表头 */}
         <div className="flex items-center justify-between px-4 pt-4 pb-3">
           <span className="text-sm font-semibold text-text">Sessions</span>
           <span className="text-xs text-text-muted">{sessions.length}</span>
         </div>
-        {/* 搜索 */}
         <div className="px-3 pb-2">
           <div className="flex items-center gap-2 px-2.5 h-8 bg-surface rounded-lg border border-border">
             <Search size={14} className="text-text-muted shrink-0" />
-            <input
-              type="text"
-              placeholder="Filter sessions..."
-              className="flex-1 bg-transparent text-xs outline-none placeholder:text-text-muted"
-            />
+            <input type="text" placeholder="Filter sessions..." className="flex-1 bg-transparent text-xs outline-none placeholder:text-text-muted" />
           </div>
         </div>
-        {/* Session 列表 */}
         <div className="flex-1 overflow-y-auto">
           {sessions.map((s) => (
             <button
@@ -257,7 +189,6 @@ export function Conversation() {
 
       {/* 中间对话区 */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* 对话 Header */}
         <div className="flex items-center justify-between h-13 px-5 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full" style={{ backgroundColor: selectedSession?.color ?? '#9C9B99' }} />
@@ -271,23 +202,23 @@ export function Conversation() {
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 px-2.5 py-1 bg-surface rounded-md border border-border">
               <Zap size={12} className="text-[#D89575]" />
-              <span className="text-[11px] font-medium text-text-secondary">{config?.capabilities.skills.length ?? 3} Skills</span>
+              <span className="text-[11px] font-medium text-text-secondary">{config?.capabilities.skills.length ?? 0} Skills</span>
             </div>
             <div className="flex items-center gap-1 px-2.5 py-1 bg-surface rounded-md border border-border">
               <Wrench size={12} className="text-text-secondary" />
-              <span className="text-[11px] font-medium text-text-secondary">{config?.capabilities.tools.length ?? 5} Tools</span>
+              <span className="text-[11px] font-medium text-text-secondary">{config?.capabilities.tools.length ?? 0} Tools</span>
             </div>
           </div>
         </div>
 
-        {/* 消息流 */}
         <div className="flex-1 overflow-y-auto bg-surface px-6 py-5 space-y-4">
+          {messages.length === 0 && !sending && (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-sm text-text-muted">No messages yet. Start a conversation below.</p>
+            </div>
+          )}
           {messages.map((msg, i) => (
-            <div
-              key={msg.id}
-              className="page-enter"
-              style={{ animationDelay: `${i * 50}ms`, animationFillMode: 'both' }}
-            >
+            <div key={msg.id} className="page-enter" style={{ animationDelay: `${i * 50}ms`, animationFillMode: 'both' }}>
               {msg.role === 'user' ? (
                 <div className="flex justify-end">
                   <div className="bg-primary text-white rounded-xl rounded-br-sm px-3.5 py-2.5 max-w-md transition-shadow hover:shadow-lg">
@@ -302,9 +233,7 @@ export function Conversation() {
                   {msg.toolCall && (
                     <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-[#FFF5EE] rounded-lg border border-primary/20 transition-all hover:bg-[#FFF0E5] hover:shadow-sm cursor-pointer">
                       <Terminal size={12} className="text-primary" />
-                      <span className="text-[11px] font-medium text-primary-dark">
-                        {msg.toolCall.name}({msg.toolCall.args})
-                      </span>
+                      <span className="text-[11px] font-medium text-primary-dark">{msg.toolCall.name}({msg.toolCall.args})</span>
                       <span className="text-[10px] text-text-muted">{msg.toolCall.duration}</span>
                     </div>
                   )}
@@ -315,7 +244,6 @@ export function Conversation() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* 输入栏 */}
         <div className="flex items-center gap-2.5 h-14 px-5 border-t border-border bg-card shrink-0">
           <div className="flex items-center gap-2 flex-1 h-9 px-3 bg-surface rounded-[10px] border border-border transition-all duration-200 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10">
             <Terminal size={14} className="text-text-muted shrink-0" />
@@ -324,7 +252,7 @@ export function Conversation() {
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleSend() }}
-              placeholder="Send a message or simulate a tool call..."
+              placeholder="Send a message..."
               className="flex-1 bg-transparent text-xs outline-none placeholder:text-text-muted"
             />
           </div>
@@ -337,15 +265,12 @@ export function Conversation() {
                 : 'bg-primary/40 scale-95'
             }`}
           >
-            {sending
-              ? <Loader2 size={16} className="text-white animate-spin" />
-              : <ArrowUp size={16} className="text-white" />
-            }
+            {sending ? <Loader2 size={16} className="text-white animate-spin" /> : <ArrowUp size={16} className="text-white" />}
           </button>
         </div>
       </div>
 
-      {/* 右侧上下文面板——从 API detail 读取 */}
+      {/* 右侧上下文面板——从 API detail 读取真实数据 */}
       <div className="w-75 bg-card border-l border-border flex flex-col shrink-0">
         <div className="flex items-center h-13 px-4 border-b border-border">
           <span className="text-sm font-semibold text-text">Context</span>
@@ -357,9 +282,7 @@ export function Conversation() {
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`px-3 py-2.5 text-xs font-medium transition-colors ${
-                activeTab === tab
-                  ? 'text-primary border-b-2 border-primary'
-                  : 'text-text-muted hover:text-text-secondary'
+                activeTab === tab ? 'text-primary border-b-2 border-primary' : 'text-text-muted hover:text-text-secondary'
               }`}
             >
               {tab === 'l3' ? 'L3' : tab === 'l2' ? 'L2' : tab === 'insights' ? 'Insights' : 'Prompt'}
@@ -371,15 +294,26 @@ export function Conversation() {
           {activeTab === 'l3' && (
             <>
               <p className="text-[10px] font-semibold text-text-muted tracking-wide">
-                L3 HISTORY ({messages.length} RECORDS)
+                L3 HISTORY ({detail?.records.length ?? messages.length} RECORDS)
               </p>
-              {messages.length > 0 ? (
-                <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30 space-y-2">
+              {(detail?.records.length ?? 0) > 0 ? (
+                <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30 space-y-2 max-h-80 overflow-y-auto">
+                  {detail!.records.map((r, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <RoleBadge role={r.role === 'user' ? 'user' : r.role === 'system' ? 'tool' : 'asst'} />
+                      <span className="text-[11px] text-text-secondary">
+                        {r.content.length > 100 ? r.content.slice(0, 100) + '...' : r.content}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : messages.length > 0 ? (
+                <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30 space-y-2 max-h-80 overflow-y-auto">
                   {messages.map((m, i) => (
                     <div key={i} className="flex items-start gap-2">
                       <RoleBadge role={m.role === 'user' ? 'user' : 'asst'} />
                       <span className="text-[11px] text-text-secondary">
-                        {m.content.length > 80 ? m.content.slice(0, 80) + '...' : m.content}
+                        {m.content.length > 100 ? m.content.slice(0, 100) + '...' : m.content}
                       </span>
                     </div>
                   ))}
@@ -393,27 +327,57 @@ export function Conversation() {
           {activeTab === 'l2' && (
             <>
               <p className="text-[10px] font-semibold text-text-muted tracking-wide">L2 MEMORY</p>
-              <p className="text-[11px] text-text-muted italic">
-                Use Inspector for detailed L2/scope data
-              </p>
+              {detail?.l2 ? (
+                <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30">
+                  <div className="flex items-center gap-1 mb-2">
+                    <span className="text-[10px] font-medium text-success bg-[#E8F5E9] px-1.5 py-0.5 rounded">consolidated</span>
+                  </div>
+                  <p className="text-[11px] text-text-secondary leading-relaxed">{detail.l2}</p>
+                </div>
+              ) : (
+                <p className="text-[11px] text-text-muted italic">No L2 memory consolidated yet</p>
+              )}
             </>
           )}
 
           {activeTab === 'insights' && (
             <>
-              <p className="text-[10px] font-semibold text-text-muted tracking-wide">INSIGHTS</p>
-              <p className="text-[11px] text-text-muted italic">
-                Use Inspector for detailed insights data
-              </p>
+              <p className="text-[10px] font-semibold text-text-muted tracking-wide">INSIGHTS / SCOPE</p>
+              {detail?.scope ? (
+                <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30">
+                  <div className="flex items-center gap-1 mb-1.5">
+                    <ArrowDownRight size={10} className="text-primary" />
+                    <span className="text-[10px] font-medium text-primary">from Main</span>
+                  </div>
+                  <p className="text-[11px] text-text-secondary leading-relaxed">{detail.scope}</p>
+                </div>
+              ) : (
+                <p className="text-[11px] text-text-muted italic">No insights received</p>
+              )}
             </>
           )}
 
           {activeTab === 'prompt' && (
             <>
-              <p className="text-[10px] font-semibold text-text-muted tracking-wide">SYSTEM PROMPT</p>
-              <p className="text-[11px] text-text-muted italic">
-                View in Settings page
-              </p>
+              <p className="text-[10px] font-semibold text-text-muted tracking-wide">SESSION INFO</p>
+              {detail?.meta ? (
+                <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30 space-y-1.5">
+                  {[
+                    { label: 'ID', value: detail.meta.id },
+                    { label: 'Label', value: detail.meta.label },
+                    { label: 'Status', value: detail.meta.status },
+                    { label: 'Turns', value: String(detail.meta.turnCount) },
+                    { label: 'Created', value: new Date(detail.meta.createdAt).toLocaleString() },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="flex justify-between">
+                      <span className="text-[11px] font-medium text-text-muted">{label}</span>
+                      <span className="text-[11px] font-medium text-text">{value}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-text-muted italic">Select a session to view info</p>
+              )}
             </>
           )}
         </div>
