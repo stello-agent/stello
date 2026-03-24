@@ -269,18 +269,7 @@ export function SettingsPage() {
               </div>
             ))}
             {!config && (
-              <>
-                <div className="flex items-center gap-2">
-                  <Wrench size={14} className="text-primary" />
-                  <span className="text-xs font-medium text-text">search_papers</span>
-                  <span className="text-[11px] text-text-muted">— Search academic papers</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Wrench size={14} className="text-primary" />
-                  <span className="text-xs font-medium text-text">write_code</span>
-                  <span className="text-[11px] text-text-muted">— Write code to file system</span>
-                </div>
-              </>
+              <p className="text-[11px] text-text-muted italic">Loading...</p>
             )}
           </div>
           <div className="h-px bg-border mb-4" />
@@ -294,18 +283,7 @@ export function SettingsPage() {
               </div>
             ))}
             {!config && (
-              <>
-                <div className="flex items-center gap-2">
-                  <Zap size={14} className="text-[#D89575]" />
-                  <span className="text-xs font-medium text-text">research</span>
-                  <span className="text-[11px] text-text-muted">— keywords: paper, search, cite</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Zap size={14} className="text-[#D89575]" />
-                  <span className="text-xs font-medium text-text">coding</span>
-                  <span className="text-[11px] text-text-muted">— keywords: implement, code, build</span>
-                </div>
-              </>
+              <p className="text-[11px] text-text-muted italic">Loading...</p>
             )}
           </div>
         </Card>

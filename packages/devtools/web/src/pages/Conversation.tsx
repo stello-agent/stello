@@ -29,41 +29,7 @@ interface ChatMessage {
   toolCall?: { name: string; args: string; duration: string }
 }
 
-/** Mock session 列表 */
-const mockSessions: SessionItem[] = [
-  { id: 'sess-1', label: 'research', turns: 12, status: 'active', color: '#3D8A5A' },
-  { id: 'sess-2', label: 'coding', turns: 8, status: 'active', color: '#B8956A' },
-  { id: 'sess-main', label: 'Main Session', turns: 24, status: 'active', color: '#C4A882' },
-  { id: 'sess-3', label: 'papers', turns: 4, status: 'active', color: '#A8C4A0' },
-  { id: 'sess-4', label: 'old-api', turns: 6, status: 'archived', color: '#D89575' },
-]
-
-/** Mock 对话 */
-const mockMessages: ChatMessage[] = [
-  { id: '1', role: 'user', content: 'Search for recent papers on conversation topology' },
-  {
-    id: '2',
-    role: 'assistant',
-    content: 'I found 3 relevant papers on conversation branching and session topology. Let me summarize the key findings...',
-    toolCall: { name: 'search_papers', args: '{"query": "conversation topology"}', duration: '1.2s' },
-  },
-  { id: '3', role: 'user', content: 'Can you focus on the ones from 2024?' },
-  {
-    id: '4',
-    role: 'assistant',
-    content: 'Filtering for 2024 publications. Here are the two most relevant:\n\n1. "Branching Dialogue Trees for Multi-Agent Systems" — Chen et al.\n2. "Session Topology in LLM Orchestration" — Park & Kim',
-    toolCall: { name: 'search_papers', args: '{"query": "...", "year": 2024}', duration: '0.8s' },
-  },
-]
-
-/** Mock L3 记录 */
-const mockL3Records = [
-  { role: 'user' as const, text: 'Search for recent papers on...' },
-  { role: 'asst' as const, text: 'I found 3 relevant papers...' },
-  { role: 'tool' as const, text: 'search_papers → 3 results' },
-  { role: 'user' as const, text: 'Can you focus on the ones from 2024?' },
-  { role: 'asst' as const, text: 'Filtering for 2024 publications...' },
-]
+/* 无 mock 数据——全部从 API 拉取 */
 
 /** 角色 badge */
 function RoleBadge({ role }: { role: 'user' | 'asst' | 'tool' }) {
@@ -83,9 +49,10 @@ function RoleBadge({ role }: { role: 'user' | 'asst' | 'tool' }) {
 export function Conversation() {
   const [searchParams] = useSearchParams()
   const initialSessionId = searchParams.get('session')
-  const [sessions, setSessions] = useState(mockSessions)
-  const [selectedSession, setSelectedSession] = useState(mockSessions[0]!)
-  const [messages, setMessages] = useState<ChatMessage[]>(mockMessages)
+  const [sessions, setSessions] = useState<SessionItem[]>([])
+  const [selectedSession, setSelectedSession] = useState<SessionItem | null>(null)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'l3' | 'l2' | 'insights' | 'prompt'>('l3')
   const [inputValue, setInputValue] = useState('')
   const [sending, setSending] = useState(false)
@@ -104,38 +71,32 @@ export function Conversation() {
           status: s.status,
           color: i === 0 ? '#C4A882' : s.status === 'archived' ? '#D89575' : '#B8956A',
         }))
-        if (all.length > 0) {
-          setSessions(all)
-          const target = initialSessionId ? all.find((s) => s.id === initialSessionId) : null
-          setSelectedSession(target ?? all[0]!)
-        }
+        setSessions(all)
+        const target = initialSessionId ? all.find((s) => s.id === initialSessionId) : null
+        setSelectedSession(target ?? all[0] ?? null)
+        setLoadError(null)
       })
-      .catch(() => {})
+      .catch((err: Error) => setLoadError(err.message))
     fetchConfig().then(setConfig).catch(() => {})
   }, [])
 
   /* 切换 session 时拉取该 session 的 L3 对话记录 */
   useEffect(() => {
+    if (!selectedSession) return
+    setMessages([])
     fetchSessionDetail(selectedSession.id)
       .then((detail) => {
-        if (detail.records.length > 0) {
-          const msgs: ChatMessage[] = detail.records.map((r, i) => ({
-            id: `hist-${i}`,
-            role: r.role === 'user' ? 'user' as const : 'assistant' as const,
-            content: r.content,
-          }))
-          setMessages(msgs)
-        } else {
-          setMessages([])
-        }
+        const msgs: ChatMessage[] = detail.records.map((r, i) => ({
+          id: `hist-${i}`,
+          role: r.role === 'user' ? 'user' as const : 'assistant' as const,
+          content: r.content,
+        }))
+        setMessages(msgs)
       })
-      .catch(() => {
-        /* API 不可用时保持 mock 数据（首次）或清空 */
-        if (selectedSession.id !== mockSessions[0]?.id) {
-          setMessages([])
-        }
+      .catch((err: Error) => {
+        setMessages([{ id: 'err', role: 'assistant', content: `⚠ Failed to load history: ${err.message}` }])
       })
-  }, [selectedSession.id])
+  }, [selectedSession?.id])
 
   /* 消息列表自动滚到底部 */
   useEffect(() => {
@@ -145,7 +106,7 @@ export function Conversation() {
   /** 尝试流式发送（WS），fallback 非流式（REST） */
   const handleSend = async () => {
     const text = inputValue.trim()
-    if (!text || sending) return
+    if (!text || sending || !selectedSession) return
 
     const userMsg: ChatMessage = { id: String(nextIdRef.current++), role: 'user', content: text }
     setMessages((prev) => [...prev, userMsg])
@@ -240,6 +201,17 @@ export function Conversation() {
     }
   }
 
+  if (loadError) {
+    return (
+      <div className="flex items-center justify-center h-full bg-surface">
+        <div className="bg-card border border-error/30 rounded-lg px-6 py-4 max-w-md text-center">
+          <p className="text-sm font-semibold text-error mb-1">Failed to load sessions</p>
+          <p className="text-xs text-text-muted">{loadError}</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full">
       {/* 左侧 Session 列表 */}
@@ -267,12 +239,12 @@ export function Conversation() {
               key={s.id}
               onClick={() => setSelectedSession(s)}
               className={`flex items-center gap-2.5 w-full px-4 py-2.5 text-left transition-colors ${
-                selectedSession.id === s.id ? 'bg-primary-light' : 'hover:bg-surface'
+                selectedSession?.id === s.id ? 'bg-primary-light' : 'hover:bg-surface'
               }`}
             >
               <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
               <div className="flex-1 min-w-0">
-                <div className={`text-[13px] truncate ${selectedSession.id === s.id ? 'font-semibold text-text' : 'font-medium text-text'}`}>
+                <div className={`text-[13px] truncate ${selectedSession?.id === s.id ? 'font-semibold text-text' : 'font-medium text-text'}`}>
                   {s.label}
                 </div>
                 <div className="text-[10px] text-text-secondary">
@@ -289,11 +261,13 @@ export function Conversation() {
         {/* 对话 Header */}
         <div className="flex items-center justify-between h-13 px-5 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: selectedSession.color }} />
-            <span className="text-[15px] font-semibold text-text">{selectedSession.label}</span>
-            <span className="text-[10px] font-medium text-text-secondary bg-muted px-2 py-0.5 rounded-full">
-              {selectedSession.turns} turns
-            </span>
+            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: selectedSession?.color ?? '#9C9B99' }} />
+            <span className="text-[15px] font-semibold text-text">{selectedSession?.label ?? 'No session'}</span>
+            {selectedSession && (
+              <span className="text-[10px] font-medium text-text-secondary bg-muted px-2 py-0.5 rounded-full">
+                {selectedSession.turns} turns
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 px-2.5 py-1 bg-surface rounded-md border border-border">

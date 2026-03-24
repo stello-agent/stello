@@ -33,19 +33,7 @@ const filterOptions: Array<{ key: string; label: string; types: EventType[] }> =
   { key: 'error', label: 'Error', types: ['error'] },
 ]
 
-/** Mock 事件数据 */
-const mockEvents: StelloEvent[] = [
-  { id: '1', time: '10:34:12', type: 'turn:end', session: 'research', description: 'Turn #12 completed · 3 tool calls · 1.2s' },
-  { id: '2', time: '10:34:10', type: 'consolidate', session: 'coding', description: 'L3→L2 consolidation triggered (onSwitch)' },
-  { id: '3', time: '10:33:58', type: 'integrate', session: 'Main', description: 'All L2s → synthesis + insights (afterConsolidate)' },
-  { id: '4', time: '10:33:45', type: 'fork', session: 'research', description: 'Forked → "papers" (inherited context from research)' },
-  { id: '5', time: '10:33:30', type: 'turn:start', session: 'research', description: 'Turn #12 started · input: "Search for recent papers..."' },
-  { id: '6', time: '10:32:55', type: 'error', session: 'notes', description: 'LLM adapter timeout after 30s — emitted, not blocking' },
-  { id: '7', time: '10:32:40', type: 'turn:end', session: 'coding', description: 'Turn #8 completed · 5 tool calls · 2.8s' },
-  { id: '8', time: '10:32:10', type: 'turn:start', session: 'coding', description: 'Turn #8 started · input: "Implement the API endpoint..."' },
-  { id: '9', time: '10:31:50', type: 'consolidate', session: 'research', description: 'L3→L2 consolidation triggered (everyNTurns: 5)' },
-  { id: '10', time: '10:31:30', type: 'turn:end', session: 'research', description: 'Turn #11 completed · 1 tool call · 0.6s' },
-]
+/* 无 mock 数据——全部从 WS 实时接收 */
 
 /** 将 WS 消息类型映射为 EventType */
 function wsTypeToEventType(type: string): EventType | null {
@@ -67,7 +55,7 @@ function formatTime(date: Date): string {
 /** Events 事件流页面 */
 export function Events() {
   const [activeFilter, setActiveFilter] = useState('all')
-  const [events, setEvents] = useState<StelloEvent[]>(mockEvents)
+  const [events, setEvents] = useState<StelloEvent[]>([])
   const [wsConnected, setWsConnected] = useState(false)
   const nextIdRef = useRef(100)
 

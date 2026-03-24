@@ -24,20 +24,7 @@ interface LayoutNode extends TopoNode {
   brightness: number
 }
 
-/** Mock 拓扑数据 */
-const mockNodes: TopoNode[] = [
-  { id: 'main', label: 'Main', parentId: null, status: 'active', turns: 24, children: ['research', 'coding', 'old-api', 'sess-h'], refs: [] },
-  { id: 'research', label: 'research', parentId: 'main', status: 'active', turns: 12, children: ['papers', 'notes', 'draft'], refs: [] },
-  { id: 'coding', label: 'coding', parentId: 'main', status: 'active', turns: 8, children: ['sess-e', 'sess-j'], refs: ['notes'] },
-  { id: 'papers', label: 'papers', parentId: 'research', status: 'active', turns: 4, children: ['sess-i'], refs: ['old-api'] },
-  { id: 'notes', label: 'notes', parentId: 'research', status: 'active', turns: 3, children: [], refs: [] },
-  { id: 'draft', label: 'draft', parentId: 'research', status: 'active', turns: 1, children: [], refs: [] },
-  { id: 'old-api', label: 'old-api', parentId: 'main', status: 'archived', turns: 6, children: [], refs: [] },
-  { id: 'sess-h', label: 'Session H', parentId: 'main', status: 'archived', turns: 2, children: [], refs: [] },
-  { id: 'sess-e', label: 'archived', parentId: 'coding', status: 'archived', turns: 5, children: [], refs: [] },
-  { id: 'sess-i', label: 'Session I', parentId: 'papers', status: 'archived', turns: 1, children: [], refs: [] },
-  { id: 'sess-j', label: 'Session J', parentId: 'coding', status: 'active', turns: 2, children: [], refs: [] },
-]
+/* 无 mock 数据——全部从 API 拉取 */
 
 /** 节点颜色映射 */
 function getNodeStyle(node: TopoNode, isMain: boolean): { color: string; glowColor: string } {
@@ -267,7 +254,8 @@ export function Topology() {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const nodesRef = useRef<LayoutNode[]>([])
-  const [topoNodes, setTopoNodes] = useState<TopoNode[]>(mockNodes)
+  const [topoNodes, setTopoNodes] = useState<TopoNode[]>([])
+  const [dataError, setDataError] = useState<string | null>(null)
   const [size, setSize] = useState({ width: 800, height: 600 })
   const [highlighted, setHighlighted] = useState<string | null>(null)
   const [tooltip, setTooltip] = useState<TooltipState>({ visible: false, x: 0, y: 0, node: null })
@@ -291,44 +279,29 @@ export function Topology() {
   /* 同步 highlighted 到 ref（rAF 读取） */
   useEffect(() => { highlightedRef.current = highlighted }, [highlighted])
 
-  /* 从 API 拉取 session 数据 */
+  /* 从 API 拉取完整拓扑树 */
   useEffect(() => {
-    fetchSessions()
-      .then(({ sessions }) => {
-        if (sessions.length === 0) return
-        /* SessionMeta 没有 parentId/children/refs，需要从 getNode 补充 */
-        /* 简化方案：用 listAll 的 SessionMeta 构建，parentId 等拓扑信息后续从 tree API 获取 */
-        const nodes: TopoNode[] = sessions.map((s) => ({
-          id: s.id,
-          label: s.label,
-          parentId: null, // 会被 tree API 覆盖
-          status: s.status,
-          turns: s.turnCount,
-          children: [],
-          refs: [],
-        }))
-        setTopoNodes(nodes)
-        /* 再拉完整拓扑树补充关系 */
-        import('@/lib/api').then(({ fetchSessionTree }) =>
-          fetchSessionTree().then((tree) => {
-            const flattenTree = (node: typeof tree): TopoNode[] => {
-              const topo: TopoNode = {
-                id: node.node.id,
-                label: node.node.label,
-                parentId: node.node.parentId,
-                status: node.meta.status,
-                turns: node.meta.turnCount,
-                children: node.node.children,
-                refs: node.node.refs,
-              }
-              return [topo, ...node.children.flatMap(flattenTree)]
-            }
-            const all = flattenTree(tree)
-            if (all.length > 0) setTopoNodes(all)
-          }).catch(() => {})
-        )
+    import('@/lib/api').then(({ fetchSessionTree }) =>
+      fetchSessionTree().then((tree) => {
+        const flattenTree = (node: typeof tree): TopoNode[] => {
+          const topo: TopoNode = {
+            id: node.node.id,
+            label: node.node.label,
+            parentId: node.node.parentId,
+            status: node.meta.status,
+            turns: node.meta.turnCount,
+            children: node.node.children,
+            refs: node.node.refs,
+          }
+          return [topo, ...node.children.flatMap(flattenTree)]
+        }
+        const all = flattenTree(tree)
+        setTopoNodes(all)
+        setDataError(null)
+      }).catch((err: Error) => {
+        setDataError(err.message)
       })
-      .catch(() => {})
+    )
   }, [])
 
   /* ResizeObserver */
@@ -548,11 +521,28 @@ export function Topology() {
         {/* 顶部标题栏 */}
         <div className="absolute top-5 left-6 flex items-center gap-3">
           <span className="text-base font-semibold text-[#E5E4E1]">Session Topology</span>
-          <div className="flex items-center gap-1 bg-primary/15 rounded-full px-2.5 py-0.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-            <span className="text-[11px] font-medium text-primary">{topoNodes.length} sessions</span>
-          </div>
+          {topoNodes.length > 0 && (
+            <div className="flex items-center gap-1 bg-primary/15 rounded-full px-2.5 py-0.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+              <span className="text-[11px] font-medium text-primary">{topoNodes.length} sessions</span>
+            </div>
+          )}
         </div>
+
+        {/* 错误/空状态 */}
+        {dataError && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="bg-[#2A2520]/90 border border-error/30 rounded-lg px-6 py-4 max-w-md text-center">
+              <p className="text-sm font-semibold text-error mb-1">Failed to load sessions</p>
+              <p className="text-xs text-[#9C9B99]">{dataError}</p>
+            </div>
+          </div>
+        )}
+        {!dataError && topoNodes.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <p className="text-sm text-[#9C9B99]">Loading sessions...</p>
+          </div>
+        )}
 
         {/* 图例 */}
         <div className="absolute bottom-5 left-6 flex items-center gap-4">
