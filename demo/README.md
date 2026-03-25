@@ -26,11 +26,11 @@ pnpm demo:agent
 
 ### `stello-agent-chat`
 
-真实大模型 + 最小浏览器聊天前端示例，展示：
+真实大模型 + DevTools 调试入口示例，展示：
 
 - `StelloAgent` 接真实 `@stello-ai/session`
-- 本地 HTTP 服务承接当前 core 能力
-- 会话列表、聊天消息、子会话创建
+- `chat-devtools.ts` 启动留学顾问 demo
+- 会话树、聊天消息、L2 / insights、运行时设置调试
 
 运行方式：
 

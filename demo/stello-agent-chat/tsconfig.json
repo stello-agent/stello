@@ -6,12 +6,12 @@
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "Bundler",
-    "allowImportingTsExtensions": false,
+    // "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": true
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["chat-devtools.ts", "e2e-test.ts"]
 }

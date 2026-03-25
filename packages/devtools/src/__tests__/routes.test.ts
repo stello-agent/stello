@@ -44,8 +44,9 @@ describe('devtools REST routes', () => {
 
     const res = await app.request('/api/sessions')
     expect(res.status).toBe(200)
-    const body = await res.json() as { sessions: unknown[] }
+    const body = await res.json() as { sessions: Array<{ id: string }> }
     expect(body.sessions).toHaveLength(2)
+    expect(body.sessions[0]?.id).toBe('root')
   })
 
   it('GET /sessions/tree 返回递归树', async () => {
@@ -164,5 +165,21 @@ describe('devtools REST routes', () => {
     const body = await res.json() as { meta: { id: string }; records: unknown[]; l2: null; scope: null }
     expect(body.meta.id).toBe('sess-1')
     expect(body.records).toEqual([])
+  })
+
+  it('GET /sessions/:id/detail 优先返回 sessionAccess 的实时 scope', async () => {
+    const agent = createMockAgent()
+    const sessionAccess = {
+      getSystemPrompt: vi.fn().mockResolvedValue(null),
+      getScope: vi.fn().mockResolvedValue('live insight'),
+    }
+    const app = new Hono()
+    app.route('/api', createRoutes(agent as never, undefined, undefined, undefined, undefined, sessionAccess))
+
+    const res = await app.request('/api/sessions/sess-1/detail')
+    expect(res.status).toBe(200)
+    const body = await res.json() as { scope: string | null }
+    expect(body.scope).toBe('live insight')
+    expect(sessionAccess.getScope).toHaveBeenCalledWith('sess-1')
   })
 })

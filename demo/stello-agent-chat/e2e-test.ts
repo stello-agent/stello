@@ -1,7 +1,7 @@
 /**
  * 留学选校咨询 Demo 端到端测试
  *
- * 用法：确保 server 已启动（npx tsx server.ts），然后运行：
+ * 用法：确保 demo 已启动（npx tsx chat-devtools.ts），然后运行：
  *   npx tsx e2e-test.ts
  *
  * 测试链路：

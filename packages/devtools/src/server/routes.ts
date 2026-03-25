@@ -2,6 +2,23 @@ import { Hono } from 'hono'
 import type { StelloAgent, StelloAgentHotConfig } from '@stello-ai/core'
 import type { LLMConfigProvider, PromptProvider, SessionAccessProvider, ToolsProvider, SkillsProvider, IntegrationProvider } from './types.js'
 
+/** 让主 session 固定排第一，其余保持原始顺序 */
+async function orderSessionsWithMainFirst(agent: StelloAgent) {
+  const [all, root] = await Promise.all([
+    agent.sessions.listAll(),
+    agent.sessions.getRoot().catch(() => null),
+  ])
+  if (!root) return all
+
+  const indexed = all.map((session, index) => ({ session, index }))
+  indexed.sort((a, b) => {
+    if (a.session.id === root.id && b.session.id !== root.id) return -1
+    if (a.session.id !== root.id && b.session.id === root.id) return 1
+    return a.index - b.index
+  })
+  return indexed.map(({ session }) => session)
+}
+
 /** 全局错误处理 */
 function withErrorHandler(app: Hono): void {
   app.onError((err, c) => {
@@ -92,7 +109,7 @@ export function createRoutes(
 
   /** 获取所有 session 列表（扁平 SessionMeta[]） */
   app.get('/sessions', async (c) => {
-    const all = await agent.sessions.listAll()
+    const all = await orderSessionsWithMainFirst(agent)
     return c.json({ sessions: all })
   })
 
@@ -112,17 +129,19 @@ export function createRoutes(
     return c.json(node)
   })
 
-  /** 获取 session 详细数据（L3/L2/scope） */
+  /** 获取 session 详细数据（L3/L2/insight-scope） */
   app.get('/sessions/:id/detail', async (c) => {
     const id = c.req.param('id')
     const memory = agent.config.memory
-    const [meta, records, l2, scope] = await Promise.all([
+    const [meta, records, l2, mirroredScope, liveScope] = await Promise.all([
       agent.sessions.get(id),
       memory.readRecords(id).catch(() => []),
       memory.readMemory(id).catch(() => null),
       memory.readScope(id).catch(() => null),
+      sessionAccessProvider?.getScope ? sessionAccessProvider.getScope(id).catch(() => null) : Promise.resolve(null),
     ])
     if (!meta) return c.json({ error: 'Session not found' }, 404)
+    const scope = liveScope ?? mirroredScope
     return c.json({ meta, records, l2, scope })
   })
 
@@ -314,17 +333,33 @@ export function createRoutes(
   /** 切换 LLM 配置 */
   app.patch('/llm', async (c) => {
     if (!llmProvider) return c.json({ error: 'LLM provider not configured — pass llm option to startDevtools()' }, 400)
-    const body = await c.req.json<{ model?: string; baseURL?: string; apiKey?: string }>()
-    if (!body.model && !body.baseURL && !body.apiKey) {
-      return c.json({ error: 'At least one of model, baseURL, apiKey is required' }, 400)
+    const body = await c.req.json<{ model?: string; baseURL?: string; apiKey?: string; temperature?: number; maxTokens?: number }>()
+    if (
+      body.model === undefined &&
+      body.baseURL === undefined &&
+      body.apiKey === undefined &&
+      body.temperature === undefined &&
+      body.maxTokens === undefined
+    ) {
+      return c.json({ error: 'At least one of model, baseURL, apiKey, temperature, maxTokens is required' }, 400)
     }
     const current = llmProvider.getConfig()
     llmProvider.setConfig({
       model: body.model ?? current.model,
       baseURL: body.baseURL ?? current.baseURL,
       apiKey: body.apiKey ?? current.apiKey,
+      temperature: body.temperature ?? current.temperature,
+      maxTokens: body.maxTokens ?? current.maxTokens,
     })
-    onEvent?.({ type: 'llm.updated', data: { model: body.model, baseURL: body.baseURL } })
+    onEvent?.({
+      type: 'llm.updated',
+      data: {
+        model: body.model,
+        baseURL: body.baseURL,
+        temperature: body.temperature,
+        maxTokens: body.maxTokens,
+      },
+    })
     return c.json({ ok: true, ...llmProvider.getConfig() })
   })
 

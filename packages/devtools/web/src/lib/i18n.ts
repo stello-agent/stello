@@ -131,6 +131,10 @@ const dict: Record<string, Record<Locale, string>> = {
 
   // ─── Settings ───
   'settings.title': { en: 'Agent Configuration', zh: 'Agent 配置' },
+  'settings.live.title': { en: 'Live Runtime', zh: '运行时热更新' },
+  'settings.live.desc': { en: 'These controls apply to the current running agent immediately.', zh: '这一组设置会直接作用于当前运行中的 agent。' },
+  'settings.bootstrap.title': { en: 'Read-only Bootstrap', zh: '启动时配置只读区' },
+  'settings.bootstrap.desc': { en: 'These values describe how the agent was wired at startup. They are for inspection, not live editing.', zh: '这一组展示的是 agent 启动时的接线和能力状态，用于观察，不用于热更新。' },
   'settings.llm.title': { en: 'LLM Provider', zh: 'LLM 提供者' },
   'settings.llm.model': { en: 'Model', zh: '模型' },
   'settings.llm.baseUrl': { en: 'Base URL', zh: '接口地址' },

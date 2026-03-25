@@ -15,14 +15,11 @@ import {
   XCircle,
   ChevronDown,
   ChevronRight,
-  Save,
   Download,
   Upload,
   Pencil,
   Info,
   Sparkles,
-  Eye,
-  EyeOff,
   FileText,
 } from 'lucide-react'
 import { fetchConfig, patchConfig, fetchLLMConfig, patchLLMConfig, fetchPrompts, patchPrompts, fetchTools, toggleTool, fetchSkills, toggleSkill, type AgentConfig, type HotConfigPatch, type LLMConfig, type PromptsConfig, type ToolWithStatus, type SkillWithStatus } from '@/lib/api'
@@ -131,28 +128,47 @@ function ClickToEdit({ children, onClick }: { children: React.ReactNode; onClick
 const CONSOLIDATION_TRIGGERS = ['manual', 'everyNTurns', 'onSwitch', 'onArchive', 'onLeave']
 const INTEGRATION_TRIGGERS = ['manual', 'afterConsolidate', 'everyNTurns', 'onSwitch', 'onArchive', 'onLeave']
 
+interface SettingsSnapshotV1 {
+  version: 1
+  exportedAt: string
+  config: AgentConfig
+  llm: LLMConfig | null
+  prompts: PromptsConfig | null
+  tools: { configured: boolean; tools: ToolWithStatus[] }
+  skills: { configured: boolean; skills: SkillWithStatus[] }
+}
+
 /** Settings 配置页面 */
 export function SettingsPage() {
   const { t } = useI18n()
   const [config, setConfig] = useState<AgentConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
   const [llmConfig, setLlmConfig] = useState<LLMConfig | null>(null)
-  const [llmDraft, setLlmDraft] = useState({ model: '', baseURL: '', apiKey: '', temperature: 0.7, maxTokens: 1024 })
-  const [llmEditing, setLlmEditing] = useState(false)
-  const [llmSaving, setLlmSaving] = useState(false)
-  const [showApiKey, setShowApiKey] = useState(false)
   const [promptsConfig, setPromptsConfig] = useState<PromptsConfig | null>(null)
-  const [promptsEditing, setPromptsEditing] = useState(false)
-  const [promptsDraft, setPromptsDraft] = useState({ consolidate: '', integrate: '' })
-  const [promptsSaving, setPromptsSaving] = useState(false)
   const [toolsList, setToolsList] = useState<{ configured: boolean; tools: ToolWithStatus[] }>({ configured: false, tools: [] })
   const [skillsList, setSkillsList] = useState<{ configured: boolean; skills: SkillWithStatus[] }>({ configured: false, skills: [] })
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogTitle, setDialogTitle] = useState('')
   const [dialogFields, setDialogFields] = useState<EditField[]>([])
   const [dialogSaveFn, setDialogSaveFn] = useState<(values: Record<string, string | number>) => Promise<void>>(() => async () => {})
+
+  /** 刷新设置页所有数据 */
+  const refreshAll = useCallback(async () => {
+    const [nextConfig, nextLlm, nextPrompts, nextTools, nextSkills] = await Promise.all([
+      fetchConfig(),
+      fetchLLMConfig().catch(() => null),
+      fetchPrompts().catch(() => null),
+      fetchTools().catch(() => ({ configured: false, tools: [] as ToolWithStatus[] })),
+      fetchSkills().catch(() => ({ configured: false, skills: [] as SkillWithStatus[] })),
+    ])
+
+    setConfig(nextConfig)
+    setLlmConfig(nextLlm)
+    setPromptsConfig(nextPrompts)
+    setToolsList(nextTools)
+    setSkillsList(nextSkills)
+  }, [])
 
   /** 打开编辑 Dialog */
   const openEdit = useCallback((title: string, fields: EditField[], saveFn: (values: Record<string, string | number>) => Promise<void>) => {
@@ -163,68 +179,41 @@ export function SettingsPage() {
   }, [])
 
   useEffect(() => {
-    fetchConfig()
-      .then(setConfig)
+    refreshAll()
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
-    fetchLLMConfig()
-      .then((cfg) => {
-        setLlmConfig(cfg)
-        if (cfg.configured) {
-          setLlmDraft({ model: cfg.model ?? '', baseURL: cfg.baseURL ?? '', apiKey: cfg.apiKey ?? '', temperature: cfg.temperature ?? 0.7, maxTokens: cfg.maxTokens ?? 1024 })
-        }
-      })
-      .catch(() => {})
-    fetchPrompts()
-      .then((cfg) => {
-        setPromptsConfig(cfg)
-        if (cfg.configured) {
-          setPromptsDraft({ consolidate: cfg.consolidate ?? '', integrate: cfg.integrate ?? '' })
-        }
-      })
-      .catch(() => {})
-    fetchTools().then(setToolsList).catch(() => {})
-    fetchSkills().then(setSkillsList).catch(() => {})
-  }, [])
+  }, [refreshAll])
 
   /** 通用 patch 并刷新 state */
   const handlePatch = useCallback(async (patch: HotConfigPatch) => {
-    setSaving(true)
     try {
       const result = await patchConfig(patch)
       setConfig(result.config)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setSaving(false)
     }
   }, [])
-
-  /** 保存 LLM 配置 */
-  const handleLLMSave = useCallback(async () => {
-    setLlmSaving(true)
-    try {
-      const result = await patchLLMConfig(llmDraft)
-      setLlmConfig(result)
-      setLlmEditing(false)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLlmSaving(false)
-    }
-  }, [llmDraft])
 
   /** 导出配置 JSON */
   const handleExport = useCallback(() => {
     if (!config) return
-    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' })
+    const snapshot: SettingsSnapshotV1 = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      config,
+      llm: llmConfig,
+      prompts: promptsConfig,
+      tools: toolsList,
+      skills: skillsList,
+    }
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `stello-config-${new Date().toISOString().slice(0, 10)}.json`
+    a.download = `stello-settings-${new Date().toISOString().slice(0, 10)}.json`
     a.click()
     URL.revokeObjectURL(url)
-  }, [config])
+  }, [config, llmConfig, promptsConfig, toolsList, skillsList])
 
   /** 导入配置 JSON */
   const handleImport = useCallback(() => {
@@ -237,26 +226,66 @@ export function SettingsPage() {
       try {
         const text = await file.text()
         const json = JSON.parse(text) as Record<string, unknown>
+
+        const importedConfig = (
+          json.config && typeof json.config === 'object'
+            ? json.config
+            : json
+        ) as Partial<AgentConfig>
+
         const patch: HotConfigPatch = {}
-        if (json.runtime && typeof json.runtime === 'object') {
-          const rt = json.runtime as Record<string, unknown>
-          if (typeof rt.idleTtlMs === 'number') patch.runtime = { idleTtlMs: rt.idleTtlMs }
+        if (importedConfig.runtime?.idleTtlMs !== undefined) {
+          patch.runtime = { idleTtlMs: importedConfig.runtime.idleTtlMs }
         }
-        if (json.scheduling && typeof json.scheduling === 'object') {
-          patch.scheduling = json.scheduling as HotConfigPatch['scheduling']
+        if (importedConfig.scheduling) {
+          patch.scheduling = importedConfig.scheduling
         }
-        if (json.splitGuard && typeof json.splitGuard === 'object') {
-          patch.splitGuard = json.splitGuard as HotConfigPatch['splitGuard']
+        if (importedConfig.splitGuard) {
+          patch.splitGuard = importedConfig.splitGuard
         }
         if (Object.keys(patch).length > 0) {
-          await handlePatch(patch)
+          await patchConfig(patch)
         }
+
+        const importedLlm = (json.llm && typeof json.llm === 'object') ? json.llm as Partial<LLMConfig> : null
+        if (importedLlm?.configured) {
+          await patchLLMConfig({
+            model: importedLlm.model,
+            baseURL: importedLlm.baseURL,
+            apiKey: importedLlm.apiKey,
+            temperature: importedLlm.temperature,
+            maxTokens: importedLlm.maxTokens,
+          })
+        }
+
+        const importedPrompts = (json.prompts && typeof json.prompts === 'object') ? json.prompts as Partial<PromptsConfig> : null
+        if (importedPrompts?.configured) {
+          await patchPrompts({
+            consolidate: importedPrompts.consolidate,
+            integrate: importedPrompts.integrate,
+          })
+        }
+
+        const importedTools = (json.tools && typeof json.tools === 'object') ? json.tools as { configured?: boolean; tools?: ToolWithStatus[] } : null
+        if (importedTools?.configured && importedTools.tools) {
+          for (const tool of importedTools.tools) {
+            await toggleTool(tool.name, tool.enabled)
+          }
+        }
+
+        const importedSkills = (json.skills && typeof json.skills === 'object') ? json.skills as { configured?: boolean; skills?: SkillWithStatus[] } : null
+        if (importedSkills?.configured && importedSkills.skills) {
+          for (const skill of importedSkills.skills) {
+            await toggleSkill(skill.name, skill.enabled)
+          }
+        }
+        await refreshAll()
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Invalid JSON file')
       }
     }
     input.click()
-  }, [handlePatch])
+  }, [refreshAll])
 
   if (loading) {
     return (
@@ -307,6 +336,14 @@ export function SettingsPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto bg-surface p-6 space-y-5">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Tag variant="green">{t('common.live')}</Tag>
+            <h3 className="text-[13px] font-semibold text-text">{t('settings.live.title')}</h3>
+          </div>
+          <p className="text-[11px] text-text-muted">{t('settings.live.desc')}</p>
+        </div>
+
         {/* LLM Provider */}
         <Card title={t('settings.llm.title')} icon={Sparkles}>
           {llmConfig?.configured ? (
@@ -417,12 +454,19 @@ export function SettingsPage() {
           </div>
           <Row label={t('settings.sched.consolidationTrigger')}>
             {config.scheduling.hasScheduler ? (
-              <ClickToEdit onClick={() => openEdit(t('settings.sched.title'), [
+              <ClickToEdit onClick={() => openEdit(t('settings.sched.consolidationTrigger'), [
                 { key: 'conTrigger', label: t('settings.sched.consolidationTrigger'), type: 'select', value: config.scheduling.consolidation.trigger, options: CONSOLIDATION_TRIGGERS },
                 { key: 'conEveryN', label: t('settings.sched.consolidationEveryN'), type: 'number', value: config.scheduling.consolidation.everyNTurns ?? 3, min: 1 },
-                { key: 'intTrigger', label: t('settings.sched.integrationTrigger'), type: 'select', value: config.scheduling.integration.trigger, options: INTEGRATION_TRIGGERS },
-                { key: 'intEveryN', label: t('settings.sched.integrationEveryN'), type: 'number', value: config.scheduling.integration.everyNTurns ?? 3, min: 1 },
-              ], async (v) => { await handlePatch({ scheduling: { consolidation: { trigger: String(v.conTrigger), everyNTurns: Number(v.conEveryN) }, integration: { trigger: String(v.intTrigger), everyNTurns: Number(v.intEveryN) } } }) })}>
+              ], async (v) => {
+                await handlePatch({
+                  scheduling: {
+                    consolidation: {
+                      trigger: String(v.conTrigger),
+                      everyNTurns: Number(v.conEveryN),
+                    },
+                  },
+                })
+              })}>
                 {config.scheduling.consolidation.trigger}
               </ClickToEdit>
             ) : (
@@ -435,7 +479,25 @@ export function SettingsPage() {
             </Row>
           )}
           <Row label={t('settings.sched.integrationTrigger')}>
-            <code className="text-[11px] font-mono bg-surface px-2 py-0.5 rounded border border-border text-primary-dark">{config.scheduling.integration.trigger}</code>
+            {config.scheduling.hasScheduler ? (
+              <ClickToEdit onClick={() => openEdit(t('settings.sched.integrationTrigger'), [
+                { key: 'intTrigger', label: t('settings.sched.integrationTrigger'), type: 'select', value: config.scheduling.integration.trigger, options: INTEGRATION_TRIGGERS },
+                { key: 'intEveryN', label: t('settings.sched.integrationEveryN'), type: 'number', value: config.scheduling.integration.everyNTurns ?? 3, min: 1 },
+              ], async (v) => {
+                await handlePatch({
+                  scheduling: {
+                    integration: {
+                      trigger: String(v.intTrigger),
+                      everyNTurns: Number(v.intEveryN),
+                    },
+                  },
+                })
+              })}>
+                {config.scheduling.integration.trigger}
+              </ClickToEdit>
+            ) : (
+              <code className="text-[11px] font-mono bg-surface px-2 py-0.5 rounded border border-border text-primary-dark">{config.scheduling.integration.trigger}</code>
+            )}
           </Row>
           {(config.scheduling.integration.trigger === 'everyNTurns') && (
             <Row label={t('settings.sched.integrationEveryN')}>
@@ -484,6 +546,14 @@ export function SettingsPage() {
             <StatusDot configured={config.runtime.hasResolver} label={config.runtime.hasResolver ? t('common.custom') : t('settings.runtime.auto')} />
           </Row>
         </Card>
+
+        <div className="pt-2 space-y-1">
+          <div className="flex items-center gap-2">
+            <ImmutableBadge />
+            <h3 className="text-[13px] font-semibold text-text">{t('settings.bootstrap.title')}</h3>
+          </div>
+          <p className="text-[11px] text-text-muted">{t('settings.bootstrap.desc')}</p>
+        </div>
 
         {/* Session Adapter */}
         <Card title={t('settings.session.title')} icon={Database}>

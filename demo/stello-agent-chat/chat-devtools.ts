@@ -1,6 +1,4 @@
 import 'dotenv/config'
-import { dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import {
   NodeFileSystemAdapter,
   SessionTreeImpl,
@@ -14,6 +12,9 @@ import {
   type EngineToolRuntime,
   type MemoryEngine,
   type SessionMeta,
+  type Skill,
+  type SkillRouter,
+  type TopologyNode,
   type SessionTree,
   type StelloAgentConfig,
   type TurnRecord,
@@ -24,12 +25,13 @@ import {
 import { startDevtools } from '../../packages/devtools/src/index'
 import {
   createOpenAICompatibleAdapter,
-} from '../../packages/session/src/adapters/openai-compatible.ts'
-import { createMainSession } from '../../packages/session/src/create-main-session.ts'
-import { createSession } from '../../packages/session/src/create-session.ts'
-import { InMemoryStorageAdapter } from '../../packages/session/src/mocks/in-memory-storage.ts'
+} from '../../packages/session/src/adapters/openai-compatible'
+import { loadMainSession } from '../../packages/session/src/create-main-session'
+import { loadSession } from '../../packages/session/src/create-session'
+import { InMemoryStorageAdapter } from '../../packages/session/src/mocks/in-memory-storage'
 import type { MainSession } from '../../packages/session/src/types/main-session-api.ts'
 import type { Session } from '../../packages/session/src/types/session-api.ts'
+import type { SessionMeta as SessionComponentMeta } from '../../packages/session/src/types/session.ts'
 
 const dataDir = './tmp/stello-agent-chat'
 const host = process.env.DEMO_HOST ?? '127.0.0.1'
@@ -113,16 +115,157 @@ const schema: CoreSchema = {
   topics: { type: 'array', default: [], bubbleable: true },
 }
 
+type DemoToolDef = Array<{
+  name: string
+  description: string
+  inputSchema: Record<string, unknown>
+}>
+
 type WrappedSession = { session: Session; main?: never }
 type WrappedMainSession = { main: MainSession; session?: never }
+
+/** 支持运行时启停的 SkillRouter 包装 */
+class ToggleableSkillRouter implements SkillRouter {
+  constructor(
+    private readonly base: SkillRouter,
+    private readonly disabledSkills: Set<string>,
+  ) {}
+
+  /** 注册 skill 到底层 router */
+  register(skill: Skill): void {
+    this.base.register(skill)
+  }
+
+  /** 匹配 skill 时跳过被禁用项 */
+  match(message: TurnRecord): Skill | null {
+    const matched = this.base.match(message)
+    if (!matched) return null
+    return this.disabledSkills.has(matched.name) ? null : matched
+  }
+
+  /** 列举时带上当前启用过滤 */
+  getAll(): Skill[] {
+    return this.base.getAll().filter((skill) => !this.disabledSkills.has(skill.name))
+  }
+}
+
+/** 同步子会话的 insight 到文件层镜像，避免 UI 和真实上下文状态分裂 */
+async function syncSessionScopeMirror(
+  coreSessionId: string,
+  session: Session,
+  memoryEngine?: MemoryEngine,
+): Promise<void> {
+  if (!memoryEngine) return
+  const insight = await session.insight()
+  await memoryEngine.writeScope(coreSessionId, insight ?? '')
+}
+
+/** 把 core session 元数据注册到 session storage，并按 core id 加载真实 Session */
+async function registerStandardSession(
+  storage: InMemoryStorageAdapter,
+  sessionId: string,
+  label: string,
+  systemPrompt: string,
+  llm: ReturnType<typeof createOpenAICompatibleAdapter>,
+  tools: DemoToolDef,
+): Promise<Session> {
+  const now = new Date().toISOString()
+  const meta: SessionComponentMeta = {
+    id: sessionId,
+    label,
+    role: 'standard',
+    status: 'active',
+    tags: [],
+    metadata: {},
+    createdAt: now,
+    updatedAt: now,
+  }
+  await storage.putSession(meta)
+  await storage.putSystemPrompt(sessionId, systemPrompt)
+  const session = await loadSession(sessionId, { storage, llm, tools: [...tools] })
+  if (!session) throw new Error(`Failed to load standard session: ${sessionId}`)
+  return session
+}
+
+/** 把 core root 元数据注册到 session storage，并按 core id 加载真实 MainSession */
+async function registerMainSession(
+  storage: InMemoryStorageAdapter,
+  sessionId: string,
+  label: string,
+  systemPrompt: string,
+  llm: ReturnType<typeof createOpenAICompatibleAdapter>,
+  tools: DemoToolDef,
+): Promise<MainSession> {
+  const now = new Date().toISOString()
+  const meta: SessionComponentMeta = {
+    id: sessionId,
+    label,
+    role: 'main',
+    status: 'active',
+    tags: [],
+    metadata: {},
+    createdAt: now,
+    updatedAt: now,
+  }
+  await storage.putSession(meta)
+  await storage.putSystemPrompt(sessionId, systemPrompt)
+  const session = await loadMainSession(sessionId, { storage, llm, tools: [...tools] })
+  if (!session) throw new Error(`Failed to load main session: ${sessionId}`)
+  return session
+}
+
+/** 把文件层镜像状态恢复到运行态 session storage */
+async function hydrateRuntimeState(
+  storage: InMemoryStorageAdapter,
+  memory: MemoryEngine,
+  sessionId: string,
+): Promise<void> {
+  const [records, l2, scope] = await Promise.all([
+    memory.readRecords(sessionId).catch(() => []),
+    memory.readMemory(sessionId).catch(() => null),
+    memory.readScope(sessionId).catch(() => null),
+  ])
+
+  for (const record of records) {
+    await storage.appendRecord(sessionId, {
+      role: record.role,
+      content: record.content,
+      timestamp: record.timestamp,
+    })
+  }
+  if (l2) {
+    await storage.putMemory(sessionId, l2)
+  }
+  if (scope) {
+    await storage.putInsight(sessionId, scope)
+  }
+}
 
 function wrapSession(coreSessionId: string, session: Session, memoryEngine?: MemoryEngine) {
   return {
     get meta() {
       return { id: coreSessionId, status: session.meta.status } as const
     },
-    async send(content: string) { return session.send(content) },
-    stream(content: string) { return session.stream(content) },
+    async send(content: string) {
+      const result = await session.send(content)
+      await syncSessionScopeMirror(coreSessionId, session, memoryEngine)
+      return result
+    },
+    stream(content: string) {
+      const source = session.stream(content)
+      return {
+        result: (async () => {
+          const result = await source.result
+          await syncSessionScopeMirror(coreSessionId, session, memoryEngine)
+          return result
+        })(),
+        async *[Symbol.asyncIterator]() {
+          for await (const chunk of source) {
+            yield chunk
+          }
+        },
+      }
+    },
     async messages() { return session.messages() },
     async consolidate(fn: (currentMemory: string | null, messages: Array<{ role: string; content: string; timestamp?: string }>) => Promise<string>) {
       await session.consolidate(fn)
@@ -147,7 +290,11 @@ function createFileMemoryEngine(fs: NodeFileSystemAdapter, sessions: SessionTree
   return {
     async readCore(path?: string) {
       const data = (await fs.readJSON<Record<string, unknown>>(corePath)) ?? {
-        name: schema.name.default, goal: schema.goal.default, topics: schema.topics.default,
+        name: schema.name?.default ?? '',
+
+        goal: schema.goal?.default ?? '',
+
+        topics: schema.topics?.default ?? [],
       }
       if (!path) return data
       return data?.[path]
@@ -171,7 +318,7 @@ function createFileMemoryEngine(fs: NodeFileSystemAdapter, sessions: SessionTree
     async readRecords(sessionId: string) { return (await fs.readJSON<TurnRecord[]>(recordsPath(sessionId))) ?? [] },
     async assembleContext(sessionId: string) {
       const core = await this.readCore() as Record<string, unknown>
-      const session = await sessions.get(sessionId)
+      const session = await sessions.getNode(sessionId)
       const currentMemory = await this.readMemory(sessionId)
       const scope = await this.readScope(sessionId)
       const parentMemories: string[] = []
@@ -197,13 +344,15 @@ async function bootstrap() {
       messages.map((m) => ({ role: m.role as 'user' | 'assistant' | 'system', content: m.content })),
       { temperature: currentLlmConfig.temperature, maxTokens: currentLlmConfig.maxTokens },
     )
-    return result.content
+    return result.content ?? ''
   }
 
   let currentConsolidatePrompt = CONSOLIDATE_PROMPT
   let currentIntegratePrompt = INTEGRATE_PROMPT
   const disabledTools = new Set<string>()
   const disabledSkills = new Set<string>()
+  const baseSkillRouter = new SkillRouterImpl()
+  const skillRouter = new ToggleableSkillRouter(baseSkillRouter, disabledSkills)
 
   const sessionStorage = new InMemoryStorageAdapter()
   const sessionMap = new Map<string, WrappedSession | WrappedMainSession>()
@@ -240,33 +389,42 @@ async function bootstrap() {
   const memory = createFileMemoryEngine(fs, sessions)
 
   /* 复用已有 root 或创建 */
-  let root: SessionMeta
+  let rootId: string
+  let rootLabel: string
   try {
-    root = await sessions.getRoot()
+    const root = await sessions.getRoot()
+    rootId = root.id
+    rootLabel = root.label
   } catch {
-    root = await sessions.createRoot('留学总顾问')
+    const root = await sessions.createRoot('留学总顾问')
+    rootId = root.id
+    rootLabel = root.label
   }
 
-  const mainSession = await createMainSession({
-    storage: sessionStorage,
-    llm: currentLlm,
-    label: root.label,
-    systemPrompt: MAIN_SYSTEM_PROMPT,
-    tools: [...toolDefs],
-  })
-  sessionMap.set(root.id, { main: mainSession })
+  const mainSession = await registerMainSession(
+    sessionStorage,
+    rootId,
+    rootLabel,
+    MAIN_SYSTEM_PROMPT,
+    currentLlm,
+    [...toolDefs],
+  )
+  await hydrateRuntimeState(sessionStorage, memory, rootId)
+  sessionMap.set(rootId, { main: mainSession })
 
   /* 恢复子 session */
   const allSessions = await sessions.listAll()
   for (const meta of allSessions) {
-    if (meta.id === root.id || sessionMap.has(meta.id)) continue
-    const childSession = await createSession({
-      storage: sessionStorage,
-      llm: currentLlm,
-      label: meta.label,
-      systemPrompt: makeRegionPrompt(meta.scope ?? meta.label, meta.label),
-      tools: [...toolDefs],
-    })
+    if (meta.id === rootId || sessionMap.has(meta.id)) continue
+    const childSession = await registerStandardSession(
+      sessionStorage,
+      meta.id,
+      meta.label,
+      makeRegionPrompt(meta.scope ?? meta.label, meta.label),
+      currentLlm,
+      [...toolDefs],
+    )
+    await hydrateRuntimeState(sessionStorage, memory, meta.id)
     sessionMap.set(meta.id, { session: childSession })
   }
   if (allSessions.length > 1) console.log(`Restored ${allSessions.length - 1} region session(s)`)
@@ -278,7 +436,6 @@ async function bootstrap() {
       context: await memory.assembleContext(sessionId),
       session: await requireSession(sessions, sessionId),
     }),
-    assemble: (sessionId) => memory.assembleContext(sessionId),
     afterTurn: async (sessionId, userMsg, assistantMsg) => {
       await memory.appendRecord(sessionId, userMsg)
       await memory.appendRecord(sessionId, assistantMsg)
@@ -288,13 +445,14 @@ async function bootstrap() {
     },
     prepareChildSpawn: async (options) => {
       const child = await sessions.createChild(options)
-      const childSession = await createSession({
-        storage: sessionStorage,
-        llm: currentLlm,
-        label: child.label,
-        systemPrompt: makeRegionPrompt(child.scope ?? child.label, child.label),
-        tools: [...toolDefs],
-      })
+      const childSession = await registerStandardSession(
+        sessionStorage,
+        child.id,
+        child.label,
+        makeRegionPrompt(options.scope ?? child.label, child.label),
+        currentLlm,
+        [...toolDefs],
+      )
       sessionMap.set(child.id, { session: childSession })
       return child
     },
@@ -313,14 +471,22 @@ async function bootstrap() {
     async executeTool(name, args) {
       if (name === 'stello_create_session') {
         if (!currentToolSessionId) return { success: false, error: 'No active session context' }
-        const source = await requireSession(sessions, currentToolSessionId)
+        const source = await requireNode(sessions, currentToolSessionId)
         const effectiveParentId = source.parentId === null ? source.id : (await sessions.getRoot()).id
         const child = await lifecycle.prepareChildSpawn({
           parentId: effectiveParentId,
           label: String(args.label ?? '新地区'),
           scope: args.scope ? String(args.scope) : undefined,
         })
-        return { success: true, data: { sessionId: child.id, label: child.label, scope: child.scope, parentId: child.parentId } }
+        return {
+          success: true,
+          data: {
+            sessionId: child.id,
+            label: child.label,
+            scope: args.scope ? String(args.scope) : undefined,
+            parentId: child.parentId,
+          },
+        }
       }
       if (name === 'save_note') {
         if (!currentToolSessionId) return { success: false, error: 'No active session context' }
@@ -365,16 +531,17 @@ async function bootstrap() {
       sessionResolver: async (sessionId) => {
         const entry = sessionMap.get(sessionId)
         if (!entry) throw new Error(`Unknown session: ${sessionId}`)
-        if ('main' in entry && entry.main) return wrapSession(sessionId, entry.main, memory)
+        if ('main' in entry && entry.main) {
+          throw new Error('Main session is not available through sessionResolver')
+        }
         return wrapSession(sessionId, entry.session, memory)
       },
       mainSessionResolver: async () => ({
-        ...mainSession,
         async integrate(fn: Parameters<typeof mainSession.integrate>[0]) {
           const result = await mainSession.integrate(fn)
           /* 同步 synthesis + insights 到文件持久化层 */
           if (result) {
-            await memory.writeMemory(root.id, result.synthesis)
+            await memory.writeMemory(rootId, result.synthesis)
             for (const { sessionId, content } of result.insights) {
               await memory.writeScope(sessionId, content)
             }
@@ -394,10 +561,9 @@ async function bootstrap() {
     capabilities: {
       lifecycle,
       tools,
-      skills: new SkillRouterImpl(),
+      skills: skillRouter,
       confirm,
     },
-    runtime: { recyclePolicy: { idleTtlMs: 60_000 } },
     orchestration: {
       scheduler,
       splitGuard,
@@ -432,8 +598,17 @@ async function bootstrap() {
         const s = 'main' in entry && entry.main ? entry.main : entry.session
         await s.setSystemPrompt(content)
       },
-      async getScope(sessionId: string) { return memory.readScope(sessionId) },
-      async setScope(sessionId: string, content: string) { await memory.writeScope(sessionId, content) },
+      async getScope(sessionId: string) {
+        const entry = sessionMap.get(sessionId)
+        if (!entry || ('main' in entry && entry.main)) return null
+        return entry.session.insight()
+      },
+      async setScope(sessionId: string, content: string) {
+        const entry = sessionMap.get(sessionId)
+        if (!entry || ('main' in entry && entry.main)) return
+        await entry.session.setInsight(content)
+        await syncSessionScopeMirror(sessionId, entry.session, memory)
+      },
       async injectRecord(sessionId: string, record: { role: string; content: string }) {
         await memory.appendRecord(sessionId, { role: record.role as 'user' | 'assistant', content: record.content, timestamp: new Date().toISOString() })
       },
@@ -451,7 +626,7 @@ async function bootstrap() {
         const newLlm = createOpenAICompatibleAdapter({ apiKey: cfg.apiKey ?? currentLlmConfig.apiKey, baseURL: cfg.baseURL, model: cfg.model, extraBody: { reasoning_split: true } })
         currentLlmConfig = { model: cfg.model, baseURL: cfg.baseURL, apiKey: cfg.apiKey ?? currentLlmConfig.apiKey, temperature: cfg.temperature ?? currentLlmConfig.temperature, maxTokens: cfg.maxTokens ?? currentLlmConfig.maxTokens }
         currentLlm = newLlm
-        for (const entry of sessionMap.values()) {
+        for (const entry of Array.from(sessionMap.values())) {
           const s = 'main' in entry && entry.main ? entry.main : entry.session
           s.setLLM(newLlm)
         }
@@ -463,27 +638,19 @@ async function bootstrap() {
       setEnabled: (name: string, enabled: boolean) => { if (enabled) disabledTools.delete(name); else disabledTools.add(name) },
     },
     skills: {
-      getSkills: () => config.capabilities.skills.getAll().map((s) => ({ name: s.name, description: s.description, enabled: !disabledSkills.has(s.name) })),
+      getSkills: () => baseSkillRouter.getAll().map((s) => ({ name: s.name, description: s.description, enabled: !disabledSkills.has(s.name) })),
       setEnabled: (name: string, enabled: boolean) => { if (enabled) disabledSkills.delete(name); else disabledSkills.add(name) },
     },
     integration: {
       async trigger() {
-        const integrateFn = config.session!.integrateFn!
-        const allL2s: Array<{ sessionId: string; label: string; l2: string }> = []
-        for (const [id, entry] of sessionMap) {
-          if ('main' in entry && entry.main) continue
-          const l2 = await memory.readMemory(id).catch(() => null)
-          if (l2) {
-            const meta = await sessions.get(id)
-            allL2s.push({ sessionId: id, label: meta?.label ?? id, l2 })
-          }
+        const resolvedMain = await config.session!.mainSessionResolver?.()
+        if (!resolvedMain) throw new Error('MainSession is not configured')
+        const result = await resolvedMain.integrate(config.session!.integrateFn!) as {
+          synthesis: string
+          insights: Array<{ sessionId: string; content: string }>
         }
-        const currentSynthesis = await memory.readMemory(root.id).catch(() => null)
-        const result = await integrateFn(allL2s, currentSynthesis)
-        await memory.writeMemory(root.id, result.synthesis)
         console.log('[Integration] insights:', JSON.stringify(result.insights.map(i => ({ sessionId: i.sessionId, contentLen: i.content.length }))))
-        console.log('[Integration] known sessionIds:', [...sessionMap.keys()])
-        for (const { sessionId, content } of result.insights) await memory.writeScope(sessionId, content)
+        console.log('[Integration] known sessionIds:', Array.from(sessionMap.keys()))
         return { synthesis: result.synthesis, insightCount: result.insights.length }
       },
     },
@@ -496,6 +663,13 @@ async function requireSession(sessions: SessionTreeImpl, sessionId: string): Pro
   return session
 }
 
+/** 读取拓扑节点，供需要 parentId 的场景使用 */
+async function requireNode(sessions: SessionTreeImpl, sessionId: string): Promise<TopologyNode> {
+  const session = await sessions.getNode(sessionId)
+  if (!session) throw new Error(`Session node not found: ${sessionId}`)
+  return session
+}
+
 async function main() {
   const app = await bootstrap()
 
@@ -505,7 +679,7 @@ async function main() {
   }
 
   const devtoolsPort = Number(process.env.DEVTOOLS_PORT ?? 4800)
-  const dt = await startDevtools(app.agent, {
+  const dt = await startDevtools(app.agent as never, {
     port: devtoolsPort,
     open: false,
     llm: app.llm,
