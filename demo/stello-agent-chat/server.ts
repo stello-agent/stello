@@ -173,6 +173,8 @@ async function bootstrap() {
 
   let currentConsolidatePrompt = DEFAULT_CONSOLIDATE_PROMPT
   let currentIntegratePrompt = DEFAULT_INTEGRATE_PROMPT
+  const disabledTools = new Set<string>()
+  const disabledSkills = new Set<string>()
 
   const sessionStorage = new InMemoryStorageAdapter()
   const sessionMap = new Map<string, WrappedSession | WrappedMainSession>()
@@ -263,14 +265,16 @@ async function bootstrap() {
     },
   }
 
+  const allToolDefs = [
+    {
+      name: 'stello_create_session',
+      description: 'Create a child session under the current or root main session.',
+      parameters: sessionTools[0].inputSchema as Record<string, unknown>,
+    },
+  ]
+
   const tools: EngineToolRuntime = {
-    getToolDefinitions: () => [
-      {
-        name: 'stello_create_session',
-        description: 'Create a child session under the current or root main session.',
-        parameters: sessionTools[0].inputSchema,
-      },
-    ],
+    getToolDefinitions: () => allToolDefs.filter((t) => !disabledTools.has(t.name)),
     async executeTool(name, args) {
       if (name !== 'stello_create_session') {
         return { success: false, error: `Unknown tool: ${name}` }
@@ -379,7 +383,7 @@ async function bootstrap() {
     setCurrentSessionId: (sessionId: string) => {
       currentSessionId = sessionId
     },
-    /** Session 访问能力，供 DevTools 读写 system prompt */
+    /** Session 访问能力 */
     sessionAccess: {
       async getSystemPrompt(sessionId: string) {
         const entry = sessionMap.get(sessionId)
@@ -392,6 +396,15 @@ async function bootstrap() {
         if (!entry) return
         const s = 'main' in entry && entry.main ? entry.main : entry.session
         await s.setSystemPrompt(content)
+      },
+      async getScope(sessionId: string) {
+        return memory.readScope(sessionId)
+      },
+      async setScope(sessionId: string, content: string) {
+        await memory.writeScope(sessionId, content)
+      },
+      async injectRecord(sessionId: string, record: { role: string; content: string }) {
+        await memory.appendRecord(sessionId, { role: record.role as 'user' | 'assistant', content: record.content, timestamp: new Date().toISOString() })
       },
     },
     /** Consolidation/Integration 提示词 getter/setter */
@@ -428,6 +441,49 @@ async function bootstrap() {
         console.log(`[LLM] Switched to ${config.model} @ ${config.baseURL}`)
       },
     },
+    /** Tools 动态开关 */
+    tools: {
+      getTools: () => allToolDefs.map((t) => ({ ...t, enabled: !disabledTools.has(t.name) })),
+      setEnabled: (name: string, enabled: boolean) => {
+        if (enabled) disabledTools.delete(name)
+        else disabledTools.add(name)
+        console.log(`[Tools] ${name} ${enabled ? 'enabled' : 'disabled'}`)
+      },
+    },
+    /** Skills 动态开关 */
+    skills: {
+      getSkills: () => {
+        const allSkills = config.capabilities.skills.getAll()
+        return allSkills.map((s) => ({ name: s.name, description: s.description, enabled: !disabledSkills.has(s.name) }))
+      },
+      setEnabled: (name: string, enabled: boolean) => {
+        if (enabled) disabledSkills.delete(name)
+        else disabledSkills.add(name)
+        console.log(`[Skills] ${name} ${enabled ? 'enabled' : 'disabled'}`)
+      },
+    },
+    /** 手动触发 integration */
+    integration: {
+      async trigger() {
+        const integrateFn = config.session!.integrateFn!
+        const allL2s: Array<{ sessionId: string; label: string; l2: string }> = []
+        for (const [id, entry] of sessionMap) {
+          if ('main' in entry && entry.main) continue
+          const l2 = await memory.readMemory(id).catch(() => null)
+          if (l2) {
+            const meta = await sessions.get(id)
+            allL2s.push({ sessionId: id, label: meta?.label ?? id, l2 })
+          }
+        }
+        const currentSynthesis = await memory.readMemory(root.id).catch(() => null)
+        const result = await integrateFn(allL2s, currentSynthesis)
+        await memory.writeMemory(root.id, result.synthesis)
+        for (const { sessionId, content } of result.insights) {
+          await memory.writeScope(sessionId, content)
+        }
+        return { synthesis: result.synthesis, insightCount: result.insights.length }
+      },
+    },
   }
 }
 
@@ -456,6 +512,9 @@ async function main() {
     llm: app.llm,
     prompts: app.prompts,
     sessionAccess: app.sessionAccess,
+    tools: app.tools,
+    skills: app.skills,
+    integration: app.integration,
   })
 
   console.log(`\nStello Agent Demo`)
