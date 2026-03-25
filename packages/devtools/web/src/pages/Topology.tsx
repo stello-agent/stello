@@ -3,6 +3,53 @@ import { useNavigate } from 'react-router-dom'
 import { GitBranch, Archive, MessageSquare, Search, X, Play, Eye, Loader2 } from 'lucide-react'
 import { fetchSessionTree, fetchSessionDetail, forkSession, archiveSession, type SessionTreeNode, type SessionDetail } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
+import { useTheme, type Theme } from '@/lib/theme'
+
+/** Canvas 绘制用的主题色 */
+interface CanvasTheme {
+  bgCenter: string
+  bgEdge: string
+  lineColor: string
+  lineHighlight: string
+  lineDim: string
+  refColor: string
+  refHighlight: string
+  refDim: string
+  labelAlpha: number
+}
+
+const canvasThemes: Record<Theme, CanvasTheme> = {
+  light: {
+    bgCenter: '#F5F4F1',
+    bgEdge: '#EDECEA',
+    lineColor: 'rgba(180,140,100,0.35)',
+    lineHighlight: 'rgba(180,140,100,0.7)',
+    lineDim: 'rgba(180,140,100,0.1)',
+    refColor: 'rgba(200,130,100,0.35)',
+    refHighlight: 'rgba(200,130,100,0.7)',
+    refDim: 'rgba(200,130,100,0.08)',
+    labelAlpha: 0.9,
+  },
+  dark: {
+    bgCenter: '#2A2520',
+    bgEdge: '#1A1815',
+    lineColor: 'rgba(196,168,130,0.5)',
+    lineHighlight: 'rgba(196,168,130,0.8)',
+    lineDim: 'rgba(196,168,130,0.15)',
+    refColor: 'rgba(216,149,117,0.5)',
+    refHighlight: 'rgba(216,149,117,0.8)',
+    refDim: 'rgba(216,149,117,0.12)',
+    labelAlpha: 0.8,
+  },
+}
+
+/** 浅色主题的节点颜色 */
+function getNodeStyleLight(node: TopoNode, isMain: boolean): { color: string; glowColor: string } {
+  if (isMain) return { color: '#C4793D', glowColor: 'rgba(196,121,61,0.3)' }
+  if (node.status === 'archived') return { color: '#B8876A', glowColor: 'rgba(184,135,106,0.2)' }
+  if (node.children.length === 0) return { color: '#5A9A5A', glowColor: 'rgba(90,154,90,0.2)' }
+  return { color: '#A07040', glowColor: 'rgba(160,112,64,0.25)' }
+}
 
 /** 拓扑节点（前端渲染用，合并 meta + topology） */
 interface TopoNode {
@@ -27,16 +74,21 @@ interface LayoutNode extends TopoNode {
 
 /* 无 mock 数据——全部从 API 拉取 */
 
-/** 节点颜色映射 */
-function getNodeStyle(node: TopoNode, isMain: boolean): { color: string; glowColor: string } {
+/** 深色主题的节点颜色 */
+function getNodeStyleDark(node: TopoNode, isMain: boolean): { color: string; glowColor: string } {
   if (isMain) return { color: '#C4A882', glowColor: 'rgba(196,168,130,0.5)' }
   if (node.status === 'archived') return { color: '#D89575', glowColor: 'rgba(216,149,117,0.3)' }
   if (node.children.length === 0) return { color: '#A8C4A0', glowColor: 'rgba(168,196,160,0.3)' }
   return { color: '#B8956A', glowColor: 'rgba(184,149,106,0.35)' }
 }
 
+/** 根据主题选择节点颜色 */
+function getNodeStyle(node: TopoNode, isMain: boolean, theme: Theme): { color: string; glowColor: string } {
+  return theme === 'dark' ? getNodeStyleDark(node, isMain) : getNodeStyleLight(node, isMain)
+}
+
 /** 同心环布局算法 */
-function computeLayout(nodes: TopoNode[], width: number, height: number): LayoutNode[] {
+function computeLayout(nodes: TopoNode[], width: number, height: number, theme: Theme = 'dark'): LayoutNode[] {
   const cx = width / 2
   const cy = height / 2
   const nodeMap = new Map(nodes.map((n) => [n.id, n]))
@@ -89,7 +141,7 @@ function computeLayout(nodes: TopoNode[], width: number, height: number): Layout
       const sizeScale = (node.turns / maxTurns) * 10
       const size = sizeBase + sizeScale
 
-      const { color, glowColor } = getNodeStyle(node, isMain)
+      const { color, glowColor } = getNodeStyle(node, isMain, theme)
       const brightness = node.status === 'archived' ? 0.5 : 0.8 + (node.turns / maxTurns) * 0.2
 
       result.push({ ...node, x, y, size, color, glowColor, brightness })
@@ -120,12 +172,15 @@ function renderFrame(
   highlightedId: string | null,
   time: number = 0,
   nodeTimers?: Map<string, number>,
+  ct?: CanvasTheme,
 ) {
-  /* 背景渐变——需要覆盖可见区域（考虑平移后的范围） */
+  const colors = ct ?? canvasThemes.dark
+
+  /* 背景渐变 */
   const margin = 2000
   const grad = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, width)
-  grad.addColorStop(0, '#2A2520')
-  grad.addColorStop(1, '#1A1815')
+  grad.addColorStop(0, colors.bgCenter)
+  grad.addColorStop(1, colors.bgEdge)
   ctx.fillStyle = grad
   ctx.fillRect(-margin, -margin, width + margin * 2, height + margin * 2)
 
@@ -146,10 +201,10 @@ function renderFrame(
     ctx.moveTo(parent.x, parent.y)
     ctx.lineTo(node.x, node.y)
     ctx.strokeStyle = adjacent
-      ? 'rgba(196,168,130,0.8)'
-      : hasHighlight ? 'rgba(196,168,130,0.15)' : 'rgba(196,168,130,0.5)'
+      ? colors.lineHighlight
+      : hasHighlight ? colors.lineDim : colors.lineColor
     ctx.lineWidth = adjacent ? 3 : parent.parentId === null ? 2.5 : 1.5
-    ctx.shadowColor = adjacent ? 'rgba(196,168,130,0.5)' : 'rgba(196,168,130,0.25)'
+    ctx.shadowColor = adjacent ? colors.lineColor : colors.lineDim
     ctx.shadowBlur = adjacent ? 12 : 8
     ctx.stroke()
     ctx.shadowBlur = 0
@@ -169,11 +224,11 @@ function renderFrame(
       ctx.moveTo(node.x, node.y)
       ctx.lineTo(ref.x, ref.y)
       ctx.strokeStyle = adjacent
-        ? 'rgba(216,149,117,0.8)'
-        : hasHighlight ? 'rgba(216,149,117,0.12)' : 'rgba(216,149,117,0.5)'
+        ? colors.refHighlight
+        : hasHighlight ? colors.refDim : colors.refColor
       ctx.lineWidth = adjacent ? 2 : 1.5
       ctx.setLineDash([6, 4])
-      ctx.shadowColor = 'rgba(216,149,117,0.2)'
+      ctx.shadowColor = colors.refDim
       ctx.shadowBlur = adjacent ? 10 : 6
       ctx.stroke()
       ctx.setLineDash([])
@@ -230,7 +285,7 @@ function renderFrame(
     /* 节点标签 */
     ctx.font = `${node.parentId === null ? '600' : '500'} ${node.parentId === null ? 11 : 9}px Outfit, system-ui`
     ctx.fillStyle = node.color
-    ctx.globalAlpha = dimmed ? 0.2 : node.status === 'archived' ? 0.5 : 0.8
+    ctx.globalAlpha = dimmed ? 0.2 : node.status === 'archived' ? 0.5 : colors.labelAlpha
     ctx.textAlign = 'left'
     ctx.fillText(node.label, node.x + animatedSize + 6, node.y + 4)
     ctx.globalAlpha = 1
@@ -291,6 +346,7 @@ export function Topology() {
   const [actionLoading, setActionLoading] = useState(false)
   const navigate = useNavigate()
   const { t } = useI18n()
+  const { theme } = useTheme()
 
   /* Camera ref（不触发 re-render，rAF 循环直接读取） */
   const cameraRef = useRef<Camera>({ x: 0, y: 0, zoom: 1, vx: 0, vy: 0 })
@@ -309,8 +365,10 @@ export function Topology() {
   const newNodeTimers = useRef(new Map<string, number>())
   const prevNodeIds = useRef(new Set<string>())
 
-  /* 同步 highlighted 到 ref（rAF 读取） */
+  /* 同步 highlighted 和 theme 到 ref（rAF 读取） */
+  const themeRef = useRef(theme)
   useEffect(() => { highlightedRef.current = highlighted }, [highlighted])
+  useEffect(() => { themeRef.current = theme }, [theme])
 
   /** 递归展平树 */
   const flattenTree = useCallback((tree: SessionTreeNode): TopoNode[] => {
@@ -383,9 +441,9 @@ export function Topology() {
     }
     prevNodeIds.current = currentIds
 
-    const layout = computeLayout(topoNodes, size.width, size.height)
+    const layout = computeLayout(topoNodes, size.width, size.height, theme)
     nodesRef.current = layout
-  }, [size, topoNodes])
+  }, [size, topoNodes, theme])
 
   /* rAF 动画循环——读 cameraRef，带惯性衰减 */
   useEffect(() => {
@@ -415,7 +473,7 @@ export function Topology() {
 
       /* 应用 camera 变换 */
       ctx.setTransform(dpr * cam.zoom, 0, 0, dpr * cam.zoom, dpr * cam.x * cam.zoom, dpr * cam.y * cam.zoom)
-      renderFrame(ctx, nodesRef.current, size.width / cam.zoom, size.height / cam.zoom, highlightedRef.current, time, newNodeTimers.current)
+      renderFrame(ctx, nodesRef.current, size.width / cam.zoom, size.height / cam.zoom, highlightedRef.current, time, newNodeTimers.current, canvasThemes[themeRef.current])
 
       rafId = requestAnimationFrame(loop)
     }
@@ -629,7 +687,7 @@ export function Topology() {
 
         {/* 顶部标题栏 */}
         <div className="absolute top-5 left-6 flex items-center gap-3">
-          <span className="text-base font-semibold text-[#E5E4E1]">{t('topo.title')}</span>
+          <span className="text-base font-semibold text-text">{t('topo.title')}</span>
           {topoNodes.length > 0 && (
             <div className="flex items-center gap-1 bg-primary/15 rounded-full px-2.5 py-0.5">
               <div className="w-1.5 h-1.5 rounded-full bg-primary" />
@@ -641,15 +699,15 @@ export function Topology() {
         {/* 错误/空状态 */}
         {dataError && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <div className="bg-[#2A2520]/90 border border-error/30 rounded-lg px-6 py-4 max-w-md text-center">
+            <div className="bg-card/90 border border-error/30 rounded-lg px-6 py-4 max-w-md text-center">
               <p className="text-sm font-semibold text-error mb-1">{t('topo.loadFailed')}</p>
-              <p className="text-xs text-[#9C9B99]">{dataError}</p>
+              <p className="text-xs text-text-muted">{dataError}</p>
             </div>
           </div>
         )}
         {!dataError && topoNodes.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <p className="text-sm text-[#9C9B99]">{t('topo.loadingHint')}</p>
+            <p className="text-sm text-text-muted">{t('topo.loadingHint')}</p>
           </div>
         )}
 
@@ -663,23 +721,23 @@ export function Topology() {
           ].map(({ color, labelKey }) => (
             <div key={labelKey} className="flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
-              <span className="text-[10px] font-medium text-[#9C9B99]">{t(labelKey)}</span>
+              <span className="text-[10px] font-medium text-text-muted">{t(labelKey)}</span>
             </div>
           ))}
           <div className="flex items-center gap-1.5">
             <div className="w-4 h-0 border-t border-dashed border-[#D89575]" />
-            <span className="text-[10px] font-medium text-[#9C9B99]">{t('topo.legend.crossRef')}</span>
+            <span className="text-[10px] font-medium text-text-muted">{t('topo.legend.crossRef')}</span>
           </div>
         </div>
 
         {/* Tooltip */}
         {tooltip.visible && tooltip.node && (
           <div
-            className="fixed z-50 pointer-events-none bg-[#2A2520]/95 backdrop-blur-sm rounded-lg border border-[#C4A88230] px-3 py-2 shadow-lg pop-enter"
+            className="fixed z-50 pointer-events-none bg-card/95 backdrop-blur-sm rounded-lg border border-border px-3 py-2 shadow-lg pop-enter"
             style={{ left: tooltip.x + 12, top: tooltip.y - 8 }}
           >
-            <p className="text-xs font-semibold text-[#E5E4E1]">{tooltip.node.label}</p>
-            <p className="text-[10px] text-[#9C9B99]">
+            <p className="text-xs font-semibold text-text">{tooltip.node.label}</p>
+            <p className="text-[10px] text-text-muted">
               {tooltip.node.turns} turns · {tooltip.node.status}
             </p>
           </div>
@@ -691,41 +749,41 @@ export function Topology() {
             {/* 透明遮罩捕获外部点击 */}
             <div className="fixed inset-0 z-40" onClick={closeCtxMenu} onContextMenu={(e) => { e.preventDefault(); closeCtxMenu() }} />
             <div
-              className="fixed z-50 bg-[#2A2520]/95 backdrop-blur-sm rounded-lg border border-[#C4A88230] shadow-xl py-1 min-w-[160px] pop-enter"
+              className="fixed z-50 bg-card/95 backdrop-blur-sm rounded-lg border border-border shadow-xl py-1 min-w-[160px] pop-enter"
               style={{ left: ctxMenu.x, top: ctxMenu.y }}
             >
-              <p className="px-3 py-1.5 text-[10px] font-semibold text-[#9C9B99] tracking-wide">{ctxMenu.nodeLabel}</p>
+              <p className="px-3 py-1.5 text-[10px] font-semibold text-text-muted tracking-wide">{ctxMenu.nodeLabel}</p>
               <div className="h-px bg-[#3D3530] mx-2" />
               <button
                 onClick={() => { navigate(`/conversation?session=${ctxMenu.nodeId}`); closeCtxMenu() }}
-                className="flex items-center gap-2 w-full px-3 py-2 hover:bg-[#FFFFFF15] transition-colors text-left"
+                className="flex items-center gap-2 w-full px-3 py-2 hover:bg-muted/50 transition-colors text-left"
               >
                 <Play size={12} className="text-primary" />
-                <span className="text-xs font-medium text-[#E5E4E1]">{t('topo.ctx.enter')}</span>
+                <span className="text-xs font-medium text-text">{t('topo.ctx.enter')}</span>
               </button>
               <button
                 onClick={() => { navigate(`/inspector?session=${ctxMenu.nodeId}`); closeCtxMenu() }}
-                className="flex items-center gap-2 w-full px-3 py-2 hover:bg-[#FFFFFF15] transition-colors text-left"
+                className="flex items-center gap-2 w-full px-3 py-2 hover:bg-muted/50 transition-colors text-left"
               >
                 <Eye size={12} className="text-primary" />
-                <span className="text-xs font-medium text-[#E5E4E1]">{t('topo.ctx.inspect')}</span>
+                <span className="text-xs font-medium text-text">{t('topo.ctx.inspect')}</span>
               </button>
               <div className="h-px bg-[#3D3530] mx-2" />
               <button
                 onClick={() => handleFork(ctxMenu.nodeId!, ctxMenu.nodeLabel)}
                 disabled={actionLoading}
-                className="flex items-center gap-2 w-full px-3 py-2 hover:bg-[#FFFFFF15] transition-colors text-left disabled:opacity-50"
+                className="flex items-center gap-2 w-full px-3 py-2 hover:bg-muted/50 transition-colors text-left disabled:opacity-50"
               >
                 {actionLoading ? <Loader2 size={12} className="text-primary animate-spin" /> : <GitBranch size={12} className="text-primary" />}
-                <span className="text-xs font-medium text-[#E5E4E1]">{t('topo.ctx.fork')}</span>
+                <span className="text-xs font-medium text-text">{t('topo.ctx.fork')}</span>
               </button>
               <button
                 onClick={() => handleArchive(ctxMenu.nodeId!)}
                 disabled={actionLoading}
-                className="flex items-center gap-2 w-full px-3 py-2 hover:bg-[#FFFFFF15] transition-colors text-left disabled:opacity-50"
+                className="flex items-center gap-2 w-full px-3 py-2 hover:bg-muted/50 transition-colors text-left disabled:opacity-50"
               >
-                {actionLoading ? <Loader2 size={12} className="text-[#A8A7A5] animate-spin" /> : <Archive size={12} className="text-[#A8A7A5]" />}
-                <span className="text-xs font-medium text-[#A8A7A5]">{t('topo.ctx.archive')}</span>
+                {actionLoading ? <Loader2 size={12} className="text-text-muted animate-spin" /> : <Archive size={12} className="text-text-muted" />}
+                <span className="text-xs font-medium text-text-muted">{t('topo.ctx.archive')}</span>
               </button>
             </div>
           </>
@@ -738,17 +796,17 @@ export function Topology() {
         style={{ width: panelOpen && selectedNode ? 288 : 0 }}
       >
         {selectedNode && (
-          <div className="w-72 h-full bg-[#2A2520] border-l border-[#3D3530] flex flex-col p-5 gap-4">
+          <div className="w-72 h-full bg-card border-l border-border flex flex-col p-5 gap-4">
             {/* 标题 + 关闭 */}
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[#F0EDE8]">
+              <h3 className="text-sm font-semibold text-text">
                 {selectedNode.label}
               </h3>
               <button
                 onClick={closePanel}
-                className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-[#FFFFFF15] transition-colors"
+                className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-muted/50 transition-colors"
               >
-                <X size={14} className="text-[#A8A7A5]" />
+                <X size={14} className="text-text-muted" />
               </button>
             </div>
 
@@ -774,16 +832,16 @@ export function Topology() {
               ]
             })().map(({ label, value, color }) => (
               <div key={label} className="flex items-center justify-between gap-3">
-                <span className="text-xs font-medium text-[#A8A7A5] shrink-0">{label}</span>
+                <span className="text-xs font-medium text-text-muted shrink-0">{label}</span>
                 <span className="text-xs font-semibold text-right truncate" style={{ color }}>{value}</span>
               </div>
             ))}
 
             {/* L2 内容预览（如果有） */}
             {panelDetail?.l2 && (
-              <div className="bg-[#FFFFFF08] rounded-lg p-3 mt-1">
-                <p className="text-[10px] font-semibold text-[#A8A7A5] tracking-wide mb-1.5">{t('topo.panel.l2Summary')}</p>
-                <p className="text-[11px] text-[#D1CEC8] leading-relaxed">
+              <div className="bg-muted/30 rounded-lg p-3 mt-1">
+                <p className="text-[10px] font-semibold text-text-muted tracking-wide mb-1.5">{t('topo.panel.l2Summary')}</p>
+                <p className="text-[11px] text-text-secondary leading-relaxed">
                   {panelDetail.l2.length > 150 ? panelDetail.l2.slice(0, 150) + '...' : panelDetail.l2}
                 </p>
               </div>
@@ -793,20 +851,20 @@ export function Topology() {
 
             {/* 跳转入口 */}
             <div className="space-y-1.5">
-              <p className="text-[10px] font-semibold text-[#A8A7A5] tracking-wide">{t('topo.panel.openIn')}</p>
+              <p className="text-[10px] font-semibold text-text-muted tracking-wide">{t('topo.panel.openIn')}</p>
               <button
                 onClick={() => navigate(`/conversation?session=${selectedNode.id}`)}
-                className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-[#FFFFFF08] hover:bg-[#FFFFFF15] transition-colors"
+                className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
               >
                 <MessageSquare size={14} className="text-primary" />
-                <span className="text-xs font-medium text-[#F0EDE8]">{t('topo.panel.conversation')}</span>
+                <span className="text-xs font-medium text-text">{t('topo.panel.conversation')}</span>
               </button>
               <button
                 onClick={() => navigate(`/inspector?session=${selectedNode.id}`)}
-                className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-[#FFFFFF08] hover:bg-[#FFFFFF15] transition-colors"
+                className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
               >
                 <Search size={14} className="text-primary" />
-                <span className="text-xs font-medium text-[#F0EDE8]">{t('topo.panel.inspector')}</span>
+                <span className="text-xs font-medium text-text">{t('topo.panel.inspector')}</span>
               </button>
             </div>
 
@@ -825,10 +883,10 @@ export function Topology() {
               <button
                 onClick={() => handleArchive(selectedNode.id)}
                 disabled={actionLoading}
-                className="flex items-center gap-1.5 px-3 py-2 bg-[#FFFFFF10] rounded-lg hover:bg-[#FFFFFF20] transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-2 bg-muted/40 rounded-lg hover:bg-muted/60 transition-colors disabled:opacity-50"
               >
-                {actionLoading ? <Loader2 size={13} className="text-[#A8A7A5] animate-spin" /> : <Archive size={13} className="text-[#A8A7A5]" />}
-                <span className="text-xs font-medium text-[#A8A7A5]">{t('topo.ctx.archive')}</span>
+                {actionLoading ? <Loader2 size={13} className="text-text-muted animate-spin" /> : <Archive size={13} className="text-text-muted" />}
+                <span className="text-xs font-medium text-text-muted">{t('topo.ctx.archive')}</span>
               </button>
             </div>
           </div>
