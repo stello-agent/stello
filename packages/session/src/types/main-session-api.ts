@@ -1,5 +1,5 @@
 import type { SessionMeta, SessionMetaUpdate } from './session.js'
-import type { Message } from './llm.js'
+import type { Message, LLMAdapter } from './llm.js'
 import type { SendResult, StreamResult, IntegrateFn, IntegrateResult } from './functions.js'
 import type { MessageQueryOptions } from './session-api.js'
 
@@ -42,4 +42,7 @@ export interface MainSession {
 
   /** 归档 */
   archive(): Promise<void>
+
+  /** 动态替换 LLM adapter（热更新，立即对后续 send/stream 生效） */
+  setLLM(adapter: LLMAdapter): void
 }

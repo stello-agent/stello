@@ -131,6 +131,17 @@ describe('send() 契约', () => {
     await expect(session.send('hello')).rejects.toThrow(SessionArchivedError)
   })
 
+  it('setLLM() 替换 adapter 后 send() 使用新 adapter', async () => {
+    const oldLlm = createMockLLM([{ content: 'old response' }])
+    const { session } = await makeSession({ llm: oldLlm })
+
+    const newLlm = createMockLLM([{ content: 'new response' }])
+    session.setLLM(newLlm)
+
+    const result = await session.send('hello')
+    expect(result.content).toBe('new response')
+  })
+
   it('stream() 支持逐 chunk 输出，并在结束后保存 L3', async () => {
     const { session } = await makeSession({
       llm: {

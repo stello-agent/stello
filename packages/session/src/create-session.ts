@@ -57,7 +57,6 @@ function buildSession(
 ): Session {
   let currentMeta = { ...meta }
   const { storage } = options
-  const llm = options.llm
   const tools = options.tools
 
   const session: Session = {
@@ -69,7 +68,7 @@ function buildSession(
       if (currentMeta.status === 'archived') {
         throw new SessionArchivedError(currentMeta.id)
       }
-      if (!llm) {
+      if (!options.llm) {
         throw new Error('LLMAdapter is required for send()')
       }
 
@@ -95,7 +94,7 @@ function buildSession(
       messages.push({ role: 'user', content, timestamp: now })
 
       // 调 LLM
-      const result = await llm.complete(messages, { tools })
+      const result = await options.llm.complete(messages, { tools })
 
       // 存 L3：用户消息 + assistant 响应
       const userRecord: Message = { role: 'user', content, timestamp: now }
@@ -118,7 +117,7 @@ function buildSession(
       if (currentMeta.status === 'archived') {
         throw new SessionArchivedError(currentMeta.id)
       }
-      if (!llm) {
+      if (!options.llm) {
         throw new Error('LLMAdapter is required for stream()')
       }
 
@@ -142,10 +141,10 @@ function buildSession(
         messages.push({ role: 'user', content, timestamp: now })
 
         let result: SendResult
-        if (llm.stream) {
+        if (options.llm.stream) {
           let accumulated = ''
           const toolCallsByIndex = new Map<number, { id?: string; name?: string; input: string }>()
-          for await (const chunk of llm.stream(messages, { tools })) {
+          for await (const chunk of options.llm.stream(messages, { tools })) {
             accumulated += chunk.delta
             push(chunk.delta)
             for (const delta of chunk.toolCallDeltas ?? []) {
@@ -163,7 +162,7 @@ function buildSession(
           }))
           result = { content: accumulated, toolCalls }
         } else {
-          result = await llm.complete(messages, { tools })
+          result = await options.llm.complete(messages, { tools })
           if (result.content) {
             push(result.content)
           }
@@ -268,6 +267,10 @@ function buildSession(
       }
       await storage.putSession(updatedMeta)
       currentMeta = updatedMeta
+    },
+
+    setLLM(adapter) {
+      options.llm = adapter
     },
   }
 
