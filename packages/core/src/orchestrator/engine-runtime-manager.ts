@@ -47,8 +47,13 @@ export class DefaultEngineRuntimeManager implements EngineRuntimeManager {
 
   constructor(
     private readonly engineFactory: EngineFactory,
-    private readonly policy: RuntimeRecyclePolicy = {},
+    private policy: RuntimeRecyclePolicy = {},
   ) {}
+
+  /** 热更新回收策略 */
+  updateRecyclePolicy(patch: Partial<RuntimeRecyclePolicy>): void {
+    this.policy = { ...this.policy, ...patch };
+  }
 
   async acquire(sessionId: string, holderId: RuntimeHolderId): Promise<OrchestratorEngine> {
     this.clearDisposeTimer(sessionId);

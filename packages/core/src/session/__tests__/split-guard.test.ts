@@ -77,6 +77,30 @@ describe('SplitGuard — 拆分保护机制', () => {
     expect(result.canSplit).toBe(true);
   });
 
+  it('updateConfig 后 getConfig 返回新值', () => {
+    guard.updateConfig({ minTurns: 10, cooldownTurns: 20 });
+    expect(guard.getConfig()).toEqual({ minTurns: 10, cooldownTurns: 20 });
+  });
+
+  it('updateConfig 部分更新只影响指定字段', () => {
+    guard.updateConfig({ minTurns: 1 });
+    const config = guard.getConfig();
+    expect(config.minTurns).toBe(1);
+    expect(config.cooldownTurns).toBe(5); // 原值不变
+  });
+
+  it('updateConfig 后 checkCanSplit 按新规则判断', async () => {
+    await tree.updateMeta(rootId, { turnCount: 2 });
+    // 原配置 minTurns=3，不允许拆分
+    let result = await guard.checkCanSplit(rootId);
+    expect(result.canSplit).toBe(false);
+
+    // 降低门槛
+    guard.updateConfig({ minTurns: 1 });
+    result = await guard.checkCanSplit(rootId);
+    expect(result.canSplit).toBe(true);
+  });
+
   it('不同 Session 的冷却期独立', async () => {
     const child = await tree.createChild({ parentId: rootId, label: '子' });
     await tree.updateMeta(rootId, { turnCount: 5 });

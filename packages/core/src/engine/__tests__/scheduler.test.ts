@@ -97,6 +97,44 @@ describe('Scheduler', () => {
     expect(result.integrated).toBe(true);
   });
 
+  it('updateConfig 后 getConfig 返回新值', () => {
+    const scheduler = new Scheduler({
+      consolidation: { trigger: 'manual' },
+      integration: { trigger: 'manual' },
+    });
+
+    scheduler.updateConfig({
+      consolidation: { trigger: 'everyNTurns', everyNTurns: 5 },
+    });
+
+    const config = scheduler.getConfig();
+    expect(config.consolidation?.trigger).toBe('everyNTurns');
+    expect(config.consolidation?.everyNTurns).toBe(5);
+    // integration 不受影响
+    expect(config.integration?.trigger).toBe('manual');
+  });
+
+  it('updateConfig 后 afterTurn 按新规则触发', async () => {
+    const scheduler = new Scheduler({
+      consolidation: { trigger: 'manual' },
+    });
+    const session = {
+      id: 's1',
+      turnCount: 3,
+      consolidate: vi.fn().mockResolvedValue(undefined),
+    };
+
+    // manual 模式不触发
+    let result = await scheduler.afterTurn(session);
+    expect(session.consolidate).not.toHaveBeenCalled();
+
+    // 更新为 everyNTurns
+    scheduler.updateConfig({ consolidation: { trigger: 'everyNTurns', everyNTurns: 3 } });
+    result = await scheduler.afterTurn(session);
+    expect(session.consolidate).toHaveBeenCalledTimes(1);
+    expect(result.consolidated).toBe(true);
+  });
+
   it('onLeave 策略会在 leave 时触发 consolidate 和 integrate', async () => {
     const scheduler = new Scheduler({
       consolidation: { trigger: 'onLeave' },

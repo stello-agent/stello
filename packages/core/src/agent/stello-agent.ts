@@ -35,7 +35,7 @@ import type { SessionTree } from '../types/session';
 import type { MemoryEngine } from '../types/memory';
 import type { ConfirmProtocol, SkillRouter } from '../types/lifecycle';
 import type { EngineLifecycleAdapter, EngineToolRuntime } from '../engine/stello-engine';
-import type { Scheduler, SchedulerMainSession } from '../engine/scheduler';
+import type { Scheduler, SchedulerConfig, SchedulerMainSession } from '../engine/scheduler';
 import type { SplitGuard } from '../session/split-guard';
 
 /** Session 能力相关配置 */
@@ -273,6 +273,30 @@ export class StelloAgent {
     return this.runtimeManager.getRefCount(sessionId);
   }
 
+  /** 热更新运行时配置（仅支持值类型字段） */
+  updateConfig(patch: StelloAgentHotConfig): void {
+    if (patch.runtime && 'updateRecyclePolicy' in this.runtimeManager) {
+      (this.runtimeManager as DefaultEngineRuntimeManager).updateRecyclePolicy(patch.runtime);
+    }
+    if (patch.scheduling) {
+      this.config.orchestration?.scheduler?.updateConfig?.(patch.scheduling);
+    }
+    if (patch.splitGuard) {
+      this.config.orchestration?.splitGuard?.updateConfig?.(patch.splitGuard);
+    }
+  }
+
+}
+
+/**
+ * 可热更新的配置子集。
+ *
+ * 仅包含运行时可安全修改的值类型字段，不包含函数/对象引用类配置。
+ */
+export interface StelloAgentHotConfig {
+  runtime?: Partial<RuntimeRecyclePolicy>;
+  scheduling?: Partial<SchedulerConfig>;
+  splitGuard?: Partial<{ minTurns: number; cooldownTurns: number }>;
 }
 
 /** create 函数风格的便捷入口 */

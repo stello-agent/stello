@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { SessionTree } from '../../types/session';
 import type { MemoryEngine } from '../../types/memory';
 import type { ConfirmProtocol, SkillRouter } from '../../types/lifecycle';
+import { Scheduler } from '../../engine/scheduler';
 import { createStelloAgent, type StelloAgentConfig } from '../stello-agent';
 
 describe('StelloAgent', () => {
@@ -256,6 +257,45 @@ describe('StelloAgent', () => {
     expect(agent.config.session?.options).toEqual({
       provider: 'session-team',
       mode: 'preview',
+    });
+  });
+
+  it('updateConfig 可热更新 scheduler 和 runtime 配置', async () => {
+    vi.useFakeTimers();
+
+    const scheduler = new Scheduler({
+      consolidation: { trigger: 'manual' },
+    });
+
+    const agent = createStelloAgent(baseConfig({
+      recyclePolicy: { idleTtlMs: 0 },
+      orchestration: { scheduler },
+    }));
+
+    // 热更新 scheduler
+    agent.updateConfig({
+      scheduling: { consolidation: { trigger: 'everyNTurns', everyNTurns: 2 } },
+    });
+    expect(scheduler.getConfig().consolidation?.trigger).toBe('everyNTurns');
+
+    // 热更新 runtime
+    agent.updateConfig({ runtime: { idleTtlMs: 1_000 } });
+    await agent.attachSession('root', 'ws-1');
+    await agent.detachSession('root', 'ws-1');
+    // 应该延迟回收而非立即
+    expect(agent.hasActiveEngine('root')).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(agent.hasActiveEngine('root')).toBe(false);
+
+    vi.useRealTimers();
+  });
+
+  it('updateConfig 无对应组件时静默跳过', () => {
+    const agent = createStelloAgent(baseConfig());
+    // 没有 scheduler 和 splitGuard，不应抛错
+    agent.updateConfig({
+      scheduling: { consolidation: { trigger: 'onSwitch' } },
+      splitGuard: { minTurns: 1 },
     });
   });
 

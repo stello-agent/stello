@@ -124,6 +124,7 @@ export type {
 export { StelloAgent, createStelloAgent } from './agent/stello-agent';
 export type {
   StelloAgentConfig,
+  StelloAgentHotConfig,
   StelloAgentSessionConfig,
   StelloAgentCapabilitiesConfig,
   StelloAgentRuntimeConfig,

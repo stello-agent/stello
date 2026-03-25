@@ -71,12 +71,22 @@ export interface SchedulerContext {
  * 只关心何时触发 consolidate / integrate，不关心它们的内部实现。
  */
 export class Scheduler {
-  private readonly consolidation: ConsolidationPolicy;
-  private readonly integration: IntegrationPolicy;
+  private consolidation: ConsolidationPolicy;
+  private integration: IntegrationPolicy;
 
   constructor(config: SchedulerConfig = {}) {
     this.consolidation = config.consolidation ?? { trigger: 'manual' };
     this.integration = config.integration ?? { trigger: 'manual' };
+  }
+
+  /** 热更新调度配置 */
+  updateConfig(config: Partial<SchedulerConfig>): void {
+    if (config.consolidation) {
+      this.consolidation = { ...this.consolidation, ...config.consolidation };
+    }
+    if (config.integration) {
+      this.integration = { ...this.integration, ...config.integration };
+    }
   }
 
   /** 获取当前调度配置（用于序列化 / 展示） */
