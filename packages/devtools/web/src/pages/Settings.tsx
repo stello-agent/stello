@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { fetchConfig, patchConfig, fetchLLMConfig, patchLLMConfig, fetchPrompts, patchPrompts, fetchTools, toggleTool, fetchSkills, toggleSkill, type AgentConfig, type HotConfigPatch, type LLMConfig, type PromptsConfig, type ToolWithStatus, type SkillWithStatus } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
+import { EditDialog, type EditField } from '@/components/EditDialog'
 
 /** 配置卡片 */
 function Card({ title, icon: Icon, children }: { title: string; icon: React.ElementType; children: React.ReactNode }) {
@@ -114,131 +115,16 @@ function Collapsible({ title, count, defaultOpen, children }: { title: string; c
   )
 }
 
-/** 可编辑数值输入 */
-function EditableNumber({
-  value,
-  onSave,
-  min = 0,
-  saving,
-}: {
-  value: number
-  onSave: (v: number) => void
-  min?: number
-  saving?: boolean
-}) {
-  const { t } = useI18n()
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(String(value))
-
-  const handleSave = () => {
-    const num = parseInt(draft, 10)
-    if (!isNaN(num) && num >= min) {
-      onSave(num)
-      setEditing(false)
-    }
-  }
-
-  if (!editing) {
-    return (
-      <button
-        onClick={() => { setDraft(String(value)); setEditing(true) }}
-        className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-text bg-primary/5 hover:bg-primary/15 border border-primary/20 hover:border-primary/40 rounded cursor-pointer transition-colors group"
-        title="Click to edit"
-      >
-        {value}
-        <Pencil size={9} className="text-text-muted group-hover:text-primary transition-colors" />
-      </button>
-    )
-  }
-
+/** 可点击编辑的值按钮 */
+function ClickToEdit({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <input
-        type="number"
-        min={min}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-        className="w-20 h-6 px-2 text-xs font-mono bg-surface border border-border rounded focus:border-primary focus:outline-none"
-        autoFocus
-      />
-      <button
-        onClick={handleSave}
-        disabled={saving}
-        className="flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium bg-primary text-white rounded hover:bg-primary-dark disabled:opacity-50 transition-colors"
-      >
-        <Save size={10} />
-      </button>
-      <button
-        onClick={() => setEditing(false)}
-        className="px-1.5 py-0.5 text-[10px] font-medium text-text-muted hover:text-text transition-colors"
-      >
-        {t('common.cancel')}
-      </button>
-    </div>
-  )
-}
-
-/** 可编辑下拉选择 */
-function EditableSelect({
-  value,
-  options,
-  onSave,
-  saving,
-}: {
-  value: string
-  options: string[]
-  onSave: (v: string) => void
-  saving?: boolean
-}) {
-  const { t } = useI18n()
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value)
-
-  const handleSave = () => {
-    onSave(draft)
-    setEditing(false)
-  }
-
-  if (!editing) {
-    return (
-      <button
-        onClick={() => { setDraft(value); setEditing(true) }}
-        className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-primary/5 hover:bg-primary/15 border border-primary/20 hover:border-primary/40 text-primary-dark cursor-pointer transition-colors group"
-        title="Click to edit"
-      >
-        {value}
-        <Pencil size={9} className="text-text-muted group-hover:text-primary transition-colors" />
-      </button>
-    )
-  }
-
-  return (
-    <div className="flex items-center gap-1.5">
-      <select
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        className="h-6 px-1.5 text-xs font-mono bg-surface border border-border rounded focus:border-primary focus:outline-none"
-        autoFocus
-      >
-        {options.map((opt) => (
-          <option key={opt} value={opt}>{opt}</option>
-        ))}
-      </select>
-      <button
-        onClick={handleSave}
-        disabled={saving}
-        className="flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium bg-primary text-white rounded hover:bg-primary-dark disabled:opacity-50 transition-colors"
-      >
-        <Save size={10} />
-      </button>
-      <button
-        onClick={() => setEditing(false)}
-        className="px-1.5 py-0.5 text-[10px] font-medium text-text-muted hover:text-text transition-colors"
-      >
-        {t('common.cancel')}
-      </button>
-    </div>
+    <button
+      onClick={onClick}
+      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-text bg-primary/5 hover:bg-primary/15 border border-primary/20 hover:border-primary/40 rounded cursor-pointer transition-colors group"
+    >
+      {children}
+      <Pencil size={9} className="text-text-muted group-hover:text-primary transition-colors" />
+    </button>
   )
 }
 
@@ -263,6 +149,18 @@ export function SettingsPage() {
   const [promptsSaving, setPromptsSaving] = useState(false)
   const [toolsList, setToolsList] = useState<{ configured: boolean; tools: ToolWithStatus[] }>({ configured: false, tools: [] })
   const [skillsList, setSkillsList] = useState<{ configured: boolean; skills: SkillWithStatus[] }>({ configured: false, skills: [] })
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [dialogTitle, setDialogTitle] = useState('')
+  const [dialogFields, setDialogFields] = useState<EditField[]>([])
+  const [dialogSaveFn, setDialogSaveFn] = useState<(values: Record<string, string | number>) => Promise<void>>(() => async () => {})
+
+  /** 打开编辑 Dialog */
+  const openEdit = useCallback((title: string, fields: EditField[], saveFn: (values: Record<string, string | number>) => Promise<void>) => {
+    setDialogTitle(title)
+    setDialogFields(fields)
+    setDialogSaveFn(() => saveFn)
+    setDialogOpen(true)
+  }, [])
 
   useEffect(() => {
     fetchConfig()
@@ -412,92 +310,20 @@ export function SettingsPage() {
         {/* LLM Provider */}
         <Card title={t('settings.llm.title')} icon={Sparkles}>
           {llmConfig?.configured ? (
-            llmEditing ? (
-              <div className="space-y-3">
-                <div>
-                  <label className="text-[10px] font-semibold text-text-muted tracking-wide block mb-1">{t('settings.llm.model').toUpperCase()}</label>
-                  <input
-                    value={llmDraft.model}
-                    onChange={(e) => setLlmDraft((d) => ({ ...d, model: e.target.value }))}
-                    className="w-full h-7 px-2 text-xs font-mono bg-surface border border-border rounded focus:border-primary focus:outline-none"
-                    placeholder="gpt-4o"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-semibold text-text-muted tracking-wide block mb-1">{t('settings.llm.baseUrl').toUpperCase()}</label>
-                  <input
-                    value={llmDraft.baseURL}
-                    onChange={(e) => setLlmDraft((d) => ({ ...d, baseURL: e.target.value }))}
-                    className="w-full h-7 px-2 text-xs font-mono bg-surface border border-border rounded focus:border-primary focus:outline-none"
-                    placeholder="https://api.openai.com/v1"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-semibold text-text-muted tracking-wide block mb-1">{t('settings.llm.apiKey').toUpperCase()}</label>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type={showApiKey ? 'text' : 'password'}
-                      value={llmDraft.apiKey}
-                      onChange={(e) => setLlmDraft((d) => ({ ...d, apiKey: e.target.value }))}
-                      className="flex-1 h-7 px-2 text-xs font-mono bg-surface border border-border rounded focus:border-primary focus:outline-none"
-                      placeholder="sk-..."
-                    />
-                    <button onClick={() => setShowApiKey(!showApiKey)} className="text-text-muted hover:text-text transition-colors">
-                      {showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <label className="text-[10px] font-semibold text-text-muted tracking-wide block mb-1">{t('settings.llm.temperature').toUpperCase()}</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      max="2"
-                      value={llmDraft.temperature}
-                      onChange={(e) => setLlmDraft((d) => ({ ...d, temperature: parseFloat(e.target.value) || 0 }))}
-                      className="w-full h-7 px-2 text-xs font-mono bg-surface border border-border rounded focus:border-primary focus:outline-none"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <label className="text-[10px] font-semibold text-text-muted tracking-wide block mb-1">{t('settings.llm.maxTokens').toUpperCase()}</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={llmDraft.maxTokens}
-                      onChange={(e) => setLlmDraft((d) => ({ ...d, maxTokens: parseInt(e.target.value) || 1024 }))}
-                      className="w-full h-7 px-2 text-xs font-mono bg-surface border border-border rounded focus:border-primary focus:outline-none"
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    onClick={handleLLMSave}
-                    disabled={llmSaving || !llmDraft.model || !llmDraft.baseURL}
-                    className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-medium bg-primary text-white rounded hover:bg-primary-dark disabled:opacity-50 transition-colors"
-                  >
-                    {llmSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-                    {t('common.apply')}
-                  </button>
-                  <button
-                    onClick={() => setLlmEditing(false)}
-                    className="px-3 py-1.5 text-[11px] font-medium text-text-muted hover:text-text transition-colors"
-                  >
-                    {t('common.cancel')}
-                  </button>
-                </div>
-              </div>
-            ) : (
               <>
                 <Row label={t('settings.llm.model')}>
-                  <button
-                    onClick={() => { setLlmDraft({ model: llmConfig.model ?? '', baseURL: llmConfig.baseURL ?? '', apiKey: llmConfig.apiKey ?? '', temperature: llmConfig.temperature ?? 0.7, maxTokens: llmConfig.maxTokens ?? 1024 }); setLlmEditing(true) }}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-text bg-primary/5 hover:bg-primary/15 border border-primary/20 hover:border-primary/40 rounded cursor-pointer transition-colors group"
-                  >
+                  <ClickToEdit onClick={() => openEdit(t('settings.llm.title'), [
+                    { key: 'model', label: t('settings.llm.model'), type: 'text', value: llmConfig.model ?? '', placeholder: 'gpt-4o' },
+                    { key: 'baseURL', label: t('settings.llm.baseUrl'), type: 'text', value: llmConfig.baseURL ?? '', placeholder: 'https://api.openai.com/v1' },
+                    { key: 'apiKey', label: t('settings.llm.apiKey'), type: 'password', value: llmConfig.apiKey ?? '', placeholder: 'sk-...' },
+                    { key: 'temperature', label: t('settings.llm.temperature'), type: 'number', value: llmConfig.temperature ?? 0.7, min: 0, max: 2, step: 0.1 },
+                    { key: 'maxTokens', label: t('settings.llm.maxTokens'), type: 'number', value: llmConfig.maxTokens ?? 1024, min: 1 },
+                  ], async (v) => {
+                    const result = await patchLLMConfig({ model: String(v.model), baseURL: String(v.baseURL), apiKey: String(v.apiKey), temperature: Number(v.temperature), maxTokens: Number(v.maxTokens) })
+                    setLlmConfig(result)
+                  })}>
                     {llmConfig.model}
-                    <Pencil size={9} className="text-text-muted group-hover:text-primary transition-colors" />
-                  </button>
+                  </ClickToEdit>
                 </Row>
                 <Row label={t('settings.llm.baseUrl')}>
                   <code className="text-[11px] font-mono text-text-secondary max-w-[200px] truncate block" title={llmConfig.baseURL}>{llmConfig.baseURL}</code>
@@ -512,7 +338,6 @@ export function SettingsPage() {
                   <span className="text-xs font-medium text-text">{llmConfig.maxTokens ?? '—'}</span>
                 </Row>
               </>
-            )
           ) : (
             <div className="flex items-center gap-2 px-3 py-2 bg-warning/5 rounded-lg border border-warning/15">
               <Info size={12} className="text-warning shrink-0" />
@@ -526,50 +351,6 @@ export function SettingsPage() {
         {/* Consolidation / Integration Prompts */}
         <Card title={t('settings.prompts.title')} icon={FileText}>
           {promptsConfig?.configured ? (
-            promptsEditing ? (
-              <div className="space-y-3">
-                <div>
-                  <label className="text-[10px] font-semibold text-text-muted tracking-wide block mb-1">{t('settings.prompts.consolidate')}</label>
-                  <textarea
-                    value={promptsDraft.consolidate}
-                    onChange={(e) => setPromptsDraft((d) => ({ ...d, consolidate: e.target.value }))}
-                    className="w-full h-28 px-2 py-1.5 text-[11px] font-mono bg-surface border border-border rounded-lg focus:border-primary focus:outline-none resize-y leading-relaxed"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-semibold text-text-muted tracking-wide block mb-1">{t('settings.prompts.integrate')}</label>
-                  <textarea
-                    value={promptsDraft.integrate}
-                    onChange={(e) => setPromptsDraft((d) => ({ ...d, integrate: e.target.value }))}
-                    className="w-full h-28 px-2 py-1.5 text-[11px] font-mono bg-surface border border-border rounded-lg focus:border-primary focus:outline-none resize-y leading-relaxed"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={async () => {
-                      setPromptsSaving(true)
-                      try {
-                        const result = await patchPrompts(promptsDraft)
-                        setPromptsConfig(result)
-                        setPromptsEditing(false)
-                      } catch { /* ignore */ }
-                      setPromptsSaving(false)
-                    }}
-                    disabled={promptsSaving}
-                    className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-medium bg-primary text-white rounded hover:bg-primary-dark disabled:opacity-50 transition-colors"
-                  >
-                    {promptsSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-                    {t('common.apply')}
-                  </button>
-                  <button
-                    onClick={() => setPromptsEditing(false)}
-                    className="px-3 py-1.5 text-[11px] font-medium text-text-muted hover:text-text transition-colors"
-                  >
-                    {t('common.cancel')}
-                  </button>
-                </div>
-              </div>
-            ) : (
               <div className="space-y-3 group relative">
                 <div>
                   <p className="text-[10px] font-semibold text-text-muted tracking-wide mb-1">{t('settings.prompts.consolidateLabel')}</p>
@@ -580,13 +361,18 @@ export function SettingsPage() {
                   <p className="text-[11px] text-text-secondary leading-relaxed line-clamp-3">{promptsConfig.integrate}</p>
                 </div>
                 <button
-                  onClick={() => { setPromptsDraft({ consolidate: promptsConfig.consolidate ?? '', integrate: promptsConfig.integrate ?? '' }); setPromptsEditing(true) }}
+                  onClick={() => openEdit(t('settings.prompts.title'), [
+                    { key: 'consolidate', label: t('settings.prompts.consolidate'), type: 'textarea', value: promptsConfig.consolidate ?? '' },
+                    { key: 'integrate', label: t('settings.prompts.integrate'), type: 'textarea', value: promptsConfig.integrate ?? '' },
+                  ], async (v) => {
+                    const result = await patchPrompts({ consolidate: String(v.consolidate), integrate: String(v.integrate) })
+                    setPromptsConfig(result)
+                  })}
                   className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 p-1 bg-surface rounded border border-border hover:border-primary transition-all"
                 >
                   <Pencil size={10} className="text-text-muted hover:text-primary" />
                 </button>
               </div>
-            )
           ) : (
             <div className="flex items-center gap-2 px-3 py-2 bg-warning/5 rounded-lg border border-warning/15">
               <Info size={12} className="text-warning shrink-0" />
@@ -631,54 +417,29 @@ export function SettingsPage() {
           </div>
           <Row label={t('settings.sched.consolidationTrigger')}>
             {config.scheduling.hasScheduler ? (
-              <EditableSelect
-                value={config.scheduling.consolidation.trigger}
-                options={CONSOLIDATION_TRIGGERS}
-                onSave={(v) => handlePatch({ scheduling: { consolidation: { trigger: v } } })}
-                saving={saving}
-              />
+              <ClickToEdit onClick={() => openEdit(t('settings.sched.title'), [
+                { key: 'conTrigger', label: t('settings.sched.consolidationTrigger'), type: 'select', value: config.scheduling.consolidation.trigger, options: CONSOLIDATION_TRIGGERS },
+                { key: 'conEveryN', label: t('settings.sched.consolidationEveryN'), type: 'number', value: config.scheduling.consolidation.everyNTurns ?? 3, min: 1 },
+                { key: 'intTrigger', label: t('settings.sched.integrationTrigger'), type: 'select', value: config.scheduling.integration.trigger, options: INTEGRATION_TRIGGERS },
+                { key: 'intEveryN', label: t('settings.sched.integrationEveryN'), type: 'number', value: config.scheduling.integration.everyNTurns ?? 3, min: 1 },
+              ], async (v) => { await handlePatch({ scheduling: { consolidation: { trigger: String(v.conTrigger), everyNTurns: Number(v.conEveryN) }, integration: { trigger: String(v.intTrigger), everyNTurns: Number(v.intEveryN) } } }) })}>
+                {config.scheduling.consolidation.trigger}
+              </ClickToEdit>
             ) : (
               <code className="text-[11px] font-mono bg-surface px-2 py-0.5 rounded border border-border text-primary-dark">{config.scheduling.consolidation.trigger}</code>
             )}
           </Row>
           {(config.scheduling.consolidation.trigger === 'everyNTurns') && (
             <Row label={t('settings.sched.consolidationEveryN')}>
-              {config.scheduling.hasScheduler ? (
-                <EditableNumber
-                  value={config.scheduling.consolidation.everyNTurns ?? 1}
-                  min={1}
-                  onSave={(v) => handlePatch({ scheduling: { consolidation: { everyNTurns: v } } })}
-                  saving={saving}
-                />
-              ) : (
-                <Value>{config.scheduling.consolidation.everyNTurns} turns</Value>
-              )}
+              <Value>{config.scheduling.consolidation.everyNTurns} turns</Value>
             </Row>
           )}
           <Row label={t('settings.sched.integrationTrigger')}>
-            {config.scheduling.hasScheduler ? (
-              <EditableSelect
-                value={config.scheduling.integration.trigger}
-                options={INTEGRATION_TRIGGERS}
-                onSave={(v) => handlePatch({ scheduling: { integration: { trigger: v } } })}
-                saving={saving}
-              />
-            ) : (
-              <code className="text-[11px] font-mono bg-surface px-2 py-0.5 rounded border border-border text-primary-dark">{config.scheduling.integration.trigger}</code>
-            )}
+            <code className="text-[11px] font-mono bg-surface px-2 py-0.5 rounded border border-border text-primary-dark">{config.scheduling.integration.trigger}</code>
           </Row>
           {(config.scheduling.integration.trigger === 'everyNTurns') && (
             <Row label={t('settings.sched.integrationEveryN')}>
-              {config.scheduling.hasScheduler ? (
-                <EditableNumber
-                  value={config.scheduling.integration.everyNTurns ?? 1}
-                  min={1}
-                  onSave={(v) => handlePatch({ scheduling: { integration: { everyNTurns: v } } })}
-                  saving={saving}
-                />
-              ) : (
-                <Value>{config.scheduling.integration.everyNTurns} turns</Value>
-              )}
+              <Value>{config.scheduling.integration.everyNTurns} turns</Value>
             </Row>
           )}
         </Card>
@@ -688,20 +449,15 @@ export function SettingsPage() {
           {config.splitGuard ? (
             <>
               <Row label={t('settings.guard.minTurns')}>
-                <EditableNumber
-                  value={config.splitGuard.minTurns}
-                  min={0}
-                  onSave={(v) => handlePatch({ splitGuard: { minTurns: v } })}
-                  saving={saving}
-                />
+                <ClickToEdit onClick={() => openEdit(t('settings.guard.title'), [
+                  { key: 'minTurns', label: t('settings.guard.minTurns'), type: 'number', value: config.splitGuard!.minTurns, min: 0 },
+                  { key: 'cooldownTurns', label: t('settings.guard.cooldown'), type: 'number', value: config.splitGuard!.cooldownTurns, min: 0 },
+                ], async (v) => { await handlePatch({ splitGuard: { minTurns: Number(v.minTurns), cooldownTurns: Number(v.cooldownTurns) } }) })}>
+                  {config.splitGuard.minTurns}
+                </ClickToEdit>
               </Row>
               <Row label={t('settings.guard.cooldown')}>
-                <EditableNumber
-                  value={config.splitGuard.cooldownTurns}
-                  min={0}
-                  onSave={(v) => handlePatch({ splitGuard: { cooldownTurns: v } })}
-                  saving={saving}
-                />
+                <Value>{config.splitGuard.cooldownTurns}</Value>
               </Row>
             </>
           ) : (
@@ -717,12 +473,12 @@ export function SettingsPage() {
         {/* Runtime */}
         <Card title={t('settings.runtime.title')} icon={Cpu}>
           <Row label={t('settings.runtime.idleTtl')}>
-            <EditableNumber
-              value={config.runtime.idleTtlMs}
-              min={0}
-              onSave={(v) => handlePatch({ runtime: { idleTtlMs: v } })}
-              saving={saving}
-            />
+            <ClickToEdit onClick={() => openEdit(t('settings.runtime.idleTtl'), [
+              { key: 'idleTtlMs', label: t('settings.runtime.idleTtl'), type: 'number', value: config.runtime.idleTtlMs, min: 0 },
+            ], async (v) => { await handlePatch({ runtime: { idleTtlMs: Number(v.idleTtlMs) } }) })}
+            >
+              {config.runtime.idleTtlMs} ms
+            </ClickToEdit>
           </Row>
           <Row label={t('settings.runtime.resolver')}>
             <StatusDot configured={config.runtime.hasResolver} label={config.runtime.hasResolver ? t('common.custom') : t('settings.runtime.auto')} />
@@ -843,6 +599,14 @@ export function SettingsPage() {
           )}
         </Card>
       </div>
+
+      <EditDialog
+        open={dialogOpen}
+        title={dialogTitle}
+        fields={dialogFields}
+        onSave={dialogSaveFn}
+        onClose={() => setDialogOpen(false)}
+      />
     </div>
   )
 }

@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Pencil, ArrowDownRight, Loader2, Search, Filter, Save } from 'lucide-react'
 import { fetchSessions, fetchSessionDetail, fetchSystemPrompt, updateSystemPrompt, fetchScope, updateScope, injectRecord, triggerIntegration, type SessionMeta, type SessionDetail } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
+import { EditDialog, type EditField } from '@/components/EditDialog'
 
 /** 角色 badge */
 function RoleBadge({ role }: { role: string }) {
@@ -126,6 +127,10 @@ export function Inspector() {
   const [injectContent, setInjectContent] = useState('')
   const [injecting, setInjecting] = useState(false)
   const { t } = useI18n()
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [dialogTitle, setDialogTitle] = useState('')
+  const [dialogFields, setDialogFields] = useState<EditField[]>([])
+  const [dialogSaveFn, setDialogSaveFn] = useState<(values: Record<string, string | number>) => Promise<void>>(() => async () => {})
 
   /* 拉取 session 列表 */
   useEffect(() => {
@@ -358,114 +363,63 @@ export function Inspector() {
             <div className="space-y-5">
               {/* Insights / Scope */}
               <DataCard title={t('insp.insightsTitle')}>
-                {scopeEditing ? (
-                  <div className="space-y-2">
-                    <textarea
-                      value={scopeDraft}
-                      onChange={(e) => setScopeDraft(e.target.value)}
-                      className="w-full h-24 px-2 py-1.5 text-[11px] font-mono bg-surface border border-border rounded-lg focus:border-primary focus:outline-none resize-y leading-relaxed"
-                      placeholder={t('insp.insightsPlaceholder')}
-                    />
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={async () => {
+                <div className="group relative">
+                  {(scopeContent ?? detail?.scope) ? (
+                    <>
+                      <div className="flex items-center gap-1 mb-2">
+                        <ArrowDownRight size={10} className="text-primary" />
+                        <span className="text-[10px] font-medium text-primary">{t('insp.fromMain')}</span>
+                      </div>
+                      <p className="text-[11px] text-text-secondary leading-relaxed whitespace-pre-wrap line-clamp-6">{scopeContent ?? detail?.scope}</p>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-text-muted italic">{t('insp.noInsights')}</p>
+                  )}
+                  {scopeConfigured && (
+                    <button
+                      onClick={() => {
+                        setDialogTitle(t('insp.insightsTitle'))
+                        setDialogFields([{ key: 'content', label: t('insp.insightsTitle'), type: 'textarea', value: scopeContent ?? detail?.scope ?? '' }])
+                        setDialogSaveFn(() => async (v: Record<string, string | number>) => {
                           if (!selectedId) return
-                          setScopeSaving(true)
-                          try {
-                            await updateScope(selectedId, scopeDraft)
-                            setScopeContent(scopeDraft)
-                            setScopeEditing(false)
-                          } catch { /* ignore */ }
-                          setScopeSaving(false)
-                        }}
-                        disabled={scopeSaving}
-                        className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium bg-primary text-white rounded hover:bg-primary-dark disabled:opacity-50 transition-colors"
-                      >
-                        {scopeSaving ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />}
-                        {t('common.save')}
-                      </button>
-                      <button onClick={() => setScopeEditing(false)} className="px-2 py-1 text-[10px] font-medium text-text-muted hover:text-text transition-colors">{t('common.cancel')}</button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="group relative">
-                    {(scopeContent ?? detail?.scope) ? (
-                      <>
-                        <div className="flex items-center gap-1 mb-2">
-                          <ArrowDownRight size={10} className="text-primary" />
-                          <span className="text-[10px] font-medium text-primary">{t('insp.fromMain')}</span>
-                        </div>
-                        <p className="text-[11px] text-text-secondary leading-relaxed whitespace-pre-wrap">{scopeContent ?? detail?.scope}</p>
-                      </>
-                    ) : (
-                      <p className="text-[11px] text-text-muted italic">{t('insp.noInsights')}</p>
-                    )}
-                    {scopeConfigured && (
-                      <button
-                        onClick={() => { setScopeDraft(scopeContent ?? detail?.scope ?? ''); setScopeEditing(true) }}
-                        className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 p-1 bg-surface rounded border border-border hover:border-primary transition-all"
-                      >
-                        <Pencil size={10} className="text-text-muted hover:text-primary" />
-                      </button>
-                    )}
-                  </div>
-                )}
+                          await updateScope(selectedId, String(v.content))
+                          setScopeContent(String(v.content))
+                        })
+                        setDialogOpen(true)
+                      }}
+                      className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 p-1 bg-surface rounded border border-border hover:border-primary transition-all"
+                    >
+                      <Pencil size={10} className="text-text-muted hover:text-primary" />
+                    </button>
+                  )}
+                </div>
               </DataCard>
 
               {/* System Prompt */}
               <DataCard title={t('insp.sysPromptTitle')}>
                 {sysPromptConfigured ? (
-                  sysPromptEditing ? (
-                    <div className="space-y-2">
-                      <textarea
-                        value={sysPromptDraft}
-                        onChange={(e) => setSysPromptDraft(e.target.value)}
-                        className="w-full h-32 px-2 py-1.5 text-[11px] font-mono bg-surface border border-border rounded-lg focus:border-primary focus:outline-none resize-y leading-relaxed"
-                      />
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={async () => {
-                            if (!selectedId) return
-                            setSysPromptSaving(true)
-                            try {
-                              await updateSystemPrompt(selectedId, sysPromptDraft)
-                              setSysPrompt(sysPromptDraft)
-                              setSysPromptEditing(false)
-                            } catch { /* ignore */ }
-                            setSysPromptSaving(false)
-                          }}
-                          disabled={sysPromptSaving}
-                          className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium bg-primary text-white rounded hover:bg-primary-dark disabled:opacity-50 transition-colors"
-                        >
-                          {sysPromptSaving ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />}
-                          {t('common.save')}
-                        </button>
-                        <button
-                          onClick={() => setSysPromptEditing(false)}
-                          className="px-2 py-1 text-[10px] font-medium text-text-muted hover:text-text transition-colors"
-                        >
-                          {t('common.cancel')}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="group relative">
-                      <p className="text-[11px] text-text-secondary leading-relaxed whitespace-pre-wrap">
-                        {sysPrompt ?? <span className="italic text-text-muted">Empty</span>}
-                      </p>
-                      <button
-                        onClick={() => { setSysPromptDraft(sysPrompt ?? ''); setSysPromptEditing(true) }}
-                        className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 p-1 bg-surface rounded border border-border hover:border-primary transition-all"
-                        title="Edit system prompt"
-                      >
-                        <Pencil size={10} className="text-text-muted hover:text-primary" />
-                      </button>
-                    </div>
-                  )
+                  <div className="group relative">
+                    <p className="text-[11px] text-text-secondary leading-relaxed whitespace-pre-wrap line-clamp-6">
+                      {sysPrompt ?? <span className="italic text-text-muted">{t('common.empty')}</span>}
+                    </p>
+                    <button
+                      onClick={() => {
+                        setDialogTitle(t('insp.sysPromptTitle'))
+                        setDialogFields([{ key: 'content', label: t('insp.sysPromptTitle'), type: 'textarea', value: sysPrompt ?? '' }])
+                        setDialogSaveFn(() => async (v: Record<string, string | number>) => {
+                          if (!selectedId) return
+                          await updateSystemPrompt(selectedId, String(v.content))
+                          setSysPrompt(String(v.content))
+                        })
+                        setDialogOpen(true)
+                      }}
+                      className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 p-1 bg-surface rounded border border-border hover:border-primary transition-all"
+                    >
+                      <Pencil size={10} className="text-text-muted hover:text-primary" />
+                    </button>
+                  </div>
                 ) : (
-                  <p className="text-[11px] text-text-muted italic">
-                    {t('insp.sysPromptHint')}
-                  </p>
+                  <p className="text-[11px] text-text-muted italic">{t('insp.sysPromptHint')}</p>
                 )}
               </DataCard>
 
@@ -492,6 +446,14 @@ export function Inspector() {
           </div>
         )}
       </div>
+
+      <EditDialog
+        open={dialogOpen}
+        title={dialogTitle}
+        fields={dialogFields}
+        onSave={dialogSaveFn}
+        onClose={() => setDialogOpen(false)}
+      />
     </div>
   )
 }
