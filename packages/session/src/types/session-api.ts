@@ -1,5 +1,5 @@
 import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './session.js'
-import type { Message } from './llm.js'
+import type { Message, LLMAdapter } from './llm.js'
 import type { ConsolidateFn, SendResult, StreamResult } from './functions.js'
 
 
@@ -69,5 +69,8 @@ export interface Session {
 
   /** 归档当前 Session */
   archive(): Promise<void>
+
+  /** 动态替换 LLM adapter（热更新，立即对后续 send/stream 生效） */
+  setLLM(adapter: LLMAdapter): void
 
 }

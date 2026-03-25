@@ -12,6 +12,7 @@
     "@vitejs/plugin-react": "^6.0.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dotenv": "^17.3.1",
     "lucide-react": "^0.577.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

@@ -1,0 +1,52 @@
+{
+  "name": "@stello-ai/devtools",
+  "version": "0.1.0",
+  "description": "Developer debugging frontend for Stello agents",
+  "license": "Apache-2.0",
+  "author": "Stello Contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/stello-agent/stello.git",
+    "directory": "packages/devtools"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build:server": "tsup",
+    "build:web": "cd web && pnpm exec vite build",
+    "build": "pnpm run build:server && pnpm run build:web",
+    "dev:web": "cd web && pnpm exec vite",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.11",
+    "@stello-ai/core": "workspace:^",
+    "hono": "^4.12.9",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
+    "tsup": "^8.4.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

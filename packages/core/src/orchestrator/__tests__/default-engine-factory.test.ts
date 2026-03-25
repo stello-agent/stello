@@ -11,6 +11,7 @@ describe('DefaultEngineFactory', () => {
       archive: vi.fn(),
       getNode: vi.fn(),
       getTree: vi.fn(),
+      updateMeta: vi.fn().mockResolvedValue(undefined),
     } as unknown as SessionTree,
     memory: {} as MemoryEngine,
     skills: {

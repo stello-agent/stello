@@ -16,8 +16,8 @@ export interface SplitCheckResult {
  * 防止过早或过于频繁的拆分。
  */
 export class SplitGuard {
-  private readonly minTurns: number;
-  private readonly cooldownTurns: number;
+  private minTurns: number;
+  private cooldownTurns: number;
   private readonly testMode: boolean;
   private lastSplitTurns = new Map<string, number>();
 
@@ -28,6 +28,17 @@ export class SplitGuard {
     this.minTurns = strategy?.minTurns ?? 3;
     this.cooldownTurns = strategy?.cooldownTurns ?? 5;
     this.testMode = strategy?.testMode ?? false;
+  }
+
+  /** 获取当前配置（用于序列化 / 展示） */
+  getConfig(): { minTurns: number; cooldownTurns: number } {
+    return { minTurns: this.minTurns, cooldownTurns: this.cooldownTurns };
+  }
+
+  /** 热更新拆分策略参数 */
+  updateConfig(patch: Partial<{ minTurns: number; cooldownTurns: number }>): void {
+    if (patch.minTurns !== undefined) this.minTurns = patch.minTurns;
+    if (patch.cooldownTurns !== undefined) this.cooldownTurns = patch.cooldownTurns;
   }
 
   /** 检查指定 Session 是否允许拆分 */

@@ -75,8 +75,10 @@ export class DefaultEngineFactory implements EngineFactory {
     if (!scheduler) return {};
     return {
       onRoundEnd: () => {
+        const nextTurnCount = session.turnCount + 1;
+        this.options.sessions.updateMeta(session.id, { turnCount: nextTurnCount }).catch(() => {});
         scheduler.afterTurn(session, mainSession, {
-          observedTurnCount: session.turnCount + 1,
+          observedTurnCount: nextTurnCount,
         }).catch(() => {});
       },
       onSessionLeave: () => {

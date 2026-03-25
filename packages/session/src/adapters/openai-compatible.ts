@@ -6,6 +6,8 @@ export interface OpenAICompatibleOptions {
   apiKey: string
   model: string
   baseURL: string
+  /** 额外的请求参数（如 MiniMax 的 reasoning_split 等） */
+  extraBody?: Record<string, unknown>
 }
 
 /** 创建 OpenAI 兼容协议的 LLMAdapter，可对接 MiniMax / DeepSeek / OpenAI 等 */
@@ -15,29 +17,37 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleOptions):
     baseURL: options.baseURL,
   })
 
+  /** 构建公共请求参数 */
+  function buildParams(messages: Message[], completeOptions?: LLMCompleteOptions) {
+    return {
+      model: options.model,
+      max_tokens: completeOptions?.maxTokens ?? 1024,
+      ...(completeOptions?.temperature !== undefined && { temperature: completeOptions.temperature }),
+      ...(completeOptions?.tools
+        ? {
+            tools: completeOptions.tools.map((tool) => ({
+              type: 'function' as const,
+              function: {
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.inputSchema,
+              },
+            })),
+          }
+        : {}),
+      messages: messages.map((m) => ({
+        role: m.role as 'system' | 'user' | 'assistant',
+        content: m.content,
+      })),
+    }
+  }
+
   return {
     async complete(messages: Message[], completeOptions?: LLMCompleteOptions): Promise<LLMResult> {
       const response = await client.chat.completions.create({
-        model: options.model,
-        max_tokens: completeOptions?.maxTokens ?? 1024,
-        ...(completeOptions?.temperature !== undefined && { temperature: completeOptions.temperature }),
-        ...(completeOptions?.tools
-          ? {
-              tools: completeOptions.tools.map((tool) => ({
-                type: 'function' as const,
-                function: {
-                  name: tool.name,
-                  description: tool.description,
-                  parameters: tool.inputSchema,
-                },
-              })),
-            }
-          : {}),
-        messages: messages.map((m) => ({
-          role: m.role as 'system' | 'user' | 'assistant',
-          content: m.content,
-        })),
-      })
+        ...buildParams(messages, completeOptions),
+        ...(options.extraBody ?? {}),
+      } as Parameters<typeof client.chat.completions.create>[0])
 
       const choice = response.choices[0]
 
@@ -55,33 +65,16 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleOptions):
           ? {
               promptTokens: response.usage.prompt_tokens,
               completionTokens: response.usage.completion_tokens,
-        }
+          }
           : undefined,
       }
     },
     async *stream(messages: Message[], completeOptions?: LLMCompleteOptions) {
       const stream = await client.chat.completions.create({
-        model: options.model,
-        max_tokens: completeOptions?.maxTokens ?? 1024,
-        ...(completeOptions?.temperature !== undefined && { temperature: completeOptions.temperature }),
-        ...(completeOptions?.tools
-          ? {
-              tools: completeOptions.tools.map((tool) => ({
-                type: 'function' as const,
-                function: {
-                  name: tool.name,
-                  description: tool.description,
-                  parameters: tool.inputSchema,
-                },
-              })),
-            }
-          : {}),
+        ...buildParams(messages, completeOptions),
+        ...(options.extraBody ?? {}),
         stream: true,
-        messages: messages.map((m) => ({
-          role: m.role as 'system' | 'user' | 'assistant',
-          content: m.content,
-        })),
-      })
+      } as Parameters<typeof client.chat.completions.create>[0])
 
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta?.content ?? ''

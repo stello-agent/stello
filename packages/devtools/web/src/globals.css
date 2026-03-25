@@ -1,0 +1,115 @@
+@import "tailwindcss";
+
+@theme {
+  /* 通过 CSS 变量驱动的色系——light/dark 由 [data-theme] 切换 */
+  --color-primary: var(--c-primary);
+  --color-primary-light: var(--c-primary-light);
+  --color-primary-dark: var(--c-primary-dark);
+  --color-bg: var(--c-bg);
+  --color-card: var(--c-card);
+  --color-surface: var(--c-surface);
+  --color-muted: var(--c-muted);
+  --color-border: var(--c-border);
+  --color-border-strong: var(--c-border-strong);
+  --color-text: var(--c-text);
+  --color-text-secondary: var(--c-text-secondary);
+  --color-text-muted: var(--c-text-muted);
+  --color-success: var(--c-success);
+  --color-warning: var(--c-warning);
+  --color-error: var(--c-error);
+  --color-info: var(--c-info);
+  --color-purple: var(--c-purple);
+
+  --font-sans: "Outfit", system-ui, sans-serif;
+}
+
+/* ─── Light 主题（默认） ─── */
+:root, [data-theme="light"] {
+  --c-primary: #C4793D;
+  --c-primary-light: #F5EBE0;
+  --c-primary-dark: #8B6340;
+  --c-bg: #F5F4F1;
+  --c-card: #FFFFFF;
+  --c-surface: #FAFAF8;
+  --c-muted: #EDECEA;
+  --c-border: #E5E4E1;
+  --c-border-strong: #D1D0CD;
+  --c-text: #1A1918;
+  --c-text-secondary: #6D6C6A;
+  --c-text-muted: #9C9B99;
+  --c-success: #4D9B6A;
+  --c-warning: #D4A64A;
+  --c-error: #D08068;
+  --c-info: #1976D2;
+  --c-purple: #7E57C2;
+}
+
+/* ─── Dark 主题 ─── */
+[data-theme="dark"] {
+  --c-primary: #D89575;
+  --c-primary-light: #3D302A;
+  --c-primary-dark: #C4A882;
+  --c-bg: #1A1815;
+  --c-card: #242120;
+  --c-surface: #1E1C1A;
+  --c-muted: #2E2B28;
+  --c-border: #3D3530;
+  --c-border-strong: #4A433D;
+  --c-text: #F0EDE8;
+  --c-text-secondary: #B8B5B0;
+  --c-text-muted: #8A8785;
+  --c-success: #6BBF88;
+  --c-warning: #E0B85C;
+  --c-error: #E89080;
+  --c-info: #5CA0E8;
+  --c-purple: #A07EE0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  margin: 0;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+/* 全局平滑滚动 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+/* 页面切换淡入 */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.page-enter {
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* 面板滑入 */
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.panel-enter {
+  animation: slideInRight 0.2s ease-out;
+}
+
+/* 淡入弹出 */
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.pop-enter {
+  animation: popIn 0.15s ease-out;
+}
+
+/* highlight.js 背景色覆盖 */
+.hljs {
+  background: #2a2520 !important;
+}

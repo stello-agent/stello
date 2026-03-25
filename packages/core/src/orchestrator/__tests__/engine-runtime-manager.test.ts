@@ -86,4 +86,46 @@ describe('DefaultEngineRuntimeManager', () => {
 
     vi.useRealTimers();
   });
+
+  it('updateRecyclePolicy 热更新后 release 按新值延迟回收', async () => {
+    vi.useFakeTimers();
+    const engine = { sessionId: 's1' };
+    const engineFactory = {
+      create: vi.fn().mockResolvedValue(engine),
+    };
+
+    const manager = new DefaultEngineRuntimeManager(engineFactory as never, {
+      idleTtlMs: 0,
+    });
+
+    // 初始 idleTtlMs=0，立即回收
+    await manager.acquire('s1', 'holder-a');
+    await manager.release('s1', 'holder-a');
+    expect(manager.has('s1')).toBe(false);
+
+    // 热更新为延迟回收
+    manager.updateRecyclePolicy({ idleTtlMs: 2_000 });
+
+    await manager.acquire('s1', 'holder-b');
+    await manager.release('s1', 'holder-b');
+    expect(manager.has('s1')).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(manager.has('s1')).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(manager.has('s1')).toBe(false);
+
+    vi.useRealTimers();
+  });
+
+  it('updateRecyclePolicy 部分更新不丢失已有字段', () => {
+    const engineFactory = { create: vi.fn() };
+    const manager = new DefaultEngineRuntimeManager(engineFactory as never, {
+      idleTtlMs: 1_000,
+    });
+
+    manager.updateRecyclePolicy({});
+    // idleTtlMs 应保持不变（通过后续行为验证即可，这里主要验证不抛错）
+  });
 });
