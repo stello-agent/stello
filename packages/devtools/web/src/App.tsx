@@ -2,7 +2,7 @@ import { Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom'
 import { Sparkles, MessageSquare, Search, Activity, Settings, Globe, Sun, Moon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { I18nContext, useI18n, useI18nProvider } from '@/lib/i18n'
-import { useTheme } from '@/lib/theme'
+import { ThemeContext, useTheme, useThemeProvider } from '@/lib/theme'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { Topology } from '@/pages/Topology'
 import { Conversation } from '@/pages/Conversation'
@@ -73,8 +73,10 @@ function ThemeSwitcher() {
 export function App() {
   const location = useLocation()
   const i18n = useI18nProvider()
+  const themeCtx = useThemeProvider()
 
   return (
+    <ThemeContext.Provider value={themeCtx}>
     <I18nContext.Provider value={i18n}>
       <div className="flex h-screen w-screen overflow-hidden">
         {/* 侧边栏 */}
@@ -108,5 +110,6 @@ export function App() {
         </main>
       </div>
     </I18nContext.Provider>
+    </ThemeContext.Provider>
   )
 }
