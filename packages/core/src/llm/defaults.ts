@@ -45,10 +45,12 @@ export function createDefaultConsolidateFn(
     parts.push(
       `对话记录:\n${messages.map((m) => `${m.role}: ${m.content}`).join('\n')}`,
     )
-    return llm([
+    const raw = await llm([
       { role: 'system', content: prompt },
       { role: 'user', content: parts.join('\n\n') },
     ])
+    /* 清除 <think> 标签，只保留正文 */
+    return raw.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim()
   }
 }
 
@@ -65,13 +67,23 @@ export function createDefaultIntegrateFn(
     parts.push(
       `子 Session 摘要:\n${children.map((c) => `- ${c.label}: ${c.l2}`).join('\n')}`,
     )
-    const result = await llm([
+    const raw = await llm([
       { role: 'system', content: prompt },
       { role: 'user', content: parts.join('\n\n') },
     ])
-    return JSON.parse(result) as {
-      synthesis: string
-      insights: Array<{ sessionId: string; content: string }>
+    /* 容错：清除 <think> 标签，提取 JSON 块 */
+    const cleaned = raw.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim()
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      return { synthesis: cleaned, insights: [] }
+    }
+    try {
+      return JSON.parse(jsonMatch[0]) as {
+        synthesis: string
+        insights: Array<{ sessionId: string; content: string }>
+      }
+    } catch {
+      return { synthesis: cleaned, insights: [] }
     }
   }
 }
