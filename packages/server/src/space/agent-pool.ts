@@ -1,5 +1,12 @@
 import type pg from 'pg'
-import { createStelloAgent, type StelloAgent, type StelloAgentConfig } from '@stello-ai/core'
+import {
+  createStelloAgent,
+  adaptSessionToEngineRuntime,
+  adaptMainSessionToSchedulerMainSession,
+  serializeSessionSendResult,
+  type StelloAgent,
+  type StelloAgentConfig,
+} from '@stello-ai/core'
 import { PgSessionTree } from '../storage/pg-session-tree.js'
 import { PgMemoryEngine } from '../storage/pg-memory-engine.js'
 import { PgSessionStorage } from '../storage/pg-session-storage.js'
@@ -108,21 +115,54 @@ export class AgentPool {
     }
 
     const partialConfig = this.options.buildConfig(ctx)
-
-    // 如果 buildConfig 未提供 consolidateFn/integrateFn，且 Space 有对应 prompt 且 llm 可用，使用内置默认
-    const sessionConfig = { ...partialConfig.session }
     const { llm } = this.options
 
-    if (!sessionConfig.consolidateFn && space.consolidatePrompt && llm) {
-      sessionConfig.consolidateFn = createDefaultConsolidateFn(space.consolidatePrompt, llm)
-    }
-    if (!sessionConfig.integrateFn && space.integratePrompt && llm) {
-      sessionConfig.integrateFn = createDefaultIntegrateFn(space.integratePrompt, llm)
+    // 如果 buildConfig 未提供 runtime.resolver 且 llm 可用，自动生成带 per-session prompt 支持的 resolver
+    if (!partialConfig.runtime?.resolver && partialConfig.session?.sessionResolver && llm) {
+      const sessionResolver = partialConfig.session.sessionResolver
+      const serializeResult = partialConfig.session?.serializeSendResult ?? serializeSessionSendResult
+
+      partialConfig.runtime = {
+        ...partialConfig.runtime,
+        resolver: {
+          resolve: async (sessionId: string) => {
+            const session = await sessionResolver(sessionId)
+            const consolidateFn = createDefaultConsolidateFn(
+              sessionId, space.consolidatePrompt, llm, this.pool, spaceId,
+            )
+            return adaptSessionToEngineRuntime(session, { consolidateFn, serializeResult })
+          },
+        },
+      }
+
+      // integrateFn 的 per-session 支持：获取 root session ID 作为 main session
+      if (partialConfig.session.mainSessionResolver) {
+        const mainSessionResolver = partialConfig.session.mainSessionResolver
+        const root = await sessionTree.getRoot()
+        const mainSessionId = root.id
+
+        partialConfig.orchestration = {
+          ...partialConfig.orchestration,
+          mainSession: {
+            async integrate(): Promise<void> {
+              const mainSession = await mainSessionResolver()
+              if (!mainSession) return
+              const integrateFn = createDefaultIntegrateFn(
+                mainSessionId, space.integratePrompt, llm, ctx.pool, spaceId,
+              )
+              const adapted = adaptMainSessionToSchedulerMainSession(mainSession, { integrateFn })
+              await adapted.integrate()
+            },
+          },
+        }
+      }
+    } else if (!partialConfig.runtime?.resolver && partialConfig.session?.consolidateFn) {
+      // fallback：buildConfig 提供了显式 consolidateFn 但无 llm — 保持原有 session 路径
+      // 不注入 runtime.resolver，让 core 的 resolveRuntimeResolver 处理
     }
 
     return createStelloAgent({
       ...partialConfig,
-      session: sessionConfig,
       sessions: sessionTree,
       memory: memoryEngine,
     })

@@ -1,6 +1,6 @@
 ---
 name: storage-design
-description: 当需要理解或实现 StorageAdapter（SessionStorage / MainStorage）、拓扑树、数据流向时，触发此 skill。
+description: 存储接口的分层设计原则、SessionMeta 与 TopologyNode 解耦、数据流向。触发条件：理解或实现 StorageAdapter。
 ---
 
 ## 核心原则
@@ -15,75 +15,38 @@ description: 当需要理解或实现 StorageAdapter（SessionStorage / MainStor
 
 普通 Session 注入此接口。只能操作自身的数据，无法感知其他 Session 的存在。
 
-```
-SessionStorage:
-  // Session 元数据
-  getSession(id: string): SessionMeta | null
-  putSession(session: SessionMeta): void
-
-  // L3 对话记录
-  appendRecord(sessionId: string, record: Message): void
-  listRecords(sessionId: string, options?: ListRecordsOptions): Message[]
-
-  // 上下文槽位（每个都对应上下文组装中的一个位置）
-  getSystemPrompt(sessionId: string): string | null
-  putSystemPrompt(sessionId: string, content: string): void
-  getInsight(sessionId: string): string | null
-  putInsight(sessionId: string, content: string): void
-  getMemory(sessionId: string): string | null       // L2
-  putMemory(sessionId: string, content: string): void
-
-  // 事务
-  transaction<T>(fn: (tx: SessionStorage) => T): T
-```
+职责：Session 元数据 CRUD、L3 对话记录追加/查询、上下文槽位（system prompt / insight / memory）读写、事务支持。
 
 ### MainStorage extends SessionStorage — Main Session 额外能力
 
 Main Session 注入此接口。除了自身数据操作外，还能：
-1. 扁平收集所有子 Session 的 L2（用于 integration）
-2. 操作拓扑树（用于前端渲染）
-3. 读写全局状态
+1. 扁平收集所有子 Session 的 L2（用于 integration，不走树）
+2. 操作拓扑树节点（用于前端渲染）
+3. 读写全局键值（L1-structured）
+4. 列举 Session（管理用）
 
-```
-MainStorage extends SessionStorage:
-  // 批量 L2 收集（integration 专用）
-  getAllSessionL2s(): Array<{ sessionId: string; label: string; l2: string }>
+### 为什么按消费者分接口而不是按数据结构分
 
-  // 拓扑树（轻量，仅供前端渲染用）
-  putNode(node: TopologyNode): void
-  getChildren(parentId: string): TopologyNode[]
-  removeNode(nodeId: string): void
+同一个实现类可以同时实现两个接口（共享数据库），接口分离只是约束注入范围。普通 Session 拿到 SessionStorage 后无法调用 `getAllSessionL2s()`，从类型层面保证子 Session 不感知其他 Session。
 
-  // Session 列举（管理用）
-  listSessions(filter?: SessionFilter): SessionMeta[]
+---
 
-  // 全局键值（L1-structured）
-  getGlobal(key: string): unknown
-  putGlobal(key: string, value: unknown): void
-```
+## SessionMeta 与 TopologyNode 解耦
 
-### TopologyNode
+树状关系完全由 TopologyNode 维护，SessionMeta 不关心自己在树中的位置。
 
-```
-TopologyNode:
-  id: string               // = sessionId
-  parentId: string | null  // 树中的父节点（null = 根节点，即 Main Session）
-  children: string[]       // 子节点 ID 列表
-  refs: string[]           // 跨分支引用 ID 列表
-  depth: number            // 层级深度（根 = 0）
-  index: number            // 在兄弟节点中的排序序号
-  label: string            // 冗余存储，避免渲染树时加载完整 SessionMeta
-```
+- **SessionMeta**：对话运行时数据（id、label、status、turnCount 等），无 parentId/children/depth
+- **TopologyNode**：纯树结构（id、parentId、children、refs、depth、index、label）
 
-### SessionTreeNode（递归树，API 返回用）
+两种类型从同一底层存储投影而来，但消费者不同：SessionMeta 面向 Session 层，TopologyNode 面向编排层和前端渲染。
 
-```
-SessionTreeNode:
-  id: string
-  label: string
-  status: 'active' | 'archived'
-  children: SessionTreeNode[]
-```
+### 两个包的 SessionMeta
+
+`@stello-ai/session` 和 `@stello-ai/core` 各有自己的 SessionMeta，字段不完全相同：
+- session 包的有 `role`，无 `scope`/`turnCount`/`lastActiveAt`
+- core 包的有 `scope`/`turnCount`/`lastActiveAt`，无 `role`
+
+PG 存储层存超集，各 adapter 按需投影。
 
 ---
 
@@ -91,75 +54,31 @@ SessionTreeNode:
 
 ```
 普通 Session（注入 SessionStorage）
-  send() → appendRecord, getSystemPrompt, getInsight, listRecords
-  consolidate() → getMemory, putMemory, listRecords
+  send() → 读 system prompt + insight + L3 历史 → 调 LLM → 写 L3
+  consolidate() → 读 L3 + 当前 L2 → 调 ConsolidateFn → 写新 L2
 
 Main Session（注入 MainStorage）
-  send() → appendRecord, getSystemPrompt, getMemory(=synthesis), listRecords
-  integrate() → getAllSessionL2s, putMemory(=synthesis), putInsight(各子session)
+  send() → 读 system prompt + synthesis + L3 历史 → 调 LLM → 写 L3
+  integrate() → 扁平收集所有子 L2 → 调 IntegrateFn → 写 synthesis + 推送 insights
 
 编排层 fork 流程:
-  1. createSession() → SessionStorage.putSession
-  2. 拷贝上下文 → SessionStorage.get*/put*
-  3. MainStorage.putNode({ id, parentId, label }) → 拓扑树
+  1. Session 层创建 Session（putSession）
+  2. 拷贝上下文
+  3. 存储层写入 TopologyNode（putNode）—— 两个独立操作
 
 前端渲染:
-  MainStorage.getChildren(rootId) → 懒加载子节点
-  点击节点 → SessionStorage.getSession(id) → 加载完整数据
+  懒加载树节点 → 点击加载 Session 详情
 ```
 
 ---
 
-## 实现说明
+## 上下文槽位
 
-两个接口可以由同一个类实现（同一个数据库），接口分离只是约束注入范围：
+每个出现在 LLM 上下文中的元素都有对应的专用存储方法（get/put 对），不复用通用键值：
 
-```typescript
-class PostgresStorage implements MainStorage {
-  // 实现所有方法
-}
-
-// 注入时按需收窄
-const session = await createSession({ storage: pgStorage as SessionStorage })
-const main = await createMainSession({ storage: pgStorage as MainStorage })
-```
-
-InMemoryStorageAdapter 同理：实现 MainStorage，测试时按需注入。
-
----
-
-## 两种 SessionMeta
-
-树状关系完全由 TopologyNode 维护，SessionMeta 不关心自己在树中的位置。
-
-### @stello-ai/session 的 SessionMeta
-
-```
-SessionMeta:
-  readonly id: string
-  label: string
-  role: 'standard' | 'main'
-  status: 'active' | 'archived'
-  tags: string[]
-  metadata: Record<string, unknown>
-  createdAt: string
-  updatedAt: string
-```
-
-### @stello-ai/core 的 SessionMeta（精简版）
-
-```
-SessionMeta:
-  readonly id: string
-  label: string
-  scope: string | null
-  status: 'active' | 'archived'
-  turnCount: number
-  metadata: Record<string, unknown>
-  tags: string[]
-  createdAt: string
-  updatedAt: string
-  lastActiveAt: string
-```
-
-注意：core 的 SessionMeta **不含** parentId、children、refs、depth、index 等树字段。
+| 上下文元素 | 消费场景 |
+|-----------|---------|
+| system prompt | 所有 Session |
+| insight | 子 Session（Main → 子，消费后清除） |
+| L3 历史 | 所有 Session |
+| memory（L2 / synthesis） | 子 Session 存 L2，Main Session 存 synthesis |

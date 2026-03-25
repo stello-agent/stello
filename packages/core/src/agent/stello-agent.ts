@@ -176,12 +176,16 @@ export class StelloAgent {
   /** 暴露 SessionTree，方便调用方做拓扑查询 */
   readonly sessions: StelloAgentConfig['sessions'];
 
+  /** 暴露 MemoryEngine，方便调用方做数据读写 */
+  readonly memory: StelloAgentConfig['memory'];
+
   private readonly orchestrator: SessionOrchestrator;
   private readonly runtimeManager: EngineRuntimeManager;
 
   constructor(config: StelloAgentConfig) {
     this.config = config;
     this.sessions = config.sessions;
+    this.memory = config.memory;
     const engineFactory = new DefaultEngineFactory({
       sessions: config.sessions,
       memory: config.memory,
