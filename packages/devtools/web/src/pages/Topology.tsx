@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { GitBranch, Archive, MessageSquare, Search, X } from 'lucide-react'
-import { fetchSessionTree, fetchSessionDetail, type SessionTreeNode, type SessionDetail } from '@/lib/api'
+import { GitBranch, Archive, MessageSquare, Search, X, Play, Eye, Loader2 } from 'lucide-react'
+import { fetchSessionTree, fetchSessionDetail, forkSession, archiveSession, type SessionTreeNode, type SessionDetail } from '@/lib/api'
 
 /** 拓扑节点（前端渲染用，合并 meta + topology） */
 interface TopoNode {
@@ -118,6 +118,7 @@ function renderFrame(
   height: number,
   highlightedId: string | null,
   time: number = 0,
+  nodeTimers?: Map<string, number>,
 ) {
   /* 背景渐变——需要覆盖可见区域（考虑平移后的范围） */
   const margin = 2000
@@ -185,9 +186,23 @@ function renderFrame(
     const adjacent = isAdjacent(node, highlightedId, nodeMap)
     const dimmed = hasHighlight && !adjacent
 
+    /* 新节点 pop-in 动画（500ms 缩放） */
+    let popScale = 1
+    if (nodeTimers) {
+      const appearTime = nodeTimers.get(node.id)
+      if (appearTime !== undefined) {
+        const elapsed = time - appearTime
+        if (elapsed < 500) {
+          popScale = Math.min(1, elapsed / 500) * (1 + 0.15 * Math.max(0, 1 - elapsed / 300))
+        } else {
+          nodeTimers.delete(node.id)
+        }
+      }
+    }
+
     /* 呼吸脉冲：每个节点错开相位 */
     const pulse = Math.sin(time * 0.002 + node.x * 0.01 + node.y * 0.01) * 0.15 + 1
-    const animatedSize = node.size * (isHighlighted ? 1.2 : pulse)
+    const animatedSize = node.size * (isHighlighted ? 1.2 : pulse) * popScale
 
     /* 发光效果 */
     ctx.beginPath()
@@ -229,6 +244,15 @@ interface TooltipState {
   node: LayoutNode | null
 }
 
+/** 右键菜单状态 */
+interface ContextMenuState {
+  visible: boolean
+  x: number
+  y: number
+  nodeId: string | null
+  nodeLabel: string
+}
+
 /** Camera 状态 */
 interface Camera {
   x: number
@@ -262,6 +286,8 @@ export function Topology() {
   const [selectedNode, setSelectedNode] = useState<LayoutNode | null>(null)
   const [panelOpen, setPanelOpen] = useState(false)
   const [panelDetail, setPanelDetail] = useState<SessionDetail | null>(null)
+  const [ctxMenu, setCtxMenu] = useState<ContextMenuState>({ visible: false, x: 0, y: 0, nodeId: null, nodeLabel: '' })
+  const [actionLoading, setActionLoading] = useState(false)
   const navigate = useNavigate()
 
   /* Camera ref（不触发 re-render，rAF 循环直接读取） */
@@ -277,34 +303,59 @@ export function Topology() {
   }>({ active: false, startX: 0, startY: 0, lastX: 0, lastY: 0, draggingNodeId: null, hasMoved: false })
   const highlightedRef = useRef<string | null>(null)
 
+  /* 新节点出现时间追踪（用于 pop-in 动画） */
+  const newNodeTimers = useRef(new Map<string, number>())
+  const prevNodeIds = useRef(new Set<string>())
+
   /* 同步 highlighted 到 ref（rAF 读取） */
   useEffect(() => { highlightedRef.current = highlighted }, [highlighted])
 
-  /* 从 API 拉取完整拓扑树 */
-  useEffect(() => {
+  /** 递归展平树 */
+  const flattenTree = useCallback((tree: SessionTreeNode): TopoNode[] => {
+    const flatten = (node: SessionTreeNode, parentId: string | null): TopoNode[] => {
+      const topo: TopoNode = {
+        id: node.id,
+        label: node.label,
+        parentId,
+        status: node.status,
+        turns: 0,
+        children: node.children.map((c) => c.id),
+        refs: [],
+      }
+      return [topo, ...node.children.flatMap((c) => flatten(c, node.id))]
+    }
+    return flatten(tree, null)
+  }, [])
+
+  /** 拉取并刷新拓扑树 */
+  const refreshTree = useCallback(() => {
     fetchSessionTree()
       .then((tree) => {
-        /** 递归展平树，推导 parentId 和 children ids */
-        const flatten = (node: SessionTreeNode, parentId: string | null): TopoNode[] => {
-          const topo: TopoNode = {
-            id: node.id,
-            label: node.label,
-            parentId,
-            status: node.status,
-            turns: 0, // tree 没有 turnCount，后续从 detail 补充
-            children: node.children.map((c) => c.id),
-            refs: [],
-          }
-          return [topo, ...node.children.flatMap((c) => flatten(c, node.id))]
-        }
-        const all = flatten(tree, null)
-        setTopoNodes(all)
+        setTopoNodes(flattenTree(tree))
         setDataError(null)
       })
-      .catch((err: Error) => {
-        setDataError(err.message)
-      })
-  }, [])
+      .catch((err: Error) => setDataError(err.message))
+  }, [flattenTree])
+
+  /* 初始加载 */
+  useEffect(() => { refreshTree() }, [refreshTree])
+
+  /* WS 实时拓扑更新 */
+  useEffect(() => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const wsUrl = `${protocol}//${window.location.host}/ws`
+    const ws = new WebSocket(wsUrl)
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data as string) as Record<string, unknown>
+        const type = String(msg['type'] ?? '')
+        if (type === 'fork.created' || type === 'session.archived') {
+          refreshTree()
+        }
+      } catch { /* ignore */ }
+    }
+    return () => { ws.close() }
+  }, [refreshTree])
 
   /* ResizeObserver */
   useEffect(() => {
@@ -319,8 +370,17 @@ export function Topology() {
     return () => observer.disconnect()
   }, [])
 
-  /* 布局计算 */
+  /* 布局计算 + 追踪新节点 */
   useEffect(() => {
+    const currentIds = new Set(topoNodes.map((n) => n.id))
+    const now = performance.now()
+    for (const id of currentIds) {
+      if (!prevNodeIds.current.has(id)) {
+        newNodeTimers.current.set(id, now)
+      }
+    }
+    prevNodeIds.current = currentIds
+
     const layout = computeLayout(topoNodes, size.width, size.height)
     nodesRef.current = layout
   }, [size, topoNodes])
@@ -353,7 +413,7 @@ export function Topology() {
 
       /* 应用 camera 变换 */
       ctx.setTransform(dpr * cam.zoom, 0, 0, dpr * cam.zoom, dpr * cam.x * cam.zoom, dpr * cam.y * cam.zoom)
-      renderFrame(ctx, nodesRef.current, size.width / cam.zoom, size.height / cam.zoom, highlightedRef.current, time)
+      renderFrame(ctx, nodesRef.current, size.width / cam.zoom, size.height / cam.zoom, highlightedRef.current, time, newNodeTimers.current)
 
       rafId = requestAnimationFrame(loop)
     }
@@ -503,6 +563,46 @@ export function Topology() {
     }
   }, [hitTest, navigate])
 
+  /** 右键菜单 */
+  const handleContextMenu = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    e.preventDefault()
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top)
+    if (hit) {
+      setCtxMenu({ visible: true, x: e.clientX, y: e.clientY, nodeId: hit.id, nodeLabel: hit.label })
+    } else {
+      setCtxMenu((prev) => ({ ...prev, visible: false }))
+    }
+  }, [hitTest])
+
+  /** 关闭右键菜单 */
+  const closeCtxMenu = useCallback(() => {
+    setCtxMenu((prev) => ({ ...prev, visible: false }))
+  }, [])
+
+  /** 右键菜单 Fork 操作 */
+  const handleFork = useCallback(async (nodeId: string, nodeLabel: string) => {
+    setActionLoading(true)
+    try {
+      await forkSession(nodeId, `${nodeLabel}-fork`)
+      refreshTree()
+    } catch { /* ignore */ }
+    setActionLoading(false)
+    closeCtxMenu()
+  }, [refreshTree, closeCtxMenu])
+
+  /** 右键菜单 Archive 操作 */
+  const handleArchive = useCallback(async (nodeId: string) => {
+    setActionLoading(true)
+    try {
+      await archiveSession(nodeId)
+      refreshTree()
+    } catch { /* ignore */ }
+    setActionLoading(false)
+    closeCtxMenu()
+  }, [refreshTree, closeCtxMenu])
+
   /** 关闭面板 */
   const closePanel = useCallback(() => {
     setPanelOpen(false)
@@ -522,6 +622,7 @@ export function Topology() {
           onMouseLeave={handleMouseUp}
           onWheel={handleWheel}
           onDoubleClick={handleDoubleClick}
+          onContextMenu={handleContextMenu}
         />
 
         {/* 顶部标题栏 */}
@@ -580,6 +681,52 @@ export function Topology() {
               {tooltip.node.turns} turns · {tooltip.node.status}
             </p>
           </div>
+        )}
+
+        {/* 右键菜单 */}
+        {ctxMenu.visible && ctxMenu.nodeId && (
+          <>
+            {/* 透明遮罩捕获外部点击 */}
+            <div className="fixed inset-0 z-40" onClick={closeCtxMenu} onContextMenu={(e) => { e.preventDefault(); closeCtxMenu() }} />
+            <div
+              className="fixed z-50 bg-[#2A2520]/95 backdrop-blur-sm rounded-lg border border-[#C4A88230] shadow-xl py-1 min-w-[160px] pop-enter"
+              style={{ left: ctxMenu.x, top: ctxMenu.y }}
+            >
+              <p className="px-3 py-1.5 text-[10px] font-semibold text-[#9C9B99] tracking-wide">{ctxMenu.nodeLabel}</p>
+              <div className="h-px bg-[#3D3530] mx-2" />
+              <button
+                onClick={() => { navigate(`/conversation?session=${ctxMenu.nodeId}`); closeCtxMenu() }}
+                className="flex items-center gap-2 w-full px-3 py-2 hover:bg-[#FFFFFF15] transition-colors text-left"
+              >
+                <Play size={12} className="text-primary" />
+                <span className="text-xs font-medium text-[#E5E4E1]">Enter Session</span>
+              </button>
+              <button
+                onClick={() => { navigate(`/inspector?session=${ctxMenu.nodeId}`); closeCtxMenu() }}
+                className="flex items-center gap-2 w-full px-3 py-2 hover:bg-[#FFFFFF15] transition-colors text-left"
+              >
+                <Eye size={12} className="text-primary" />
+                <span className="text-xs font-medium text-[#E5E4E1]">View in Inspector</span>
+              </button>
+              <div className="h-px bg-[#3D3530] mx-2" />
+              <button
+                onClick={() => handleFork(ctxMenu.nodeId!, ctxMenu.nodeLabel)}
+                disabled={actionLoading}
+                className="flex items-center gap-2 w-full px-3 py-2 hover:bg-[#FFFFFF15] transition-colors text-left disabled:opacity-50"
+              >
+                {actionLoading ? <Loader2 size={12} className="text-primary animate-spin" /> : <GitBranch size={12} className="text-primary" />}
+                <span className="text-xs font-medium text-[#E5E4E1]">Fork</span>
+              </button>
+              <button
+                onClick={() => handleArchive(ctxMenu.nodeId!)}
+                disabled={actionLoading}
+                className="flex items-center gap-2 w-full px-3 py-2 hover:bg-[#FFFFFF15] transition-colors text-left disabled:opacity-50"
+              >
+                {actionLoading ? <Loader2 size={12} className="text-[#A8A7A5] animate-spin" /> : <Archive size={12} className="text-[#A8A7A5]" />}
+                <span className="text-xs font-medium text-[#A8A7A5]">Archive</span>
+              </button>
+            </div>
+          </>
         )}
       </div>
 
@@ -646,14 +793,14 @@ export function Topology() {
             <div className="space-y-1.5">
               <p className="text-[10px] font-semibold text-[#A8A7A5] tracking-wide">OPEN IN</p>
               <button
-                onClick={() => navigate('/conversation')}
+                onClick={() => navigate(`/conversation?session=${selectedNode.id}`)}
                 className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-[#FFFFFF08] hover:bg-[#FFFFFF15] transition-colors"
               >
                 <MessageSquare size={14} className="text-primary" />
                 <span className="text-xs font-medium text-[#F0EDE8]">Conversation</span>
               </button>
               <button
-                onClick={() => navigate('/inspector')}
+                onClick={() => navigate(`/inspector?session=${selectedNode.id}`)}
                 className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-[#FFFFFF08] hover:bg-[#FFFFFF15] transition-colors"
               >
                 <Search size={14} className="text-primary" />
@@ -665,12 +812,20 @@ export function Topology() {
 
             {/* 操作按钮 */}
             <div className="flex gap-2">
-              <button className="flex items-center gap-1.5 px-3 py-2 bg-primary/20 rounded-lg hover:bg-primary/30 transition-colors">
-                <GitBranch size={13} className="text-primary" />
+              <button
+                onClick={() => handleFork(selectedNode.id, selectedNode.label)}
+                disabled={actionLoading}
+                className="flex items-center gap-1.5 px-3 py-2 bg-primary/20 rounded-lg hover:bg-primary/30 transition-colors disabled:opacity-50"
+              >
+                {actionLoading ? <Loader2 size={13} className="text-primary animate-spin" /> : <GitBranch size={13} className="text-primary" />}
                 <span className="text-xs font-medium text-primary">Fork</span>
               </button>
-              <button className="flex items-center gap-1.5 px-3 py-2 bg-[#FFFFFF10] rounded-lg hover:bg-[#FFFFFF20] transition-colors">
-                <Archive size={13} className="text-[#A8A7A5]" />
+              <button
+                onClick={() => handleArchive(selectedNode.id)}
+                disabled={actionLoading}
+                className="flex items-center gap-1.5 px-3 py-2 bg-[#FFFFFF10] rounded-lg hover:bg-[#FFFFFF20] transition-colors disabled:opacity-50"
+              >
+                {actionLoading ? <Loader2 size={13} className="text-[#A8A7A5] animate-spin" /> : <Archive size={13} className="text-[#A8A7A5]" />}
                 <span className="text-xs font-medium text-[#A8A7A5]">Archive</span>
               </button>
             </div>
