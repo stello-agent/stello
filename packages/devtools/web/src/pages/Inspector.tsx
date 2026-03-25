@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
-import { ChevronDown, Pencil, ArrowDownRight, Loader2 } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { ChevronDown, ChevronRight, Pencil, ArrowDownRight, Loader2, Search, Filter } from 'lucide-react'
 import { fetchSessions, fetchSessionDetail, type SessionMeta, type SessionDetail } from '@/lib/api'
 
 /** 角色 badge */
@@ -49,20 +50,73 @@ function DataCard({
   )
 }
 
+/** JSON 值渲染——根据类型着色 */
+function JsonValue({ value }: { value: unknown }) {
+  if (value === null) return <span className="text-text-muted italic">null</span>
+  if (typeof value === 'boolean') return <span className="text-purple">{String(value)}</span>
+  if (typeof value === 'number') return <span className="text-info">{value}</span>
+  if (typeof value === 'string') {
+    const display = value.length > 80 ? value.slice(0, 80) + '…' : value
+    return <span className="text-success">"{display}"</span>
+  }
+  return <span className="text-text-secondary">{String(value)}</span>
+}
+
+/** 可折叠 JSON 树 viewer */
+function JsonTree({ data, defaultOpen = true, depth = 0 }: { data: unknown; defaultOpen?: boolean; depth?: number }) {
+  const [open, setOpen] = useState(defaultOpen)
+
+  if (data === null || data === undefined) return <JsonValue value={data} />
+  if (typeof data !== 'object') return <JsonValue value={data} />
+
+  const isArray = Array.isArray(data)
+  const entries = isArray ? data.map((v, i) => [String(i), v] as const) : Object.entries(data as Record<string, unknown>)
+
+  if (entries.length === 0) return <span className="text-text-muted">{isArray ? '[]' : '{}'}</span>
+
+  return (
+    <div className="text-[11px] font-mono">
+      <button onClick={() => setOpen(!open)} className="inline-flex items-center gap-0.5 hover:text-primary transition-colors">
+        {open ? <ChevronDown size={10} className="shrink-0" /> : <ChevronRight size={10} className="shrink-0" />}
+        <span className="text-text-muted">{isArray ? `[${entries.length}]` : `{${entries.length}}`}</span>
+      </button>
+      {open && (
+        <div className="ml-3 border-l border-border/30 pl-2 space-y-0.5">
+          {entries.map(([key, val]) => (
+            <div key={key} className="flex items-start gap-1">
+              <span className="text-primary-dark shrink-0">{isArray ? `${key}:` : `"${key}":`}</span>
+              {typeof val === 'object' && val !== null ? (
+                <JsonTree data={val} defaultOpen={depth < 1} depth={depth + 1} />
+              ) : (
+                <JsonValue value={val} />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Inspector 检查器页面 */
 export function Inspector() {
+  const [searchParams] = useSearchParams()
+  const initialSessionId = searchParams.get('session')
   const [sessions, setSessions] = useState<SessionMeta[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<SessionDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [roleFilter, setRoleFilter] = useState<'all' | 'user' | 'assistant' | 'system'>('all')
 
   /* 拉取 session 列表 */
   useEffect(() => {
     fetchSessions()
       .then(({ sessions: list }) => {
         setSessions(list)
-        if (list.length > 0) setSelectedId(list[0]!.id)
+        const target = initialSessionId ? list.find((s) => s.id === initialSessionId) : null
+        setSelectedId(target?.id ?? list[0]?.id ?? null)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -133,20 +187,61 @@ export function Inspector() {
                 title="L3 — Conversation Records"
                 badge={detail ? `${detail.records.length} records` : '—'}
               >
-                {detail && detail.records.length > 0 ? (
-                  <div className="space-y-2.5 max-h-80 overflow-y-auto">
-                    {detail.records.map((r, i) => (
-                      <div key={i} className="flex gap-2 items-start">
-                        <RoleBadge role={r.role} />
-                        <p className="text-[11px] text-text-secondary leading-relaxed break-words">
-                          {r.content.length > 200 ? r.content.slice(0, 200) + '...' : r.content}
-                        </p>
-                      </div>
+                {/* 搜索框 + role 过滤器 */}
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="flex items-center gap-1.5 flex-1 h-7 px-2 bg-surface rounded-lg border border-border">
+                    <Search size={12} className="text-text-muted shrink-0" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search records..."
+                      className="flex-1 bg-transparent text-[11px] outline-none placeholder:text-text-muted"
+                    />
+                  </div>
+                  <div className="flex items-center gap-0.5">
+                    <Filter size={11} className="text-text-muted mr-1" />
+                    {(['all', 'user', 'assistant', 'system'] as const).map((r) => (
+                      <button
+                        key={r}
+                        onClick={() => setRoleFilter(r)}
+                        className={`text-[9px] font-medium px-1.5 py-0.5 rounded transition-colors ${
+                          roleFilter === r ? 'bg-primary text-white' : 'bg-surface text-text-muted hover:bg-muted'
+                        }`}
+                      >
+                        {r}
+                      </button>
                     ))}
                   </div>
-                ) : (
-                  <p className="text-[11px] text-text-muted italic">No records yet</p>
-                )}
+                </div>
+                {(() => {
+                  const filtered = (detail?.records ?? []).filter((r) => {
+                    if (roleFilter !== 'all' && r.role !== roleFilter) return false
+                    if (searchQuery && !r.content.toLowerCase().includes(searchQuery.toLowerCase())) return false
+                    return true
+                  })
+                  return filtered.length > 0 ? (
+                    <div className="space-y-2.5 max-h-80 overflow-y-auto">
+                      {filtered.map((r, i) => (
+                        <div key={i} className="flex gap-2 items-start">
+                          <RoleBadge role={r.role} />
+                          <p className="text-[11px] text-text-secondary leading-relaxed break-words">
+                            {r.content.length > 200 ? r.content.slice(0, 200) + '...' : r.content}
+                          </p>
+                        </div>
+                      ))}
+                      {filtered.length < (detail?.records.length ?? 0) && (
+                        <p className="text-[10px] text-text-muted italic">
+                          Showing {filtered.length} of {detail?.records.length} records
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-text-muted italic">
+                      {(detail?.records.length ?? 0) > 0 ? 'No matching records' : 'No records yet'}
+                    </p>
+                  )
+                })()}
               </DataCard>
 
               {/* L2 Memory */}
@@ -173,7 +268,18 @@ export function Inspector() {
                       <ArrowDownRight size={10} className="text-primary" />
                       <span className="text-[10px] font-medium text-primary">from Main</span>
                     </div>
-                    <p className="text-[11px] text-text-secondary leading-relaxed">{detail.scope}</p>
+                    {(() => {
+                      try {
+                        const parsed = JSON.parse(detail.scope)
+                        return (
+                          <div className="bg-surface rounded-lg p-3 border border-border/30 overflow-x-auto">
+                            <JsonTree data={parsed} />
+                          </div>
+                        )
+                      } catch {
+                        return <p className="text-[11px] text-text-secondary leading-relaxed">{detail.scope}</p>
+                      }
+                    })()}
                   </>
                 ) : (
                   <p className="text-[11px] text-text-muted italic">No insights received</p>
@@ -190,21 +296,22 @@ export function Inspector() {
 
               {/* Session Meta */}
               <DataCard title="Session Meta">
-                <div className="space-y-1.5">
-                  {[
-                    { label: 'ID', value: selectedNode?.id ?? '—' },
-                    { label: 'Status', value: selectedNode?.status ?? '—', color: selectedNode?.status === 'active' ? '#C4793D' : undefined },
-                    { label: 'Turns', value: detail ? String(detail.records.length) : '—' },
-                    { label: 'Tags', value: selectedNode?.tags?.join(', ') || 'None' },
-                  ].map(({ label, value, color }) => (
-                    <div key={label} className="flex justify-between">
-                      <span className="text-[11px] font-medium text-text-muted">{label}</span>
-                      <span className={`text-[11px] font-medium ${color ? '' : 'text-text'}`} style={color ? { color } : undefined}>
-                        {value}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                {selectedNode ? (
+                  <div className="bg-surface rounded-lg p-3 border border-border/30 overflow-x-auto">
+                    <JsonTree data={{
+                      id: selectedNode.id,
+                      label: selectedNode.label,
+                      status: selectedNode.status,
+                      turnCount: selectedNode.turnCount,
+                      scope: selectedNode.scope,
+                      tags: selectedNode.tags,
+                      createdAt: selectedNode.createdAt,
+                      updatedAt: selectedNode.updatedAt,
+                    }} />
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-text-muted italic">Select a session</p>
+                )}
               </DataCard>
             </div>
           </div>
