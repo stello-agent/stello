@@ -20,8 +20,11 @@ import {
   Upload,
   Pencil,
   Info,
+  Sparkles,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
-import { fetchConfig, patchConfig, type AgentConfig, type HotConfigPatch } from '@/lib/api'
+import { fetchConfig, patchConfig, fetchLLMConfig, patchLLMConfig, type AgentConfig, type HotConfigPatch, type LLMConfig } from '@/lib/api'
 
 /** 配置卡片 */
 function Card({ title, icon: Icon, children }: { title: string; icon: React.ElementType; children: React.ReactNode }) {
@@ -242,12 +245,25 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [llmConfig, setLlmConfig] = useState<LLMConfig | null>(null)
+  const [llmDraft, setLlmDraft] = useState({ model: '', baseURL: '', apiKey: '' })
+  const [llmEditing, setLlmEditing] = useState(false)
+  const [llmSaving, setLlmSaving] = useState(false)
+  const [showApiKey, setShowApiKey] = useState(false)
 
   useEffect(() => {
     fetchConfig()
       .then(setConfig)
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
+    fetchLLMConfig()
+      .then((cfg) => {
+        setLlmConfig(cfg)
+        if (cfg.configured) {
+          setLlmDraft({ model: cfg.model ?? '', baseURL: cfg.baseURL ?? '', apiKey: cfg.apiKey ?? '' })
+        }
+      })
+      .catch(() => {})
   }, [])
 
   /** 通用 patch 并刷新 state */
@@ -262,6 +278,20 @@ export function SettingsPage() {
       setSaving(false)
     }
   }, [])
+
+  /** 保存 LLM 配置 */
+  const handleLLMSave = useCallback(async () => {
+    setLlmSaving(true)
+    try {
+      const result = await patchLLMConfig(llmDraft)
+      setLlmConfig(result)
+      setLlmEditing(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLlmSaving(false)
+    }
+  }, [llmDraft])
 
   /** 导出配置 JSON */
   const handleExport = useCallback(() => {
@@ -356,6 +386,90 @@ export function SettingsPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto bg-surface p-6 space-y-5">
+        {/* LLM Provider */}
+        <Card title="LLM Provider" icon={Sparkles}>
+          {llmConfig?.configured ? (
+            llmEditing ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[10px] font-semibold text-text-muted tracking-wide block mb-1">MODEL</label>
+                  <input
+                    value={llmDraft.model}
+                    onChange={(e) => setLlmDraft((d) => ({ ...d, model: e.target.value }))}
+                    className="w-full h-7 px-2 text-xs font-mono bg-surface border border-border rounded focus:border-primary focus:outline-none"
+                    placeholder="gpt-4o"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-text-muted tracking-wide block mb-1">BASE URL</label>
+                  <input
+                    value={llmDraft.baseURL}
+                    onChange={(e) => setLlmDraft((d) => ({ ...d, baseURL: e.target.value }))}
+                    className="w-full h-7 px-2 text-xs font-mono bg-surface border border-border rounded focus:border-primary focus:outline-none"
+                    placeholder="https://api.openai.com/v1"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-text-muted tracking-wide block mb-1">API KEY</label>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type={showApiKey ? 'text' : 'password'}
+                      value={llmDraft.apiKey}
+                      onChange={(e) => setLlmDraft((d) => ({ ...d, apiKey: e.target.value }))}
+                      className="flex-1 h-7 px-2 text-xs font-mono bg-surface border border-border rounded focus:border-primary focus:outline-none"
+                      placeholder="sk-..."
+                    />
+                    <button onClick={() => setShowApiKey(!showApiKey)} className="text-text-muted hover:text-text transition-colors">
+                      {showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    onClick={handleLLMSave}
+                    disabled={llmSaving || !llmDraft.model || !llmDraft.baseURL}
+                    className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-medium bg-primary text-white rounded hover:bg-primary-dark disabled:opacity-50 transition-colors"
+                  >
+                    {llmSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                    Apply
+                  </button>
+                  <button
+                    onClick={() => setLlmEditing(false)}
+                    className="px-3 py-1.5 text-[11px] font-medium text-text-muted hover:text-text transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <Row label="Model">
+                  <button
+                    onClick={() => { setLlmDraft({ model: llmConfig.model ?? '', baseURL: llmConfig.baseURL ?? '', apiKey: llmConfig.apiKey ?? '' }); setLlmEditing(true) }}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-text bg-primary/5 hover:bg-primary/15 border border-primary/20 hover:border-primary/40 rounded cursor-pointer transition-colors group"
+                  >
+                    {llmConfig.model}
+                    <Pencil size={9} className="text-text-muted group-hover:text-primary transition-colors" />
+                  </button>
+                </Row>
+                <Row label="Base URL">
+                  <code className="text-[11px] font-mono text-text-secondary max-w-[200px] truncate block" title={llmConfig.baseURL}>{llmConfig.baseURL}</code>
+                </Row>
+                <Row label="API Key">
+                  <span className="text-xs text-text-muted">{llmConfig.apiKey ? '••••••' + llmConfig.apiKey.slice(-4) : '—'}</span>
+                </Row>
+              </>
+            )
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-2 bg-warning/5 rounded-lg border border-warning/15">
+              <Info size={12} className="text-warning shrink-0" />
+              <p className="text-[10px] text-text-muted">
+                Pass <code className="text-[10px] font-mono text-primary-dark">llm</code> option to <code className="text-[10px] font-mono text-primary-dark">startDevtools()</code> to enable LLM switching.
+              </p>
+            </div>
+          )}
+        </Card>
+
         {/* Orchestration */}
         <Card title="Orchestration" icon={GitBranch}>
           <Row label="Strategy">

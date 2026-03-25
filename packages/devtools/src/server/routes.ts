@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import type { StelloAgent, StelloAgentHotConfig } from '@stello-ai/core'
+import type { LLMConfigProvider } from './types.js'
 
 /** 全局错误处理 */
 function withErrorHandler(app: Hono): void {
@@ -73,6 +74,7 @@ export function createRoutes(
   agent: StelloAgent,
   onEvent?: (event: { type: string; sessionId?: string; data?: Record<string, unknown> }) => void,
   getEventHistory?: () => Array<{ type: string; sessionId?: string; timestamp: string; data?: Record<string, unknown> }>,
+  llmProvider?: LLMConfigProvider,
 ): Hono {
   const app = new Hono()
   withErrorHandler(app)
@@ -296,6 +298,29 @@ export function createRoutes(
     onEvent?.({ type: 'config.updated', data: body as Record<string, unknown> })
 
     return c.json({ ok: true, config: serializeConfig(agent) })
+  })
+
+  /** 获取当前 LLM 配置 */
+  app.get('/llm', (c) => {
+    if (!llmProvider) return c.json({ configured: false })
+    return c.json({ configured: true, ...llmProvider.getConfig() })
+  })
+
+  /** 切换 LLM 配置 */
+  app.patch('/llm', async (c) => {
+    if (!llmProvider) return c.json({ error: 'LLM provider not configured — pass llm option to startDevtools()' }, 400)
+    const body = await c.req.json<{ model?: string; baseURL?: string; apiKey?: string }>()
+    if (!body.model && !body.baseURL && !body.apiKey) {
+      return c.json({ error: 'At least one of model, baseURL, apiKey is required' }, 400)
+    }
+    const current = llmProvider.getConfig()
+    llmProvider.setConfig({
+      model: body.model ?? current.model,
+      baseURL: body.baseURL ?? current.baseURL,
+      apiKey: body.apiKey ?? current.apiKey,
+    })
+    onEvent?.({ type: 'llm.updated', data: { model: body.model, baseURL: body.baseURL } })
+    return c.json({ ok: true, ...llmProvider.getConfig() })
   })
 
   /** 获取事件历史 */

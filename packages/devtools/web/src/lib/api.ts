@@ -173,3 +173,24 @@ export function patchConfig(patch: HotConfigPatch) {
     body: JSON.stringify(patch),
   })
 }
+
+/** LLM 配置 */
+export interface LLMConfig {
+  configured: boolean
+  model?: string
+  baseURL?: string
+  apiKey?: string
+}
+
+/** 获取当前 LLM 配置 */
+export function fetchLLMConfig() {
+  return request<LLMConfig>('/llm')
+}
+
+/** 切换 LLM 配置 */
+export function patchLLMConfig(config: { model?: string; baseURL?: string; apiKey?: string }) {
+  return request<LLMConfig & { ok: boolean }>('/llm', {
+    method: 'PATCH',
+    body: JSON.stringify(config),
+  })
+}
