@@ -248,7 +248,10 @@ function renderFrame(
       const appearTime = nodeTimers.get(node.id)
       if (appearTime !== undefined) {
         const elapsed = time - appearTime
-        if (elapsed < 500) {
+        if (elapsed < 0) {
+          /* rAF timestamp 与 performance.now() 可能有微小偏差，跳过动画 */
+          nodeTimers.delete(node.id)
+        } else if (elapsed < 500) {
           popScale = Math.min(1, elapsed / 500) * (1 + 0.15 * Math.max(0, 1 - elapsed / 300))
         } else {
           nodeTimers.delete(node.id)
@@ -258,7 +261,7 @@ function renderFrame(
 
     /* 呼吸脉冲：每个节点错开相位 */
     const pulse = Math.sin(time * 0.002 + node.x * 0.01 + node.y * 0.01) * 0.15 + 1
-    const animatedSize = node.size * (isHighlighted ? 1.2 : pulse) * popScale
+    const animatedSize = Math.max(1, node.size * (isHighlighted ? 1.2 : pulse) * popScale)
 
     /* 发光效果 */
     ctx.beginPath()
@@ -378,7 +381,7 @@ export function Topology() {
         label: node.label,
         parentId,
         status: node.status,
-        turns: 0,
+        turns: node.turnCount ?? 0,
         children: node.children.map((c) => c.id),
         refs: [],
       }

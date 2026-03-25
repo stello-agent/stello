@@ -216,6 +216,7 @@ export class SessionTreeImpl implements SessionTree {
       id: stored.id,
       label: stored.label,
       status: stored.status,
+      turnCount: stored.turnCount,
       children: stored.children
         .map((childId) => map.get(childId))
         .filter((c): c is StoredMeta => c !== undefined)

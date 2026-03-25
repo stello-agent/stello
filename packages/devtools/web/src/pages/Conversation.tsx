@@ -541,7 +541,7 @@ export function Conversation() {
                 {t('conv.l3History')} ({detail?.records.length ?? messages.length} {t('conv.records')})
               </p>
               {(detail?.records.length ?? 0) > 0 ? (
-                <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30 space-y-2 max-h-80 overflow-y-auto">
+                <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30 space-y-2 overflow-y-auto">
                   {detail!.records.map((r, i) => (
                     <div key={i} className="flex items-start gap-2">
                       <RoleBadge role={r.role === 'user' ? 'user' : r.role === 'system' ? 'tool' : 'asst'} />
@@ -552,7 +552,7 @@ export function Conversation() {
                   ))}
                 </div>
               ) : messages.length > 0 ? (
-                <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30 space-y-2 max-h-80 overflow-y-auto">
+                <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30 space-y-2 overflow-y-auto">
                   {messages.map((m, i) => (
                     <div key={i} className="flex items-start gap-2">
                       <RoleBadge role={m.role === 'user' ? 'user' : 'asst'} />

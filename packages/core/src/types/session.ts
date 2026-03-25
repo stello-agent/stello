@@ -66,6 +66,8 @@ export interface SessionTreeNode {
   label: string;
   /** 当前状态 */
   status: SessionStatus;
+  /** 对话轮次数 */
+  turnCount: number;
   /** 子节点 */
   children: SessionTreeNode[];
 }

@@ -21,6 +21,7 @@ export interface SessionTreeNode {
   id: string
   label: string
   status: 'active' | 'archived'
+  turnCount: number
   children: SessionTreeNode[]
 }
 

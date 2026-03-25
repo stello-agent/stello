@@ -82,14 +82,14 @@ function makeRegionPrompt(scope: string, label: string): string {
 - 主动询问学生偏好以缩小范围`
 }
 
-const CONSOLIDATE_PROMPT = `你是留学咨询记忆整理助手。请将以下对话提炼为结构化的选校调研摘要。
+const CONSOLIDATE_PROMPT = `你是留学咨询记忆整理助手。请将以下对话提炼为一段简洁的选校调研摘要。
 
 要求：
-- 提取学生背景信息（GPA、标化、专业、预算等）
-- 列出已讨论的院校和录取分析
-- 记录学生的偏好和顾虑
-- 保留关键结论和待确认事项
-- 用 Markdown 格式，控制在 300 字以内`
+- 100-150 字，不要超过 150 字
+- 聚焦本次对话的核心目标和关键成果
+- 只保留已确认的结论，省略讨论过程和未决事项
+- 格式：一段连贯的文字，不用列表或 Markdown 标记
+- 语言风格：客观、精炼，像一条工作备忘`
 
 const INTEGRATE_PROMPT = `你是留学咨询跨区域分析师。你收到了各个地区专家的选校调研摘要。
 
@@ -368,7 +368,20 @@ async function bootstrap() {
         if ('main' in entry && entry.main) return wrapSession(sessionId, entry.main, memory)
         return wrapSession(sessionId, entry.session, memory)
       },
-      mainSessionResolver: async () => mainSession,
+      mainSessionResolver: async () => ({
+        ...mainSession,
+        async integrate(fn: Parameters<typeof mainSession.integrate>[0]) {
+          const result = await mainSession.integrate(fn)
+          /* 同步 synthesis + insights 到文件持久化层 */
+          if (result) {
+            await memory.writeMemory(root.id, result.synthesis)
+            for (const { sessionId, content } of result.insights) {
+              await memory.writeScope(sessionId, content)
+            }
+          }
+          return result
+        },
+      }),
       consolidateFn: (currentMemory, messages) => {
         const fn = createDefaultConsolidateFn(currentConsolidatePrompt, llmCall)
         return fn(currentMemory, messages)
@@ -468,6 +481,8 @@ async function bootstrap() {
         const currentSynthesis = await memory.readMemory(root.id).catch(() => null)
         const result = await integrateFn(allL2s, currentSynthesis)
         await memory.writeMemory(root.id, result.synthesis)
+        console.log('[Integration] insights:', JSON.stringify(result.insights.map(i => ({ sessionId: i.sessionId, contentLen: i.content.length }))))
+        console.log('[Integration] known sessionIds:', [...sessionMap.keys()])
         for (const { sessionId, content } of result.insights) await memory.writeScope(sessionId, content)
         return { synthesis: result.synthesis, insightCount: result.insights.length }
       },

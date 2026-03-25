@@ -9,12 +9,12 @@ export type LLMCallFn = (
 ) => Promise<string>
 
 /** 默认 consolidation 提示词 */
-export const DEFAULT_CONSOLIDATE_PROMPT = `你是一个对话摘要助手。请根据以下对话记录，提炼出关键信息和要点，生成简洁的摘要。
+export const DEFAULT_CONSOLIDATE_PROMPT = `你是对话摘要助手。请将对话提炼为一段 100-150 字的简洁摘要。
 要求：
-- 保留关键事实、决策和结论
-- 忽略寒暄和重复内容
-- 用中文输出
-- 控制在 200 字以内`
+- 聚焦核心目标和关键成果，只保留已确认的结论
+- 省略讨论过程、寒暄和未决事项
+- 输出一段连贯文字，不用列表或 Markdown 标记
+- 语言精炼客观，像一条工作备忘`
 
 /** 默认 integration 提示词 */
 export const DEFAULT_INTEGRATE_PROMPT = `你是一个跨会话综合分析助手。请根据所有子会话的摘要，生成综合分析和给各子会话的建议。
