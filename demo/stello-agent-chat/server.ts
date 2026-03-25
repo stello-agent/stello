@@ -116,7 +116,7 @@ const schema: CoreSchema = {
 type WrappedSession = { session: Session; main?: never }
 type WrappedMainSession = { main: MainSession; session?: never }
 
-function wrapSession(coreSessionId: string, session: Session) {
+function wrapSession(coreSessionId: string, session: Session, memoryEngine?: MemoryEngine) {
   return {
     get meta() {
       return { id: coreSessionId, status: session.meta.status } as const
@@ -126,6 +126,11 @@ function wrapSession(coreSessionId: string, session: Session) {
     async messages() { return session.messages() },
     async consolidate(fn: (currentMemory: string | null, messages: Array<{ role: string; content: string; timestamp?: string }>) => Promise<string>) {
       await session.consolidate(fn)
+      /* 同步 L2 到文件持久化层（session 内部只写 InMemoryStorage） */
+      if (memoryEngine) {
+        const l2 = await session.memory()
+        if (l2) await memoryEngine.writeMemory(coreSessionId, l2)
+      }
     },
   }
 }
@@ -360,8 +365,8 @@ async function bootstrap() {
       sessionResolver: async (sessionId) => {
         const entry = sessionMap.get(sessionId)
         if (!entry) throw new Error(`Unknown session: ${sessionId}`)
-        if ('main' in entry && entry.main) return wrapSession(sessionId, entry.main)
-        return wrapSession(sessionId, entry.session)
+        if ('main' in entry && entry.main) return wrapSession(sessionId, entry.main, memory)
+        return wrapSession(sessionId, entry.session, memory)
       },
       mainSessionResolver: async () => mainSession,
       consolidateFn: (currentMemory, messages) => {
