@@ -24,28 +24,16 @@
 
 ---
 
-## Phase 4：Inspector 增强
+## ~~Phase 4：Inspector 增强~~ ✅
 
-### 4.1 L3 记录搜索 / 过滤
-- 当前 Inspector 的 L3 records 是纯列表
-- 加搜索框 + role 过滤器
-
-### 4.2 JSON 语法高亮
-- Session Meta / L2 / Scope 等 JSON 内容加语法高亮
-- 可折叠的 JSON tree viewer
+> 已完成：L3 搜索/过滤 + URL session 参数 + JSON 可折叠树 viewer + Session Meta/Scope JSON 高亮
 
 ---
 
-## Phase 5：工程化
+## ~~Phase 5：工程化~~ ✅（部分）
 
-### 5.1 DevTools 独立包发布
-- 完善 package.json（description / keywords / repository）
-- 写 README：安装方式、使用方法、截图
-- 发布到 npm
-
-### 5.2 清理遗留
-- `ws.ts` 全局单例文件可能已无用（Conversation/Events 都用组件自管理 WS），确认后删除
-- Topology 面板 children 展示优化
+> 5.2 已完成：删除 ws.ts 全局单例
+> 5.1 独立包发布暂不实施（待项目整体稳定后统一处理）
 
 ---
 
@@ -64,3 +52,5 @@
 - [x] Phase 1 配置热更新（idleTtlMs / Scheduler / SplitGuard + PATCH /config + 前端编辑 + 导入导出）
 - [x] Phase 2 对话过程可观测（tool call 卡片 + highlight.js 代码高亮 + Events label 自动刷新）
 - [x] Phase 3 Topology 交互增强（右键菜单 + 面板修复 + WS 实时更新 + pop-in 动画）
+- [x] Phase 4 Inspector 增强（L3 搜索/过滤 + URL session 参数 + JSON tree viewer）
+- [x] Phase 5.2 清理遗留（删除 ws.ts 全局单例）
