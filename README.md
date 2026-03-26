@@ -4,318 +4,230 @@
 
 <a id="english"></a>
 
-<p align="center">
-  <img src="./assets/logo.png" alt="Stello Logo" width="200" />
-</p>
+<div align="center">
+  <img src="./stello_logo.svg" alt="Stello" width="200">
 
-<p align="center">
-  <h1 align="center">Stello</h1>
-  <p align="center">
-    <strong>The first open-source conversation topology engine.</strong><br/>
-    Auto-branching session trees, inherited memory, star-map visualization.
+  <h1>Stello</h1>
+
+  <p><strong>Your thinking branches. Tools flatten it.</strong></p>
+
+  <p>
+    <a href="https://www.npmjs.com/package/@stello-ai/core"><img src="https://img.shields.io/npm/v/@stello-ai/core.svg" alt="npm version"></a>
+    <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License"></a>
   </p>
-</p>
+</div>
 
-<p align="center">
-  <a href="https://github.com/stello-agent/stello/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License" /></a>
-  <a href="https://www.npmjs.com/package/@stello-ai/core"><img src="https://img.shields.io/npm/v/@stello-ai/core" alt="npm" /></a>
-  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-blue" alt="TypeScript" /></a>
-</p>
+<br/>
+
+You talk with AI about product design, then drift into tech stack choices, hiring needs, and back to fundraising. Two hours later, you close the window—no structure left behind.
+
+**All thinking compressed into a single line.**
+
+Your brain juggles five directions at once, but tools give you a single-threaded window. ChatGPT, Claude, Gemini—all the same.
+
+**It's not the model. It's the container.**
 
 ---
 
-Conversations aren't linear — why should AI chats be?
+**Stello** is the first conversation topology system.
 
-Stello lets AI agents **automatically branch** linear conversations into tree-structured sessions, **inherit memory** across branches, and render the entire topology as an interactive **star-map**. Build agents that remember, branch, and grow.
+Conversations auto-split into tree-structured sessions. Each branch dives deep independently. Insights flow across branches. The entire topology renders as an interactive star map.
 
-```
-@stello-ai/core        →  Session tree + 3-layer memory + lifecycle hooks + agent tools
-@stello-ai/visualizer  →  Constellation layout + Canvas rendering + React component
-```
+Thinking finally has shape.
 
-## Installation
+---
+
+## ✨ Core Capabilities
+
+- 🌳 **Auto-splitting Conversations** — AI detects topic branches and creates child sessions via tool calling, each with clear scope
+- 🧠 **Three-layer Memory** — L3 raw records / L2 skill descriptions / L1 global cognition, memory flows between layers
+- 🔄 **Global Synthesis** — Main Session collects all L2s from child sessions, generates synthesis and pushes insights
+- ⚡️ **Zero Overhead in Dialogue** — All memory consolidation executes async (fire-and-forget), never blocks conversation flow
+- 🎨 **Star Map Visualization** — Each star is a thought direction, connections show relationships, size maps depth, brightness maps activity
+- 🔌 **Fully Decoupled Architecture** — No LLM lock-in / storage lock-in / UI lock-in, Session and Topology are separate
+
+---
+
+## 🚀 Quick Start
+
+### Installation
 
 ```bash
-# npm
-npm install @stello-ai/core @stello-ai/visualizer
+npm install @stello-ai/core @stello-ai/session
+# or
+pnpm add @stello-ai/core @stello-ai/session
 
-# pnpm
-pnpm add @stello-ai/core @stello-ai/visualizer
-
-# yarn
-yarn add @stello-ai/core @stello-ai/visualizer
+# For development debugging
+pnpm add -D @stello-ai/devtools
 ```
 
-> `@stello-ai/visualizer` has `react` and `react-dom` as peer dependencies. `@stello-ai/core` has zero dependencies.
-
-## Current Docs
-
-The repository has evolved beyond the original quickstart below. If you want the current architecture and usage entrypoints, start with:
-
-- [Stello Usage Overview](./docs/stello-usage.md)
-- [StelloAgent API](./docs/stello-agent-api.md)
-- [Config Design](./docs/config-design.md)
-- [Orchestrator Usage](./docs/orchestrator-usage.md)
-
-## 5-Minute Quickstart
-
-### 1. Initialize the engine
+### 30-Second Example
 
 ```typescript
-import {
-  NodeFileSystemAdapter,
-  CoreMemory,
-  SessionMemory,
-  SessionTreeImpl,
-  LifecycleManager,
-  SplitGuard,
-  SkillRouterImpl,
-  AgentTools,
-} from '@stello-ai/core';
-import type { CoreSchema, StelloConfig } from '@stello-ai/core';
+import { createStelloAgent } from '@stello-ai/core'
+import { FileSystemStorageAdapter } from '@stello-ai/core/adapters'
 
-// Define what your agent remembers globally
-const schema: CoreSchema = {
-  name:    { type: 'string',  default: '',  bubbleable: true },
-  goal:    { type: 'string',  default: '',  bubbleable: true },
-  notes:   { type: 'array',   default: [],  bubbleable: true },
-};
+// Create Agent
+const agent = await createStelloAgent({
+  sessions: /* SessionTree implementation */,
+  memory: /* MemoryEngine implementation */,
+  session: {
+    llm: yourLLMAdapter,
+    sessionResolver: async (id) => /* return Session instance */,
+  },
+})
 
-// Plug in your LLM
-const callLLM = async (prompt: string): Promise<string> => {
-  // Replace with your OpenAI / Claude / local model call
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }] }),
-  });
-  const json = await res.json() as { choices: { message: { content: string } }[] };
-  return json.choices[0]?.message.content ?? '';
-};
+// Start conversation
+const result = await agent.turn('main-session-id', 'Help me plan a startup')
 
-// Wire everything up
-const fs       = new NodeFileSystemAdapter('./stello-data');
-const core     = new CoreMemory(fs, schema);
-const sessions = new SessionTreeImpl(fs);
-const memory   = new SessionMemory(fs);
-const config: StelloConfig = { dataDir: './stello-data', coreSchema: schema, callLLM };
-const lifecycle = new LifecycleManager(core, memory, sessions, config);
-const guard    = new SplitGuard(sessions);
-const tools    = new AgentTools(sessions, core, memory, lifecycle, guard);
-
-await core.init();
+// AI auto-detects topic branches, creates child sessions
+// Dive deep in different branches, Main Session maintains global view
 ```
 
-### 2. Create a root session and start a conversation
+### Launch Visual Debugger
 
 ```typescript
-const root = await sessions.createRoot('My Project');
-const { context } = await lifecycle.bootstrap(root.id);
+import { startDevtools } from '@stello-ai/devtools'
 
-// context.core    → { name: '', goal: '', notes: [] }
-// context.memories → []
-// context.scope   → null
+await startDevtools(agent, {
+  port: 4800,
+  open: true
+})
 
-// After each conversation turn, call afterTurn to update all 3 memory layers
-const result = await lifecycle.afterTurn(
-  root.id,
-  { role: 'user',      content: 'My name is Alice and I want to build a chatbot', timestamp: new Date().toISOString() },
-  { role: 'assistant', content: 'Got it, Alice! Let me help you build a chatbot.', timestamp: new Date().toISOString() },
-);
-await lifecycle.flushBubbles();
-// result → { recordAppended: true, memoryUpdated: true, coreUpdated: true }
+// Browser opens automatically at http://localhost:4800
+// See star map + conversation panels + live event streams
 ```
 
-### 3. Branch into a child session
+---
 
-```typescript
-// Give the agent the 8 built-in tools
-const toolDefs = tools.getToolDefinitions();
-// → Pass toolDefs to your LLM as function/tool definitions
+## 📦 Packages
 
-// When the agent decides to branch:
-await sessions.updateMeta(root.id, { turnCount: 5 });
-const { success, data: child } = await tools.executeTool('stello_create_session', {
-  parentId: root.id,
-  label: 'UI Design Discussion',
-});
-// child inherits parent's memory.md via the inheritance policy
-```
+### @stello-ai/session
 
-### 4. Render the star-map
+**Standalone conversation unit**, minimal three-layer memory implementation.
 
-```tsx
-import { StelloGraph } from '@stello-ai/visualizer';
+- ✅ Single LLM calls (send / stream)
+- ✅ L3 conversation record persistence
+- ✅ L2 skill description generation (consolidate)
+- ✅ Fully decoupled from tree structure
+- ✅ Streaming output and tool calling support
 
-function App() {
-  const [sessions, setSessions] = useState([]);
-  const [memories, setMemories] = useState(new Map());
-  const [messages, setMessages] = useState(new Map());
+**Use for:** Simple scenarios needing single conversation + memory
 
-  // Load sessions from your Stello data
-  // ...
-
-  return (
-    <StelloGraph
-      sessions={sessions}
-      memories={memories}
-      messages={messages}
-      onSessionClick={(id) => console.log('Navigate to', id)}
-      onSendMessage={(id, text) => console.log('Send to', id, text)}
-      sessionFiles={(id) => ({ memory: '...', scope: '...' })}
-      layoutConfig={{ ringSpacing: 120, colorFn: (s) => s.depth === 0 ? '#FFD700' : '#7EC8E3' }}
-    />
-  );
-}
-```
-
-## Core Concepts
-
-### Session Tree
-
-Every conversation is a **tree**. The root session is your main thread; child sessions branch off to explore subtopics. Sessions link back with **cross-branch references** (refs).
-
-```
-        ┌── UI Design ──── Colors
-Root ───┤
-        └── Backend API ─── Auth
-                (ref) ─ ─ ─ ─ ┘
-```
-
-- **Flat storage**: `sessions/{uuid}/` — tree relationships live in `meta.json`, not folder nesting
-- **No deletion**: sessions archive (reversible), never delete
-- **Split protection**: minimum turn count + cooldown prevents over-branching
-
-### Three-Layer Memory
-
-| Layer | What it stores | Granularity | File |
-|-------|---------------|-------------|------|
-| **L1** Core Archive | Structured data (developer-defined schema) | Global | `core.json` |
-| **L2** Session Memory | Key conclusions, intents, follow-ups | Per session | `memory.md` |
-| **L3** Raw Records | Complete conversation turns | Per session | `records.jsonl` |
-
-**Memory flows in two directions:**
-
-- **Inheritance (down)**: child sessions inherit parent memory via configurable policy (`summary` / `full` / `minimal` / `scoped`)
-- **Bubbling (up)**: fields marked `bubbleable` in the schema propagate from child sessions back to the global `core.json` (500ms debounce, last-write-wins)
-
-### Star-Map Visualization
-
-The `<StelloGraph />` React component renders your session tree as an interactive constellation with **Liquid Glass** aesthetics:
-
-- **Node size** = `turnCount` (more conversation = bigger star)
-- **Node brightness** = `lastActiveAt` (recent = brighter)
-- **Node glow** = color-matched glow effect on each star
-- **Solid lines** = parent-child relationships
-- **Dashed lines** = cross-branch references
-- **Archived nodes** = low opacity
-- **Gradient background** = smooth dark gradient canvas
-- **Interactions**: zoom (scroll), pan (drag), **drag nodes**, click to navigate, hover for tooltip
-- **Sidebar panel**: click a node to open a side panel with **Chat** (conversation view) and **Files** (memory/scope/index) tabs
-
-## API Overview
+---
 
 ### @stello-ai/core
 
-| Class | Purpose |
-|-------|---------|
-| `NodeFileSystemAdapter` | File system persistence (swappable for DB adapters) |
-| `SessionTreeImpl` | CRUD for the session tree — `createRoot`, `createChild`, `archive`, `addRef` |
-| `CoreMemory` | L1 global archive — schema validation, point-path access (`profile.gpa`), change events |
-| `SessionMemory` | L2 + L3 per-session — `readMemory`, `writeMemory`, `appendRecord`, `readRecords` |
-| `LifecycleManager` | Orchestrates `bootstrap`, `afterTurn`, `onSessionSwitch`, `prepareChildSpawn` |
-| `BubbleManager` | Debounced L1 upward propagation from child sessions |
-| `SplitGuard` | Prevents premature splitting (min turns + cooldown) |
-| `ConfirmManager` | Confirmation protocol for splits and `requireConfirm` field updates |
-| `SkillRouterImpl` | Register skills with keyword matching |
-| `AgentTools` | 8 LLM-callable tools for session/memory management |
+**Orchestration engine**, session tree scheduler.
 
-#### Agent Tools (LLM function calling)
+- ✅ Tool call loops (turn)
+- ✅ Consolidation / Integration scheduling
+- ✅ Main Session global consciousness
+- ✅ Session tree management (fork / archive / refs)
+- ✅ Split protection and policy configuration
+- ✅ Lifecycle hooks and event system
 
-```typescript
-const defs = tools.getToolDefinitions();
-// Pass to your LLM, then execute:
-const result = await tools.executeTool('stello_create_session', { parentId, label });
+**Use for:** Complex apps needing multi-branch dialogue + global synthesis
+
+---
+
+### @stello-ai/server
+
+**Service layer**, PostgreSQL + HTTP/WebSocket.
+
+- ✅ REST + WebSocket dual channels
+- ✅ PostgreSQL persistence (7 tables)
+- ✅ Multi-tenant Space management
+- ✅ AgentPool lazy-loading + auto-eviction
+- ✅ Per-session prompt 3-tier fallback
+- ✅ Out-of-box Docker Compose
+
+**Use for:** Production deployments + multi-user isolation for SaaS apps
+
+---
+
+### @stello-ai/devtools
+
+**Development debugger**, star map + live panels.
+
+- ✅ Interactive star map (drag / zoom)
+- ✅ Conversation panel + file browser
+- ✅ Real-time event monitoring
+- ✅ Apple Liquid Glass visual style
+- ✅ One-line integration
+
+**Use for:** Development debugging (not production dependency)
+
+---
+
+## 🎯 Core Concepts
+
+### The Skill Metaphor
+
+Each child session is a **skill**. Main Session is the **skill orchestrator**.
+
+```
+Child Session = Skill
+  L3 = Skill's detailed knowledge base (internal consumption)
+  L2 = Skill's description (external interface, Main Session consumes)
+
+Main Session = Orchestrator
+  synthesis = Synthesized cognition of all L2s
+  insights = Targeted suggestions pushed to each child session
 ```
 
-| Tool | Purpose |
-|------|---------|
-| `stello_read_core` | Read a field from the global archive |
-| `stello_update_core` | Update a field in the global archive |
-| `stello_create_session` | Branch into a new child session |
-| `stello_list_sessions` | List all sessions |
-| `stello_read_summary` | Read a session's memory.md |
-| `stello_add_ref` | Create a cross-branch reference |
-| `stello_archive` | Archive a session |
-| `stello_update_meta` | Update session metadata |
+**Core Constraints:**
+- L2 invisible to child session itself — L2 is external description, not self-use memory
+- Main Session only reads L2, never reads child session's L3
+- Child sessions completely isolated, only cross-branch info source is Main Session's pushed insights
 
-### @stello-ai/visualizer
+---
 
-| Export | Purpose |
-|--------|---------|
-| `<StelloGraph />` | React component — drop-in constellation with sidebar panels |
-| `<ChatPanel />` | Standalone chat panel component |
-| `<FilePanel />` | Standalone file viewer panel component |
-| `theme` | Liquid Glass design tokens (colors, blur, shadows) |
-| `computeConstellationLayout()` | Pure function — use without React |
-| `renderFrame()` | Canvas renderer — gradient background + node glow |
-| `InteractionHandler` | Zoom / pan / drag nodes / click — use without React |
+### Three-layer Memory
 
-## Configuration
+| Layer | Content | Consumer |
+|-------|---------|----------|
+| **L3** | Raw conversation records | The session's own LLM |
+| **L2** | Skill description (external view) | Main Session (via integration) |
+| **L1** | Global key-value + synthesis | Application layer direct access |
 
-```typescript
-const config: StelloConfig = {
-  dataDir: './stello-data',           // Where to store files (required)
-  coreSchema: schema,                 // L1 field definitions (required)
-  callLLM: myLLMFunction,            // Your LLM adapter (required)
-  inheritancePolicy: 'summary',      // 'summary' | 'full' | 'minimal' | 'scoped'
-  splitStrategy: {
-    minTurns: 3,                      // Min turns before allowing split
-    cooldownTurns: 5,                 // Min turns between splits
-  },
-  bubblePolicy: {
-    debounceMs: 500,                  // Bubble debounce interval
-  },
-};
-```
+**Memory Flow:**
+- **Upward Reporting** — L3 → L2 → Main Session index
+- **Downward Push** — Main Session insights → Child Sessions
+- **Horizontal Isolation** — No direct communication between child sessions
 
-## Design Philosophy
+---
 
-- **Adapter pattern**: default file system, swap for SQLite/Postgres with zero code changes
-- **Three-layer independence**: L1/L2/L3 failures are isolated — one layer crashing won't block the others
-- **Markdown-native**: memory/scope/index files are `.md` — LLMs understand markdown natively, humans can read and edit directly
-- **No vendor lock-in**: bring your own LLM via `callLLM`, bring your own embedder via `embedder`
-- **Events, not UI**: confirmation protocol emits events — you build the UI
+## 💡 Use Cases
 
-## Contributing
+- **Deep Consulting** — Legal, medical, financial multi-dimensional analysis, avoid information pollution
+- **Knowledge Exploration** — Learning, researching multiple topics in parallel, auto-build knowledge maps
+- **Goal Decomposition** — Startup planning, project management, OKR execution with hierarchical tasks
+- **System Building** — Course systems, knowledge systems, product architecture with layered design
+- **Creative Production** — Content, design exploring multiple approaches in parallel, maintain global consistency
+- **Office Collaboration** — Multi-task coordination, AI discovers omissions and cross-task dependencies
 
-We welcome contributions! Please check the [issues](https://github.com/stello-agent/stello/issues) page.
+For scenarios needing **simultaneous multi-directional progress + global oversight**.
 
-```bash
-git clone https://github.com/stello-agent/stello.git
-cd stello
-pnpm install
-pnpm test        # 154 tests across both packages
-pnpm typecheck   # TypeScript strict mode
-```
+---
 
-## Examples
+## 📚 Documentation
 
-See the [stello-examples](https://github.com/stello-agent/stello-examples) repository for working demos:
+- 📖 **Complete Guide** — _Coming Soon_
+- 🎯 **Core Concepts** — _Coming Soon_
+- 📦 **API Reference** — _Coming Soon_
+- 💡 **Examples** — _Coming Soon_
+- 🏗️ **Architecture** — _Coming Soon_
+- 💬 **Community** — _Coming Soon_
 
-- **basic** — Minimal setup (create root session, run afterTurn)
-- **conversation** — Multi-turn conversation with memory updates
-- **branching** — Session branching and memory inheritance
-- **cross-reference** — Cross-branch references between sessions
-- **agent-tools** — All 8 agent tools in action
-- **full-flow** — Complete lifecycle with visualization export
-- **visualizer-test** — Interactive star-map visualization (Vite + React)
+---
 
-```bash
-git clone https://github.com/stello-agent/stello-examples.git
-cd stello-examples/demo && pnpm install && pnpm dev
-```
+## 🤝 Contributing
 
-## License
+Contributions welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md)
 
-[Apache-2.0](./LICENSE)
+---
+
+## 📄 License
+
+Apache-2.0 © [Stello Team](https://github.com/stello-agent)
