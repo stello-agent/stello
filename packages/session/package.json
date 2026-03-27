@@ -1,6 +1,6 @@
 {
   "name": "@stello-ai/session",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Session layer for Stello — conversation topology engine",
   "license": "Apache-2.0",
   "author": "Stello Contributors",
@@ -60,8 +60,12 @@
     "typescript": "^5.0.0"
   },
   "peerDependenciesMeta": {
-    "@anthropic-ai/sdk": { "optional": true },
-    "openai": { "optional": true }
+    "@anthropic-ai/sdk": {
+      "optional": true
+    },
+    "openai": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
