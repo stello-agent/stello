@@ -24,6 +24,8 @@ export interface SessionStorage {
   appendRecord(sessionId: string, record: Message): Promise<void>
   /** 读取对话记录列表（L3） */
   listRecords(sessionId: string, options?: ListRecordsOptions): Promise<Message[]>
+  /** 裁剪旧 L3 记录，仅保留最近 keepRecent 条 */
+  trimRecords(sessionId: string, keepRecent: number): Promise<void>
 
   /** 读取 Session 的 system prompt，不存在返回 null */
   getSystemPrompt(sessionId: string): Promise<string | null>

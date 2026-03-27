@@ -4,6 +4,7 @@ import { SessionArchivedError, NotImplementedError } from './types/session-api.j
 import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './types/session.js'
 import type { Message } from './types/llm.js'
 import type { ConsolidateFn, CreateSessionOptions, LoadSessionOptions, SendResult, StreamResult } from './types/functions.js'
+import { assembleSessionContext } from './context-utils.js'
 
 function createStreamResult(
   processor: (push: (chunk: string) => void) => Promise<SendResult>
@@ -72,32 +73,21 @@ function buildSession(
         throw new Error('LLMAdapter is required for send()')
       }
 
-      // 组装上下文：system prompt → insights → L3 历史 → 当前用户消息
-      const messages: Message[] = []
+      // 组装上下文（含 token 预算压缩）
+      const { messages, insightConsumed, userTimestamp } = await assembleSessionContext(
+        currentMeta.id, storage, content, options.contextWindow,
+      )
 
-      const sysPrompt = await storage.getSystemPrompt(currentMeta.id)
-      if (sysPrompt) {
-        messages.push({ role: 'system', content: sysPrompt })
-      }
-
-      const insightContent = await storage.getInsight(currentMeta.id)
-      if (insightContent) {
-        messages.push({ role: 'system', content: insightContent })
-        // 消费 insight：读取后清除，避免重复出现在后续上下文中
+      // 消费 insight
+      if (insightConsumed) {
         await storage.clearInsight(currentMeta.id)
       }
-
-      const history = await storage.listRecords(currentMeta.id)
-      messages.push(...history)
-
-      const now = new Date().toISOString()
-      messages.push({ role: 'user', content, timestamp: now })
 
       // 调 LLM
       const result = await options.llm.complete(messages, { tools })
 
       // 存 L3：用户消息 + assistant 响应
-      const userRecord: Message = { role: 'user', content, timestamp: now }
+      const userRecord: Message = { role: 'user', content, timestamp: userTimestamp }
       const assistantRecord: Message = {
         role: 'assistant',
         content: result.content ?? '',
@@ -122,23 +112,17 @@ function buildSession(
       }
 
       return createStreamResult(async (push) => {
-        const messages: Message[] = []
+        // 组装上下文（含 token 预算压缩）
+        const { messages, insightConsumed, userTimestamp } = await assembleSessionContext(
+          currentMeta.id, storage, content, options.contextWindow,
+        )
 
-        const sysPrompt = await storage.getSystemPrompt(currentMeta.id)
-        if (sysPrompt) {
-          messages.push({ role: 'system', content: sysPrompt })
+        // 消费 insight
+        if (insightConsumed) {
+          await storage.clearInsight(currentMeta.id)
         }
 
-        const insightContent = await storage.getInsight(currentMeta.id)
-        if (insightContent) {
-          messages.push({ role: 'system', content: insightContent })
-        }
-
-        const history = await storage.listRecords(currentMeta.id)
-        messages.push(...history)
-
-        const now = new Date().toISOString()
-        messages.push({ role: 'user', content, timestamp: now })
+        const now = userTimestamp
 
         if (!options.llm) {
           throw new Error('LLM adapter not set. Call setLLM() first or pass llm to createSession().')
@@ -227,6 +211,16 @@ function buildSession(
       const messages = await storage.listRecords(currentMeta.id)
       const newMemory = await fn(currentMemory, messages)
       await storage.putMemory(currentMeta.id, newMemory)
+    },
+
+    async trimRecords(keepRecent: number): Promise<void> {
+      if (keepRecent < 0) {
+        throw new Error('keepRecent must be a non-negative integer')
+      }
+      if (currentMeta.status === 'archived') {
+        throw new SessionArchivedError(currentMeta.id)
+      }
+      await storage.trimRecords(currentMeta.id, keepRecent)
     },
 
     async fork(forkOptions: ForkOptions): Promise<Session> {

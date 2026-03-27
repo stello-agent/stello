@@ -26,6 +26,17 @@ export type IntegrateFn = (
   currentSynthesis: string | null
 ) => Promise<IntegrateResult>
 
+/** 计算消息数组的 token 数量（应用层注入，适配不同 LLM 的 tokenizer） */
+export type CountTokensFn = (messages: Message[]) => number
+
+/** 上下文窗口配置，控制 send()/stream() 的上下文压缩行为 */
+export interface ContextWindowOptions {
+  /** 上下文窗口的 token 上限（应与目标 LLM 的上下文窗口匹配） */
+  maxContextTokens: number
+  /** token 计数函数（应用层提供，适配不同 tokenizer） */
+  countTokens: CountTokensFn
+}
+
 /** createSession() 的选项 */
 export interface CreateSessionOptions {
   /** 指定存储适配器（普通 Session 只需 SessionStorage） */
@@ -42,6 +53,8 @@ export interface CreateSessionOptions {
   metadata?: Record<string, unknown>
   /** 可用工具定义 */
   tools?: LLMCompleteOptions['tools']
+  /** 上下文窗口配置（启用后按 token 预算压缩上下文） */
+  contextWindow?: ContextWindowOptions
 }
 
 /** loadSession() 的选项 */
@@ -54,6 +67,8 @@ export interface LoadSessionOptions {
   systemPrompt?: string
   /** 可用工具定义 */
   tools?: LLMCompleteOptions['tools']
+  /** 上下文窗口配置（启用后按 token 预算压缩上下文） */
+  contextWindow?: ContextWindowOptions
 }
 
 /** createMainSession() 的选项 */
@@ -72,6 +87,8 @@ export interface CreateMainSessionOptions {
   metadata?: Record<string, unknown>
   /** 可用工具定义 */
   tools?: LLMCompleteOptions['tools']
+  /** 上下文窗口配置（启用后按 token 预算压缩上下文） */
+  contextWindow?: ContextWindowOptions
 }
 
 /** loadMainSession() 的选项 */
@@ -84,6 +101,8 @@ export interface LoadMainSessionOptions {
   systemPrompt?: string
   /** 可用工具定义 */
   tools?: LLMCompleteOptions['tools']
+  /** 上下文窗口配置（启用后按 token 预算压缩上下文） */
+  contextWindow?: ContextWindowOptions
 }
 
 /** send() 的返回结果 */

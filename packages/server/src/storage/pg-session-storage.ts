@@ -122,6 +122,16 @@ export class PgSessionStorage implements SessionStorage {
     return rows.map(rowToMessage)
   }
 
+  /** 裁剪旧 L3，保留最近 keepRecent 条 */
+  async trimRecords(sessionId: string, keepRecent: number): Promise<void> {
+    await this.client.query(
+      `DELETE FROM records WHERE session_id = $1 AND id NOT IN (
+        SELECT id FROM records WHERE session_id = $1 ORDER BY id DESC LIMIT $2
+      )`,
+      [sessionId, keepRecent],
+    )
+  }
+
   /** 读取 system prompt */
   async getSystemPrompt(sessionId: string): Promise<string | null> {
     return this.getSlot(sessionId, 'system_prompt')

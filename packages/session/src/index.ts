@@ -30,6 +30,8 @@ export type {
   LoadMainSessionOptions,
   SendResult,
   StreamResult,
+  ContextWindowOptions,
+  CountTokensFn,
 } from './types/functions.js'
 
 // 工具工厂

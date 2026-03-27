@@ -8,6 +8,7 @@ import type {
   IntegrateFn, IntegrateResult, CreateMainSessionOptions, LoadMainSessionOptions,
   SendResult, StreamResult,
 } from './types/functions.js'
+import { assembleMainSessionContext } from './context-utils.js'
 
 function createStreamResult(
   processor: (push: (chunk: string) => void) => Promise<SendResult>
@@ -76,30 +77,16 @@ function buildMainSession(
         throw new Error('LLMAdapter is required for send()')
       }
 
-      // 组装上下文：system prompt → synthesis → L3 历史 → 当前用户消息
-      const messages: Message[] = []
-
-      const sysPrompt = await storage.getSystemPrompt(currentMeta.id)
-      if (sysPrompt) {
-        messages.push({ role: 'system', content: sysPrompt })
-      }
-
-      const synthContent = await storage.getMemory(currentMeta.id)
-      if (synthContent) {
-        messages.push({ role: 'system', content: synthContent })
-      }
-
-      const history = await storage.listRecords(currentMeta.id)
-      messages.push(...history)
-
-      const now = new Date().toISOString()
-      messages.push({ role: 'user', content, timestamp: now })
+      // 组装上下文（含 token 预算压缩）
+      const { messages, userTimestamp } = await assembleMainSessionContext(
+        currentMeta.id, storage, content, options.contextWindow,
+      )
 
       // 调 LLM
       const result = await options.llm.complete(messages, { tools })
 
       // 存 L3：用户消息 + assistant 响应
-      const userRecord: Message = { role: 'user', content, timestamp: now }
+      const userRecord: Message = { role: 'user', content, timestamp: userTimestamp }
       const assistantRecord: Message = {
         role: 'assistant',
         content: result.content ?? '',
@@ -124,23 +111,12 @@ function buildMainSession(
       }
 
       return createStreamResult(async (push) => {
-        const messages: Message[] = []
+        // 组装上下文（含 token 预算压缩）
+        const { messages, userTimestamp } = await assembleMainSessionContext(
+          currentMeta.id, storage, content, options.contextWindow,
+        )
 
-        const sysPrompt = await storage.getSystemPrompt(currentMeta.id)
-        if (sysPrompt) {
-          messages.push({ role: 'system', content: sysPrompt })
-        }
-
-        const synthContent = await storage.getMemory(currentMeta.id)
-        if (synthContent) {
-          messages.push({ role: 'system', content: synthContent })
-        }
-
-        const history = await storage.listRecords(currentMeta.id)
-        messages.push(...history)
-
-        const now = new Date().toISOString()
-        messages.push({ role: 'user', content, timestamp: now })
+        const now = userTimestamp
 
         if (!options.llm) {
           throw new Error('LLM adapter not set. Call setLLM() first or pass llm to createMainSession().')
@@ -233,6 +209,16 @@ function buildMainSession(
       }
 
       return result
+    },
+
+    async trimRecords(keepRecent: number): Promise<void> {
+      if (keepRecent < 0) {
+        throw new Error('keepRecent must be a non-negative integer')
+      }
+      if (currentMeta.status === 'archived') {
+        throw new SessionArchivedError(currentMeta.id)
+      }
+      await storage.trimRecords(currentMeta.id, keepRecent)
     },
 
     async updateMeta(updates: SessionMetaUpdate): Promise<void> {

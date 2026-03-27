@@ -37,6 +37,9 @@ export interface MainSession {
   /** 执行 integration cycle：收集子 L2 → IntegrateFn → 保存 synthesis + 推送 insights */
   integrate(fn: IntegrateFn): Promise<IntegrateResult>
 
+  /** 裁剪旧 L3，保留最近 keepRecent 条。通常在 integrate() 后调用 */
+  trimRecords(keepRecent: number): Promise<void>
+
   /** 更新元数据 */
   updateMeta(updates: SessionMetaUpdate): Promise<void>
 

@@ -61,6 +61,9 @@ export interface Session {
   /** L3 → L2 提炼，由上层在合适时机触发 */
   consolidate(fn: ConsolidateFn): Promise<void>
 
+  /** 裁剪旧 L3，保留最近 keepRecent 条。通常在 consolidate() 后调用 */
+  trimRecords(keepRecent: number): Promise<void>
+
   /** 派生子 Session，根据 forkRole 一次性继承父链上下文，之后独立 */
   fork(options: ForkOptions): Promise<Session>
 

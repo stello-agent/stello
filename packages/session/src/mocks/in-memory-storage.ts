@@ -63,6 +63,18 @@ export class InMemoryStorageAdapter implements MainStorage {
     return list.map((m) => ({ ...m }))
   }
 
+  /** 裁剪旧 L3，保留最近 keepRecent 条 */
+  async trimRecords(sessionId: string, keepRecent: number): Promise<void> {
+    if (keepRecent <= 0) {
+      this.records.set(sessionId, [])
+      return
+    }
+    const list = this.records.get(sessionId) ?? []
+    if (list.length > keepRecent) {
+      this.records.set(sessionId, list.slice(-keepRecent))
+    }
+  }
+
   async getSystemPrompt(sessionId: string): Promise<string | null> {
     return this.systemPrompts.get(sessionId) ?? null
   }
