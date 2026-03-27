@@ -35,6 +35,12 @@ pnpm demo:agent
 运行方式：
 
 ```bash
+node --import tsx demo/stello-agent-chat/chat-devtools.ts
+```
+
+也可以用根目录脚本：
+
+```bash
 pnpm demo:chat
 ```
 

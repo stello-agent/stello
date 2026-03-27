@@ -8,7 +8,7 @@
     "typecheck": "pnpm -r run typecheck",
     "smoke": "tsx scripts/smoke-test.ts",
     "demo:agent": "tsx demo/stello-agent-basic/demo.ts",
-    "demo:chat": "pnpm --dir demo/stello-agent-chat build && tsx demo/stello-agent-chat/chat-devtools.ts",
+    "demo:chat": "tsx demo/stello-agent-chat/chat-devtools.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "release": "pnpm build && changeset publish"

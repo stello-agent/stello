@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import type { StelloAgent, StelloAgentHotConfig } from '@stello-ai/core'
-import type { LLMConfigProvider, PromptProvider, SessionAccessProvider, ToolsProvider, SkillsProvider, IntegrationProvider } from './types.js'
+import type { LLMConfigProvider, PromptProvider, SessionAccessProvider, ToolsProvider, SkillsProvider, IntegrationProvider, DevtoolsPersistedState, DevtoolsStateStore } from './types.js'
 
 /** 让主 session 固定排第一，其余保持原始顺序 */
 async function orderSessionsWithMainFirst(agent: StelloAgent) {
@@ -86,6 +86,51 @@ function serializeConfig(agent: StelloAgent) {
   }
 }
 
+/** 提取可持久化的热更新配置子集。 */
+function serializeHotConfig(agent: StelloAgent): StelloAgentHotConfig {
+  const config = agent.config
+  const schedulerConfig = config.orchestration?.scheduler?.getConfig?.()
+  const splitGuardConfig = config.orchestration?.splitGuard?.getConfig?.()
+
+  return {
+    runtime: {
+      idleTtlMs: config.runtime?.recyclePolicy?.idleTtlMs ?? 0,
+    },
+    scheduling: {
+      consolidation: schedulerConfig?.consolidation ?? { trigger: 'manual' },
+      integration: schedulerConfig?.integration ?? { trigger: 'manual' },
+    },
+    splitGuard: splitGuardConfig ?? undefined,
+  }
+}
+
+/** 组装当前 DevTools 的可持久化状态。 */
+function buildPersistedState(
+  agent: StelloAgent,
+  llmProvider?: LLMConfigProvider,
+  promptProvider?: PromptProvider,
+  toolsProvider?: ToolsProvider,
+  skillsProvider?: SkillsProvider,
+): DevtoolsPersistedState {
+  return {
+    hotConfig: serializeHotConfig(agent),
+    llm: llmProvider
+      ? (() => {
+          const llm = llmProvider.getConfig()
+          return {
+            model: llm.model,
+            baseURL: llm.baseURL,
+            temperature: llm.temperature,
+            maxTokens: llm.maxTokens,
+          }
+        })()
+      : undefined,
+    prompts: promptProvider?.getPrompts(),
+    disabledTools: toolsProvider?.getTools().filter((tool) => !tool.enabled).map((tool) => tool.name) ?? [],
+    disabledSkills: skillsProvider?.getSkills().filter((skill) => !skill.enabled).map((skill) => skill.name) ?? [],
+  }
+}
+
 /** 创建 DevTools REST 路由 */
 export function createRoutes(
   agent: StelloAgent,
@@ -97,6 +142,7 @@ export function createRoutes(
   toolsProvider?: ToolsProvider,
   skillsProvider?: SkillsProvider,
   integrationProvider?: IntegrationProvider,
+  stateStore?: DevtoolsStateStore,
 ): Hono {
   const app = new Hono()
   withErrorHandler(app)
@@ -319,6 +365,9 @@ export function createRoutes(
     if (body.splitGuard) patch.splitGuard = body.splitGuard
 
     agent.updateConfig(patch)
+    if (stateStore) {
+      await stateStore.save(buildPersistedState(agent, llmProvider, promptProvider, toolsProvider, skillsProvider))
+    }
     onEvent?.({ type: 'config.updated', data: body as Record<string, unknown> })
 
     return c.json({ ok: true, config: serializeConfig(agent) })
@@ -351,6 +400,9 @@ export function createRoutes(
       temperature: body.temperature ?? current.temperature,
       maxTokens: body.maxTokens ?? current.maxTokens,
     })
+    if (stateStore) {
+      await stateStore.save(buildPersistedState(agent, llmProvider, promptProvider, toolsProvider, skillsProvider))
+    }
     onEvent?.({
       type: 'llm.updated',
       data: {
@@ -360,7 +412,7 @@ export function createRoutes(
         maxTokens: body.maxTokens,
       },
     })
-    return c.json({ ok: true, ...llmProvider.getConfig() })
+    return c.json({ ok: true, configured: true, ...llmProvider.getConfig() })
   })
 
   /** 获取 Consolidation/Integration 提示词 */
@@ -374,8 +426,11 @@ export function createRoutes(
     if (!promptProvider) return c.json({ error: 'Prompt provider not configured' }, 400)
     const body = await c.req.json<{ consolidate?: string; integrate?: string }>()
     promptProvider.setPrompts(body)
+    if (stateStore) {
+      await stateStore.save(buildPersistedState(agent, llmProvider, promptProvider, toolsProvider, skillsProvider))
+    }
     onEvent?.({ type: 'prompts.updated' })
-    return c.json({ ok: true, ...promptProvider.getPrompts() })
+    return c.json({ ok: true, configured: true, ...promptProvider.getPrompts() })
   })
 
   /** 获取 session 的 system prompt */
@@ -476,6 +531,9 @@ export function createRoutes(
     const name = c.req.param('name')
     const { enabled } = await c.req.json<{ enabled: boolean }>()
     toolsProvider.setEnabled(name, enabled)
+    if (stateStore) {
+      await stateStore.save(buildPersistedState(agent, llmProvider, promptProvider, toolsProvider, skillsProvider))
+    }
     onEvent?.({ type: 'tool.toggled', data: { name, enabled } })
     return c.json({ ok: true, tools: toolsProvider.getTools() })
   })
@@ -492,6 +550,9 @@ export function createRoutes(
     const name = c.req.param('name')
     const { enabled } = await c.req.json<{ enabled: boolean }>()
     skillsProvider.setEnabled(name, enabled)
+    if (stateStore) {
+      await stateStore.save(buildPersistedState(agent, llmProvider, promptProvider, toolsProvider, skillsProvider))
+    }
     onEvent?.({ type: 'skill.toggled', data: { name, enabled } })
     return c.json({ ok: true, skills: skillsProvider.getSkills() })
   })

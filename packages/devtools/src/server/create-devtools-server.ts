@@ -7,7 +7,7 @@ import type { StelloAgent } from '@stello-ai/core'
 import { createRoutes } from './routes.js'
 import { createWsHandler } from './ws-handler.js'
 import { EventBus, wrapAgentWithEvents } from './event-bus.js'
-import type { DevtoolsOptions, DevtoolsInstance } from './types.js'
+import type { DevtoolsOptions, DevtoolsInstance, DevtoolsPersistedState, ToolsProvider, SkillsProvider } from './types.js'
 
 /** 定位前端打包产物目录 */
 function resolveWebDir(): string {
@@ -80,6 +80,58 @@ function createStaticMiddleware(webDir: string) {
   }
 }
 
+/** 将已持久化状态恢复到当前 agent/provider。 */
+async function restorePersistedState(
+  agent: StelloAgent,
+  state: DevtoolsPersistedState | null,
+  options: DevtoolsOptions,
+): Promise<void> {
+  if (!state) return
+
+  if (state.hotConfig) {
+    agent.updateConfig(state.hotConfig)
+  }
+
+  if (state.llm && options.llm) {
+    const current = options.llm.getConfig()
+    options.llm.setConfig({
+      model: state.llm.model,
+      baseURL: state.llm.baseURL,
+      apiKey: current.apiKey,
+      temperature: state.llm.temperature,
+      maxTokens: state.llm.maxTokens,
+    })
+  }
+
+  if (state.prompts && options.prompts) {
+    options.prompts.setPrompts(state.prompts)
+  }
+
+  if (options.tools && state.disabledTools) {
+    syncProviderToggleState(options.tools, new Set(state.disabledTools))
+  }
+
+  if (options.skills && state.disabledSkills) {
+    syncProviderToggleState(options.skills, new Set(state.disabledSkills))
+  }
+}
+
+/** 按禁用列表同步 tools/skills provider 状态。 */
+function syncProviderToggleState(
+  provider: ToolsProvider | SkillsProvider,
+  disabledNames: Set<string>,
+): void {
+  if ('getTools' in provider) {
+    for (const tool of provider.getTools()) {
+      provider.setEnabled(tool.name, !disabledNames.has(tool.name))
+    }
+    return
+  }
+  for (const skill of provider.getSkills()) {
+    provider.setEnabled(skill.name, !disabledNames.has(skill.name))
+  }
+}
+
 /** 启动 DevTools 调试服务器 */
 export async function startDevtools(
   agent: StelloAgent,
@@ -90,6 +142,9 @@ export async function startDevtools(
   const app = new Hono()
   const webDir = resolveWebDir()
   const eventBus = new EventBus()
+
+  const persistedState = options.stateStore ? await options.stateStore.load() : null
+  await restorePersistedState(agent, persistedState, options)
 
   /* Proxy 包装 agent，拦截操作自动广播事件 */
   const wrappedAgent = wrapAgentWithEvents(agent, eventBus)
@@ -105,6 +160,7 @@ export async function startDevtools(
     options.tools,
     options.skills,
     options.integration,
+    options.stateStore,
   )
   app.route('/api', api)
 

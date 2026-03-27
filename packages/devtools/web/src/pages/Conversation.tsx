@@ -21,6 +21,73 @@ import {
 import { fetchSessions, fetchConfig, fetchSessionDetail, enterSession, consolidateSession, type AgentConfig, type SessionDetail } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 
+/** 可点击的 Tool/Skill badge，展开显示详情列表 */
+function CapabilityPopover({
+  icon: Icon,
+  iconClass,
+  label,
+  items,
+}: {
+  icon: React.ComponentType<{ size?: number; className?: string }>
+  iconClass: string
+  label: string
+  items: Array<{ name: string; description: string; parameters?: Record<string, unknown> }>
+}) {
+  const [open, setOpen] = useState(false)
+  const [expandedItem, setExpandedItem] = useState<string | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 px-2.5 py-1 bg-surface rounded-md border border-border hover:border-primary/50 transition-colors cursor-pointer"
+      >
+        <Icon size={12} className={iconClass} />
+        <span className="text-[11px] font-medium text-text-secondary">{items.length} {label}</span>
+        <ChevronDown size={10} className={`text-text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && items.length > 0 && (
+        <div className="absolute top-full right-0 mt-1 w-72 bg-card rounded-lg border border-border shadow-lg z-50 py-1 pop-enter max-h-80 overflow-y-auto">
+          {items.map((item) => (
+            <div key={item.name} className="border-b border-border/30 last:border-b-0">
+              <button
+                onClick={() => setExpandedItem(expandedItem === item.name ? null : item.name)}
+                className="flex items-center justify-between w-full px-3 py-2 text-left hover:bg-surface transition-colors"
+              >
+                <span className="text-[11px] font-medium text-text">{item.name}</span>
+                {expandedItem === item.name
+                  ? <ChevronDown size={10} className="text-text-muted shrink-0" />
+                  : <ChevronRight size={10} className="text-text-muted shrink-0" />
+                }
+              </button>
+              {expandedItem === item.name && (
+                <div className="px-3 pb-2 space-y-1.5">
+                  <p className="text-[10px] text-text-secondary leading-relaxed">{item.description}</p>
+                  {item.parameters && Object.keys(item.parameters).length > 0 && (
+                    <pre className="text-[9px] font-mono bg-surface rounded p-2 text-text-muted overflow-x-auto max-h-40 overflow-y-auto">
+                      {JSON.stringify(item.parameters, null, 2)}
+                    </pre>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Session 列表项 */
 interface SessionItem {
   id: string
@@ -438,14 +505,18 @@ export function Conversation() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 px-2.5 py-1 bg-surface rounded-md border border-border">
-              <Zap size={12} className="text-[#D89575]" />
-              <span className="text-[11px] font-medium text-text-secondary">{config?.capabilities.skills.length ?? 0} {t('conv.skills')}</span>
-            </div>
-            <div className="flex items-center gap-1 px-2.5 py-1 bg-surface rounded-md border border-border">
-              <Wrench size={12} className="text-text-secondary" />
-              <span className="text-[11px] font-medium text-text-secondary">{config?.capabilities.tools.length ?? 0} {t('conv.tools')}</span>
-            </div>
+            <CapabilityPopover
+              icon={Zap}
+              iconClass="text-[#D89575]"
+              label={t('conv.skills')}
+              items={(config?.capabilities.skills ?? []).map((s) => ({ name: s.name, description: s.description }))}
+            />
+            <CapabilityPopover
+              icon={Wrench}
+              iconClass="text-text-secondary"
+              label={t('conv.tools')}
+              items={config?.capabilities.tools ?? []}
+            />
           </div>
         </div>
 

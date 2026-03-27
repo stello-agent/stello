@@ -288,13 +288,13 @@ export OPENAI_BASE_URL=https://api.minimaxi.com/v1
 export OPENAI_API_KEY=你的key
 export OPENAI_MODEL=MiniMax-M1
 
-pnpm demo:chat
+node --import tsx demo/stello-agent-chat/chat-devtools.ts
 ```
 
 如果你只想验证装配：
 
 ```bash
-OPENAI_API_KEY=fake DEMO_DRY_RUN=1 node --import tsx demo/stello-agent-chat/server.ts
+OPENAI_API_KEY=fake DEMO_DRY_RUN=1 node --import tsx demo/stello-agent-chat/chat-devtools.ts
 ```
 
 ---

@@ -21,7 +21,7 @@ import {
   createDefaultIntegrateFn,
   type LLMCallFn,
 } from '../../packages/core/src/index'
-import { startDevtools } from '../../packages/devtools/src/index'
+import { startDevtools, type DevtoolsPersistedState, type DevtoolsStateStore } from '../../packages/devtools/src/index'
 import {
   createOpenAICompatibleAdapter,
 } from '../../packages/session/src/adapters/openai-compatible'
@@ -43,7 +43,7 @@ if (!openaiApiKey) {
   console.error('Missing OPENAI_API_KEY')
   console.error('  export OPENAI_BASE_URL=https://api.minimaxi.com/v1')
   console.error('  export OPENAI_API_KEY=your_key')
-  console.error('  export OPENAI_MODEL=MiniMax-M1')
+  console.error('  export OPENAI_MODEL=MiniMax-M2.7')
   process.exit(1)
 }
 
@@ -159,8 +159,42 @@ async function syncSessionScopeMirror(
   await memoryEngine.writeScope(coreSessionId, insight ?? '')
 }
 
+/** 读取持久化的 session system prompt */
+async function readPersistedSystemPrompt(
+  fs: NodeFileSystemAdapter,
+  sessionId: string,
+): Promise<string | null> {
+  return fs.readJSON<string>(`memory/sessions/${sessionId}/system-prompt.json`).catch(() => null)
+}
+
+/** 写入持久化的 session system prompt */
+async function writePersistedSystemPrompt(
+  fs: NodeFileSystemAdapter,
+  sessionId: string,
+  content: string,
+): Promise<void> {
+  await fs.writeJSON(`memory/sessions/${sessionId}/system-prompt.json`, content)
+}
+
+/** 创建文件型 DevTools state store */
+function createFileDevtoolsStateStore(fs: NodeFileSystemAdapter): DevtoolsStateStore {
+  const path = 'memory/devtools-state.json'
+  return {
+    async load(): Promise<DevtoolsPersistedState | null> {
+      return fs.readJSON<DevtoolsPersistedState>(path).catch(() => null)
+    },
+    async save(state: DevtoolsPersistedState): Promise<void> {
+      await fs.writeJSON(path, state)
+    },
+    async reset(): Promise<void> {
+      await fs.writeJSON(path, {})
+    },
+  }
+}
+
 /** 把 core session 元数据注册到 session storage，并按 core id 加载真实 Session */
 async function registerStandardSession(
+  fs: NodeFileSystemAdapter,
   storage: InMemoryStorageAdapter,
   sessionId: string,
   label: string,
@@ -179,8 +213,9 @@ async function registerStandardSession(
     createdAt: now,
     updatedAt: now,
   }
+  const effectiveSystemPrompt = (await readPersistedSystemPrompt(fs, sessionId)) ?? systemPrompt
   await storage.putSession(meta)
-  await storage.putSystemPrompt(sessionId, systemPrompt)
+  await storage.putSystemPrompt(sessionId, effectiveSystemPrompt)
   const session = await loadSession(sessionId, { storage, llm, tools: [...tools] })
   if (!session) throw new Error(`Failed to load standard session: ${sessionId}`)
   return session
@@ -188,6 +223,7 @@ async function registerStandardSession(
 
 /** 把 core root 元数据注册到 session storage，并按 core id 加载真实 MainSession */
 async function registerMainSession(
+  fs: NodeFileSystemAdapter,
   storage: InMemoryStorageAdapter,
   sessionId: string,
   label: string,
@@ -206,8 +242,9 @@ async function registerMainSession(
     createdAt: now,
     updatedAt: now,
   }
+  const effectiveSystemPrompt = (await readPersistedSystemPrompt(fs, sessionId)) ?? systemPrompt
   await storage.putSession(meta)
-  await storage.putSystemPrompt(sessionId, systemPrompt)
+  await storage.putSystemPrompt(sessionId, effectiveSystemPrompt)
   const session = await loadMainSession(sessionId, { storage, llm, tools: [...tools] })
   if (!session) throw new Error(`Failed to load main session: ${sessionId}`)
   return session
@@ -335,6 +372,7 @@ function createFileMemoryEngine(fs: NodeFileSystemAdapter, sessions: SessionTree
 async function bootstrap() {
   const fs = new NodeFileSystemAdapter(dataDir)
   const sessions = new SessionTreeImpl(fs)
+  const stateStore = createFileDevtoolsStateStore(fs)
   let currentLlm = createOpenAICompatibleAdapter({ apiKey: openaiApiKey!, baseURL: openaiBaseURL, model: openaiModel, extraBody: { reasoning_split: true } })
   let currentLlmConfig = { model: openaiModel, baseURL: openaiBaseURL, apiKey: openaiApiKey!, temperature: 0.7, maxTokens: 2048 }
 
@@ -403,6 +441,7 @@ async function bootstrap() {
   }
 
   const mainSession = await registerMainSession(
+    fs,
     sessionStorage,
     rootId,
     rootLabel,
@@ -418,6 +457,7 @@ async function bootstrap() {
   for (const meta of allSessions) {
     if (meta.id === rootId || sessionMap.has(meta.id)) continue
     const childSession = await registerStandardSession(
+      fs,
       sessionStorage,
       meta.id,
       meta.label,
@@ -447,6 +487,7 @@ async function bootstrap() {
     prepareChildSpawn: async (options) => {
       const child = await sessions.createChild(options)
       const childSession = await registerStandardSession(
+        fs,
         sessionStorage,
         child.id,
         child.label,
@@ -594,6 +635,7 @@ async function bootstrap() {
         if (!entry) return
         const s = 'main' in entry && entry.main ? entry.main : entry.session
         await s.setSystemPrompt(content)
+        await writePersistedSystemPrompt(fs, sessionId, content)
       },
       async getConsolidatePrompt(sessionId: string) {
         return perSessionConsolidatePrompt.get(sessionId) ?? null
@@ -663,6 +705,7 @@ async function bootstrap() {
         return { synthesis: result.synthesis, insightCount: result.insights.length }
       },
     },
+    stateStore,
   }
 }
 
@@ -697,6 +740,7 @@ async function main() {
     tools: app.tools,
     skills: app.skills,
     integration: app.integration,
+    stateStore: app.stateStore,
   })
 
   console.log(`\nStello 留学选校顾问 Demo`)
