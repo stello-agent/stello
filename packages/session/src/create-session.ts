@@ -245,7 +245,39 @@ function buildSession(
       }
 
       await storage.putSession(childMeta)
-      return buildSession(childMeta, options)
+
+      // system prompt：提供则用，否则继承父 Session
+      const sp = forkOptions.systemPrompt ?? await storage.getSystemPrompt(currentMeta.id)
+      if (sp) {
+        await storage.putSystemPrompt(childId, sp)
+      }
+
+      // 上下文策略：决定子 Session 继承多少父 L3
+      const ctx = forkOptions.context ?? 'none'
+      if (ctx !== 'none') {
+        const parentRecords = await storage.listRecords(currentMeta.id)
+        const records = ctx === 'inherit' ? parentRecords : await ctx(parentRecords)
+        for (const record of records) {
+          await storage.appendRecord(childId, record)
+        }
+      }
+
+      // 初始 prompt：写入子 Session 的第一条用户消息
+      if (forkOptions.prompt) {
+        await storage.appendRecord(childId, {
+          role: 'user',
+          content: forkOptions.prompt,
+          timestamp: now,
+        })
+      }
+
+      // 构建子 Session 选项（支持 llm/tools 覆盖）
+      const childOptions = {
+        ...options,
+        ...(forkOptions.llm && { llm: forkOptions.llm }),
+        ...(forkOptions.tools && { tools: forkOptions.tools }),
+      }
+      return buildSession(childMeta, childOptions)
     },
 
     async updateMeta(updates: SessionMetaUpdate): Promise<void> {

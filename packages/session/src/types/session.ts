@@ -25,11 +25,24 @@ export interface SessionFilter {
   tags?: string[]
 }
 
+import type { Message, LLMAdapter, LLMCompleteOptions } from './llm.js'
+
+/** fork 时的上下文转换函数：接收父 Session 的 L3 记录，返回写入子 Session 的记录 */
+export type ForkContextFn = (parentRecords: Message[]) => Message[] | Promise<Message[]>
+
 /** fork 操作的选项 */
 export interface ForkOptions {
   label: string
-  /** fork 角色决定从源 Session 继承多少上下文（一次性继承，之后独立） */
-  forkRole?: 'full' | 'minimal' | 'none'
+  /** 系统提示词；不提供则继承父 Session */
+  systemPrompt?: string
+  /** 上下文策略：'none'(默认) 空 L3；'inherit' 拷贝父 L3；函数则自定义转换 */
+  context?: 'none' | 'inherit' | ForkContextFn
+  /** 子 Session 的第一条用户消息 */
+  prompt?: string
+  /** 覆盖父 Session 的 LLM 适配器 */
+  llm?: LLMAdapter
+  /** 覆盖父 Session 的工具列表 */
+  tools?: LLMCompleteOptions['tools']
   tags?: string[]
   metadata?: Record<string, unknown>
 }

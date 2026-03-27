@@ -1,5 +1,5 @@
 // 类型导出 — Session
-export type { SessionMeta, SessionMetaUpdate, SessionFilter, ForkOptions } from './types/session.js'
+export type { SessionMeta, SessionMetaUpdate, SessionFilter, ForkOptions, ForkContextFn } from './types/session.js'
 export type { SessionStorage, MainStorage, ListRecordsOptions, TopologyNode } from './types/storage.js'
 export type {
   Message, ToolCall, LLMCompleteOptions, LLMResult, LLMChunk, LLMAdapter,
@@ -47,6 +47,9 @@ export type { OpenAICompatibleOptions } from './adapters/openai-compatible.js'
 export { createOpenAICompatibleAdapter } from './adapters/openai-compatible.js'
 export type { AnthropicAdapterOptions } from './adapters/anthropic.js'
 export { createAnthropicAdapter } from './adapters/anthropic.js'
+
+// 内置工具
+export { createSessionTool } from './tools/create-session-tool.js'
 
 // Mock 实现（用于测试）
 export { InMemoryStorageAdapter } from './mocks/in-memory-storage.js'
