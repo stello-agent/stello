@@ -5,6 +5,8 @@ import type { LLMAdapter, LLMResult, Message, LLMCompleteOptions } from '../type
 export interface AnthropicAdapterOptions {
   apiKey: string
   model: string
+  /** 模型上下文窗口大小（token 数） */
+  maxContextTokens: number
   /** 自定义 API 端点，兼容 MiniMax 等 Anthropic 协议服务 */
   baseURL?: string
 }
@@ -17,6 +19,7 @@ export function createAnthropicAdapter(options: AnthropicAdapterOptions): LLMAda
   })
 
   return {
+    maxContextTokens: options.maxContextTokens,
     async complete(messages: Message[], completeOptions?: LLMCompleteOptions): Promise<LLMResult> {
       const systemMessages = messages.filter((m) => m.role === 'system')
       const nonSystemMessages = messages.filter((m) => m.role !== 'system')

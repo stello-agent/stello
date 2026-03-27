@@ -11,6 +11,8 @@ type ChatToolCallDelta = NonNullable<
 export interface OpenAICompatibleOptions {
   apiKey: string
   model: string
+  /** 模型上下文窗口大小（token 数） */
+  maxContextTokens: number
   baseURL: string
   /** 额外的请求参数（如 MiniMax 的 reasoning_split 等） */
   extraBody?: Record<string, unknown>
@@ -62,6 +64,7 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleOptions):
   }
 
   return {
+    maxContextTokens: options.maxContextTokens,
     async complete(messages: Message[], completeOptions?: LLMCompleteOptions): Promise<LLMResult> {
       const response = await client.chat.completions.create({
         ...buildParams(messages, completeOptions),

@@ -127,6 +127,7 @@ function buildMainSession(
   let currentMeta = { ...meta }
   const { storage } = options
   const tools = options.tools
+  let lastPromptTokens: number | null = null
 
   const mainSession: MainSession = {
     get meta(): Readonly<SessionMeta> {
@@ -141,8 +142,10 @@ function buildMainSession(
         throw new Error('LLMAdapter is required for send()')
       }
 
+      // 组装上下文（自动压缩）
       const { messages, userTimestamp } = await assembleMainSessionContext(
-        currentMeta.id, storage, content, options.contextWindow,
+        currentMeta.id, storage, content,
+        { maxContextTokens: options.llm.maxContextTokens, lastPromptTokens },
       )
 
       let promptMessages = messages
@@ -165,7 +168,10 @@ function buildMainSession(
       // 调 LLM
       const result = await options.llm.complete(promptMessages, { tools })
 
-      // 存 L3：用户消息或 tool 回灌 + assistant 响应
+      // 更新 promptTokens 基线
+      if (result.usage?.promptTokens) {
+        lastPromptTokens = result.usage.promptTokens
+      }
       const assistantRecord: Message = {
         role: 'assistant',
         content: result.content ?? '',
@@ -193,9 +199,10 @@ function buildMainSession(
       }
 
       return createStreamResult(async (push) => {
-        // 组装上下文（含 token 预算压缩）
+        // 组装上下文（自动压缩）
         const { messages, userTimestamp } = await assembleMainSessionContext(
-          currentMeta.id, storage, content, options.contextWindow,
+          currentMeta.id, storage, content,
+          { maxContextTokens: options.llm!.maxContextTokens, lastPromptTokens },
         )
 
         let promptMessages = messages
@@ -257,6 +264,11 @@ function buildMainSession(
           await storage.appendRecord(currentMeta.id, record)
         }
         await storage.appendRecord(currentMeta.id, assistantRecord)
+
+        // 更新 promptTokens 基线
+        if (result.usage?.promptTokens) {
+          lastPromptTokens = result.usage.promptTokens
+        }
 
         return {
           content: result.content,

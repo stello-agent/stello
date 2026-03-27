@@ -11,6 +11,7 @@ import { InMemoryStorageAdapter } from '../mocks/in-memory-storage.js'
 export function createMockLLM(responses: LLMResult[]): LLMAdapter {
   let index = 0
   return {
+    maxContextTokens: 1_000_000,
     async complete(): Promise<LLMResult> {
       if (index >= responses.length) {
         throw new Error(`MockLLM: no more responses (called ${index + 1} times, only ${responses.length} provided)`)

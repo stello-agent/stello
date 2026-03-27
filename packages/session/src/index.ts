@@ -30,8 +30,6 @@ export type {
   LoadMainSessionOptions,
   SendResult,
   StreamResult,
-  ContextWindowOptions,
-  CountTokensFn,
 } from './types/functions.js'
 
 // 工具工厂
@@ -44,7 +42,13 @@ export { createSession, loadSession } from './create-session.js'
 // MainSession 工厂函数
 export { createMainSession, loadMainSession } from './create-main-session.js'
 
-// LLM Adapter 实现
+// LLM Adapter — 高层工厂（推荐）
+export type { ClaudeModel, ClaudeOptions } from './adapters/claude.js'
+export { createClaude } from './adapters/claude.js'
+export type { GPTModel, GPTOptions } from './adapters/gpt.js'
+export { createGPT } from './adapters/gpt.js'
+
+// LLM Adapter — 底层工厂（自定义模型用）
 export type { OpenAICompatibleOptions } from './adapters/openai-compatible.js'
 export { createOpenAICompatibleAdapter } from './adapters/openai-compatible.js'
 export type { AnthropicAdapterOptions } from './adapters/anthropic.js'

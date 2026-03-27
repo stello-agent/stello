@@ -59,4 +59,6 @@ export interface LLMAdapter {
   complete(messages: Message[], options?: LLMCompleteOptions): Promise<LLMResult>
   /** 流式输出，逐 chunk 返回。未实现时 Session 退化为 complete + 单次 yield */
   stream?(messages: Message[], options?: LLMCompleteOptions): AsyncIterable<LLMChunk>
+  /** 模型上下文窗口大小（token 数），用于自动压缩判断 */
+  maxContextTokens: number
 }

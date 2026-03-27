@@ -52,7 +52,6 @@ function serializeToolResultContent(result: ToolResultEnvelope['toolResults'][nu
 async function assembleSessionReplayContext(
   sessionId: string,
   storage: CreateSessionOptions['storage'] | LoadSessionOptions['storage'],
-  contextWindow: CreateSessionOptions['contextWindow'] | LoadSessionOptions['contextWindow'],
 ): Promise<{ messages: Message[]; insightConsumed: boolean }> {
   const messages: Message[] = []
   let insightConsumed = false
@@ -68,11 +67,9 @@ async function assembleSessionReplayContext(
     insightConsumed = true
   }
 
-  if (contextWindow) {
-    const memory = await storage.getMemory(sessionId)
-    if (memory) {
-      messages.push({ role: 'system', content: memory })
-    }
+  const memory = await storage.getMemory(sessionId)
+  if (memory) {
+    messages.push({ role: 'system', content: memory })
   }
 
   const history = await storage.listRecords(sessionId)
@@ -133,6 +130,7 @@ function buildSession(
   let currentMeta = { ...meta }
   const { storage } = options
   const tools = options.tools
+  let lastPromptTokens: number | null = null
 
   const session: Session = {
     get meta(): Readonly<SessionMeta> {
@@ -147,9 +145,10 @@ function buildSession(
         throw new Error('LLMAdapter is required for send()')
       }
 
-      // 组装上下文（含 token 预算压缩）
+      // 组装上下文（自动压缩）
       const { messages, insightConsumed, userTimestamp } = await assembleSessionContext(
-        currentMeta.id, storage, content, options.contextWindow,
+        currentMeta.id, storage, content,
+        { maxContextTokens: options.llm.maxContextTokens, lastPromptTokens },
       )
 
       // 消费 insight
@@ -161,7 +160,7 @@ function buildSession(
       let recordsToPersist: Message[] = [{ role: 'user', content, timestamp: userTimestamp }]
       const toolEnvelope = parseToolResultEnvelope(content)
       if (toolEnvelope) {
-        const replayContext = await assembleSessionReplayContext(currentMeta.id, storage, options.contextWindow)
+        const replayContext = await assembleSessionReplayContext(currentMeta.id, storage)
         promptMessages = [
           ...replayContext.messages,
           ...toolEnvelope.toolResults.map((result) => ({
@@ -179,6 +178,11 @@ function buildSession(
 
       // 调 LLM
       const result = await options.llm.complete(promptMessages, { tools })
+
+      // 更新 promptTokens 基线
+      if (result.usage?.promptTokens) {
+        lastPromptTokens = result.usage.promptTokens
+      }
       const assistantRecord: Message = {
         role: 'assistant',
         content: result.content ?? '',
@@ -206,9 +210,10 @@ function buildSession(
       }
 
       return createStreamResult(async (push) => {
-        // 组装上下文（含 token 预算压缩）
+        // 组装上下文（自动压缩）
         const { messages, insightConsumed, userTimestamp } = await assembleSessionContext(
-          currentMeta.id, storage, content, options.contextWindow,
+          currentMeta.id, storage, content,
+          { maxContextTokens: options.llm!.maxContextTokens, lastPromptTokens },
         )
 
         // 消费 insight
@@ -220,7 +225,7 @@ function buildSession(
         let recordsToPersist: Message[] = [{ role: 'user', content, timestamp: userTimestamp }]
         const toolEnvelope = parseToolResultEnvelope(content)
         if (toolEnvelope) {
-          const replayContext = await assembleSessionReplayContext(currentMeta.id, storage, options.contextWindow)
+          const replayContext = await assembleSessionReplayContext(currentMeta.id, storage)
           promptMessages = [
             ...replayContext.messages,
             ...toolEnvelope.toolResults.map((result) => ({
@@ -278,6 +283,11 @@ function buildSession(
           await storage.appendRecord(currentMeta.id, record)
         }
         await storage.appendRecord(currentMeta.id, assistantRecord)
+
+        // 更新 promptTokens 基线
+        if (result.usage?.promptTokens) {
+          lastPromptTokens = result.usage.promptTokens
+        }
 
         return {
           content: result.content,
