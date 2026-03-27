@@ -10,7 +10,8 @@
     "demo:agent": "tsx demo/stello-agent-basic/demo.ts",
     "demo:chat": "pnpm --dir demo/stello-agent-chat build && tsx demo/stello-agent-chat/chat-devtools.ts",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "release": "pnpm build && changeset publish"
   },
   "devDependencies": {
     "@changesets/cli": "^2.30.0",

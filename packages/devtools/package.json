@@ -28,6 +28,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build:server": "tsup",
     "build:web": "cd web && pnpm exec vite build",
