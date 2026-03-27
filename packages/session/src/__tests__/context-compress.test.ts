@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { makeSession, createMockLLM } from './helpers.js'
 import { createMainSession } from '../create-main-session.js'
 import { InMemoryStorageAdapter } from '../mocks/in-memory-storage.js'
@@ -214,7 +214,7 @@ describe('Session 上下文压缩', () => {
     await storage.appendRecord(id, { role: 'assistant', content: 'old reply also very long to exceed budget' })
 
     const stream = session.stream('new')
-    for await (const _chunk of stream) { /* drain */ }
+    for await (const _ of stream) { void _ }
     await stream.result
 
     const call = capturedMessages[0]!
@@ -340,8 +340,7 @@ describe('consolidate + trimRecords 工作流', () => {
       countTokens: charCounter,
     }
 
-    const { session, storage } = await makeSession({ llm, contextWindow })
-    const id = session.meta.id
+    const { session } = await makeSession({ llm, contextWindow })
 
     // 模拟几轮对话
     await session.send('msg1')

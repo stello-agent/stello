@@ -48,41 +48,6 @@ function serializeToolResultContent(result: ToolResultEnvelope['toolResults'][nu
   })
 }
 
-/** 根据当前输入构造发给 LLM 的消息和待持久化记录。 */
-function buildInputMessages(
-  history: Message[],
-  content: string,
-  timestamp: string,
-): { promptMessages: Message[]; recordsToPersist: Message[] } {
-  const toolEnvelope = parseToolResultEnvelope(content)
-  const lastAssistant = history.at(-1)
-  const canReplayToolResults = (
-    toolEnvelope &&
-    lastAssistant?.role === 'assistant' &&
-    Array.isArray(lastAssistant.toolCalls) &&
-    lastAssistant.toolCalls.length > 0
-  )
-
-  if (canReplayToolResults) {
-    const toolMessages: Message[] = toolEnvelope.toolResults.map((result) => ({
-      role: 'tool',
-      toolCallId: result.toolCallId ?? undefined,
-      content: serializeToolResultContent(result),
-      timestamp,
-    }))
-    return {
-      promptMessages: [...history, ...toolMessages],
-      recordsToPersist: toolMessages,
-    }
-  }
-
-  const userRecord: Message = { role: 'user', content, timestamp }
-  return {
-    promptMessages: [...history, userRecord],
-    recordsToPersist: [userRecord],
-  }
-}
-
 /** 为 toolResults continuation 组装固定上下文与历史。 */
 async function assembleSessionReplayContext(
   sessionId: string,
