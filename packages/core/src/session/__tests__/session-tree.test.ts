@@ -164,7 +164,7 @@ describe('SessionTreeImpl', () => {
     const root = await tree.createRoot('根');
     const a = await tree.createChild({ parentId: root.id, label: 'A' });
     const b = await tree.createChild({ parentId: root.id, label: 'B' });
-    await tree.createChild({ parentId: a.id, label: 'A1' });
+    await tree.createChild({ parentId: a.id, label: 'A1', metadata: { sourceSessionId: a.id } });
 
     const treeData = await tree.getTree();
     expect(treeData.id).toBe(root.id);
@@ -176,6 +176,7 @@ describe('SessionTreeImpl', () => {
     expect(childA?.label).toBe('A');
     expect(childA?.children).toHaveLength(1);
     expect(childA?.children[0]?.label).toBe('A1');
+    expect(childA?.children[0]?.sourceSessionId).toBe(a.id);
 
     const childB = treeData.children.find((c) => c.id === b.id);
     expect(childB?.label).toBe('B');

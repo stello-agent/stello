@@ -20,6 +20,7 @@ export interface SessionMeta {
 export interface SessionTreeNode {
   id: string
   label: string
+  sourceSessionId?: string
   status: 'active' | 'archived'
   turnCount: number
   children: SessionTreeNode[]

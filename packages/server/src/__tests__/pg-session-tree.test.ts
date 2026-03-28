@@ -115,7 +115,7 @@ describe('PgSessionTree', () => {
     it('返回递归树结构', async () => {
       const root = await tree.createRoot('Root')
       const c1 = await tree.createChild({ parentId: root.id, label: 'C1' })
-      await tree.createChild({ parentId: c1.id, label: 'C1.1' })
+      await tree.createChild({ parentId: c1.id, label: 'C1.1', metadata: { sourceSessionId: c1.id } })
       await tree.createChild({ parentId: root.id, label: 'C2' })
 
       const sessionTree = await tree.getTree()
@@ -125,6 +125,7 @@ describe('PgSessionTree', () => {
       expect(sessionTree.children[0]!.label).toBe('C1')
       expect(sessionTree.children[0]!.children).toHaveLength(1)
       expect(sessionTree.children[0]!.children[0]!.label).toBe('C1.1')
+      expect(sessionTree.children[0]!.children[0]!.sourceSessionId).toBe(c1.id)
       expect(sessionTree.children[1]!.label).toBe('C2')
     })
   })

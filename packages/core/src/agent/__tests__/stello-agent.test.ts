@@ -204,6 +204,7 @@ describe('StelloAgent', () => {
     expect(prepareChildSpawn).toHaveBeenCalledWith({
       label: 'UI 2',
       scope: 'ui',
+      metadata: { sourceSessionId: 'child-1' },
       parentId: 'root',
     });
     expect(result.parentId).toBe('root');

@@ -111,7 +111,11 @@ describe('SessionOrchestrator', () => {
     const orchestrator = new SessionOrchestrator(sessions, runtimeManager as never);
     const result = await orchestrator.forkSession('s1', { label: 'UI', scope: 'ui' });
 
-    expect(engine.forkSession).toHaveBeenCalledWith({ label: 'UI', scope: 'ui' });
+    expect(engine.forkSession).toHaveBeenCalledWith({
+      label: 'UI',
+      scope: 'ui',
+      metadata: { sourceSessionId: 's1' },
+    });
     expect(result.id).toBe('child-1');
   });
 
@@ -148,7 +152,11 @@ describe('SessionOrchestrator', () => {
       'root',
       expect.stringContaining('orchestrator:root:'),
     );
-    expect(rootEngine.forkSession).toHaveBeenCalledWith({ label: 'UI 2', scope: 'ui' });
+    expect(rootEngine.forkSession).toHaveBeenCalledWith({
+      label: 'UI 2',
+      scope: 'ui',
+      metadata: { sourceSessionId: 'child-1' },
+    });
     expect(result.parentId).toBe('root');
   });
 

@@ -135,6 +135,7 @@ interface ChildSessionBootstrapOptions {
   scope?: string
   systemPrompt?: string
   prompt?: string
+  metadata?: Record<string, unknown>
 }
 
 type WrappedSession = { session: Session; main?: never }
@@ -321,6 +322,7 @@ async function createDemoChildSession(
     parentId: options.parentId,
     label: options.label,
     scope: options.scope,
+    metadata: options.metadata,
   })
   const childSession = await registerStandardSession(
     fs,
@@ -617,6 +619,7 @@ async function bootstrap() {
           parentId: options.parentId,
           label: options.label,
           scope: options.scope,
+          metadata: options.metadata,
         },
       )
     },
@@ -655,6 +658,7 @@ async function bootstrap() {
                 label: forkOptions.label,
                 systemPrompt: forkOptions.systemPrompt ?? await parentSession.systemPrompt() ?? undefined,
                 prompt: forkOptions.prompt,
+                metadata: { sourceSessionId: currentToolSessionId },
               },
             )
             const childEntry = sessionMap.get(child.id)

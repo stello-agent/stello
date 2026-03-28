@@ -215,6 +215,9 @@ export class SessionTreeImpl implements SessionTree {
     const buildNode = (stored: StoredMeta): SessionTreeNode => ({
       id: stored.id,
       label: stored.label,
+      sourceSessionId: typeof stored.metadata?.['sourceSessionId'] === 'string'
+        ? stored.metadata['sourceSessionId'] as string
+        : undefined,
       status: stored.status,
       turnCount: stored.turnCount,
       children: stored.children

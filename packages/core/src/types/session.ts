@@ -64,6 +64,8 @@ export interface SessionTreeNode {
   id: string;
   /** 显示名称 */
   label: string;
+  /** 展示层的 fork 来源 Session ID */
+  sourceSessionId?: string;
   /** 当前状态 */
   status: SessionStatus;
   /** 对话轮次数 */

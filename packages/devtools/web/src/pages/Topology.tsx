@@ -56,6 +56,7 @@ interface TopoNode {
   id: string
   label: string
   parentId: string | null
+  sourceSessionId?: string
   status: 'active' | 'archived'
   turns: number
   children: string[]
@@ -151,13 +152,21 @@ function computeLayout(nodes: TopoNode[], width: number, height: number, theme: 
   return result
 }
 
+/** 展示层优先使用 fork 来源，否则退回逻辑父节点。 */
+function getDisplayParentId(node: Pick<TopoNode, 'id' | 'parentId' | 'sourceSessionId'>): string | null {
+  if (node.sourceSessionId && node.sourceSessionId !== node.id) {
+    return node.sourceSessionId
+  }
+  return node.parentId
+}
+
 /** 判断节点是否与 highlightedId 相邻 */
 function isAdjacent(node: LayoutNode, highlightedId: string | null, nodeMap: Map<string, LayoutNode>): boolean {
   if (!highlightedId) return false
   if (node.id === highlightedId) return true
-  if (node.parentId === highlightedId) return true
+  if (getDisplayParentId(node) === highlightedId) return true
   const highlighted = nodeMap.get(highlightedId)
-  if (highlighted?.parentId === node.id) return true
+  if (highlighted && getDisplayParentId(highlighted) === node.id) return true
   if (node.refs.includes(highlightedId)) return true
   if (highlighted?.refs.includes(node.id)) return true
   return false
@@ -189,8 +198,9 @@ function renderFrame(
 
   /* 画父子连线 */
   for (const node of nodes) {
-    if (!node.parentId) continue
-    const parent = nodeMap.get(node.parentId)
+    const displayParentId = getDisplayParentId(node)
+    if (!displayParentId) continue
+    const parent = nodeMap.get(displayParentId)
     if (!parent) continue
 
     const adjacent = hasHighlight && (
@@ -203,7 +213,7 @@ function renderFrame(
     ctx.strokeStyle = adjacent
       ? colors.lineHighlight
       : hasHighlight ? colors.lineDim : colors.lineColor
-    ctx.lineWidth = adjacent ? 3 : parent.parentId === null ? 2.5 : 1.5
+    ctx.lineWidth = adjacent ? 3 : getDisplayParentId(parent) === null ? 2.5 : 1.5
     ctx.shadowColor = adjacent ? colors.lineColor : colors.lineDim
     ctx.shadowBlur = adjacent ? 12 : 8
     ctx.stroke()
@@ -286,7 +296,8 @@ function renderFrame(
     ctx.globalAlpha = 1
 
     /* 节点标签 */
-    ctx.font = `${node.parentId === null ? '600' : '500'} ${node.parentId === null ? 11 : 9}px Outfit, system-ui`
+    const isMain = getDisplayParentId(node) === null
+    ctx.font = `${isMain ? '600' : '500'} ${isMain ? 11 : 9}px Outfit, system-ui`
     ctx.fillStyle = node.color
     ctx.globalAlpha = dimmed ? 0.2 : node.status === 'archived' ? 0.5 : colors.labelAlpha
     ctx.textAlign = 'left'
@@ -375,14 +386,29 @@ export function Topology() {
         id: node.id,
         label: node.label,
         parentId,
+        sourceSessionId: node.sourceSessionId,
         status: node.status,
         turns: node.turnCount ?? 0,
-        children: node.children.map((c) => c.id),
+        children: [],
         refs: [],
       }
       return [topo, ...node.children.flatMap((c) => flatten(c, node.id))]
     }
-    return flatten(tree, null)
+    const flatNodes = flatten(tree, null)
+    const displayChildren = new Map<string, string[]>()
+
+    for (const node of flatNodes) {
+      const displayParentId = getDisplayParentId(node)
+      if (!displayParentId) continue
+      const siblings = displayChildren.get(displayParentId) ?? []
+      siblings.push(node.id)
+      displayChildren.set(displayParentId, siblings)
+    }
+
+    return flatNodes.map((node) => ({
+      ...node,
+      children: displayChildren.get(node.id) ?? [],
+    }))
   }, [])
 
   /** 拉取并刷新拓扑树 */

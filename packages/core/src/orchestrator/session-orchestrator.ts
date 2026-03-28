@@ -163,7 +163,13 @@ export class SessionOrchestrator {
     const effectiveParentId = await this.strategy.resolveForkParent(node, this.sessions);
 
     return this.runSerial(effectiveParentId, async () => {
-      return this.withRuntime(effectiveParentId, (engine) => engine.forkSession(options));
+      return this.withRuntime(effectiveParentId, (engine) => engine.forkSession({
+        ...options,
+        metadata: {
+          ...(options.metadata ?? {}),
+          sourceSessionId: sessionId,
+        },
+      }));
     });
   }
 

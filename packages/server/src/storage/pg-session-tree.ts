@@ -226,7 +226,7 @@ export class PgSessionTree implements SessionTree {
   /** 获取完整递归树 */
   async getTree(): Promise<SessionTreeNode> {
     const { rows } = await this.client.query(
-      'SELECT id, parent_id, label, status FROM sessions WHERE space_id = $1 ORDER BY depth ASC, "index" ASC',
+      'SELECT id, parent_id, label, status, turn_count, metadata FROM sessions WHERE space_id = $1 ORDER BY depth ASC, "index" ASC',
       [this.spaceId],
     )
 
@@ -237,6 +237,9 @@ export class PgSessionTree implements SessionTree {
       const node: SessionTreeNode = {
         id: row['id'] as string,
         label: row['label'] as string,
+        sourceSessionId: typeof (row['metadata'] as Record<string, unknown> | null)?.['sourceSessionId'] === 'string'
+          ? (row['metadata'] as Record<string, unknown>)['sourceSessionId'] as string
+          : undefined,
         status: row['status'] as 'active' | 'archived',
         turnCount: (row['turn_count'] as number) ?? 0,
         children: [],
