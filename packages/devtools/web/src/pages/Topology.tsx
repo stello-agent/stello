@@ -73,6 +73,35 @@ interface LayoutNode extends TopoNode {
   brightness: number
 }
 
+type SavedNodePositions = Record<string, { x: number; y: number }>
+
+const NODE_POSITION_STORAGE_KEY = 'stello-devtools-topology-node-positions'
+
+/** 从 localStorage 读取已保存的节点位置。 */
+function readSavedNodePositions(): SavedNodePositions {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(NODE_POSITION_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, { x?: unknown; y?: unknown }>
+    return Object.fromEntries(
+      Object.entries(parsed).flatMap(([id, point]) => (
+        typeof point?.x === 'number' && typeof point?.y === 'number'
+          ? [[id, { x: point.x, y: point.y }]]
+          : []
+      )),
+    )
+  } catch {
+    return {}
+  }
+}
+
+/** 持久化节点位置到 localStorage。 */
+function writeSavedNodePositions(positions: SavedNodePositions): void {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(NODE_POSITION_STORAGE_KEY, JSON.stringify(positions))
+}
+
 /* 无 mock 数据——全部从 API 拉取 */
 
 /** 深色主题的节点颜色 */
@@ -353,6 +382,7 @@ export function Topology() {
   const [panelDetail, setPanelDetail] = useState<SessionDetail | null>(null)
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState>({ visible: false, x: 0, y: 0, nodeId: null, nodeLabel: '' })
   const [actionLoading, setActionLoading] = useState(false)
+  const [savedPositions, setSavedPositions] = useState<SavedNodePositions>(() => readSavedNodePositions())
   const navigate = useNavigate()
   const { t } = useI18n()
   const { theme } = useTheme()
@@ -378,6 +408,7 @@ export function Topology() {
   const themeRef = useRef(theme)
   useEffect(() => { highlightedRef.current = highlighted }, [highlighted])
   useEffect(() => { themeRef.current = theme }, [theme])
+  useEffect(() => { writeSavedNodePositions(savedPositions) }, [savedPositions])
 
   /** 递归展平树 */
   const flattenTree = useCallback((tree: SessionTreeNode): TopoNode[] => {
@@ -465,9 +496,12 @@ export function Topology() {
     }
     prevNodeIds.current = currentIds
 
-    const layout = computeLayout(topoNodes, size.width, size.height, theme)
+    const layout = computeLayout(topoNodes, size.width, size.height, theme).map((node) => {
+      const saved = savedPositions[node.id]
+      return saved ? { ...node, x: saved.x, y: saved.y } : node
+    })
     nodesRef.current = layout
-  }, [size, topoNodes, theme])
+  }, [savedPositions, size, topoNodes, theme])
 
   /* rAF 动画循环——读 cameraRef，带惯性衰减 */
   useEffect(() => {
@@ -595,6 +629,7 @@ export function Topology() {
   /* mouseup */
   const handleMouseUp = useCallback(() => {
     const drag = dragRef.current
+    const draggedNodeId = drag.draggingNodeId
     if (drag.active && !drag.hasMoved) {
       /* 点击（没有拖动） */
       if (drag.draggingNodeId) {
@@ -607,6 +642,14 @@ export function Topology() {
         }
       } else {
         setPanelOpen(false)
+      }
+    } else if (drag.active && drag.hasMoved && draggedNodeId) {
+      const node = nodesRef.current.find((candidate) => candidate.id === draggedNodeId)
+      if (node) {
+        setSavedPositions((prev) => ({
+          ...prev,
+          [draggedNodeId]: { x: node.x, y: node.y },
+        }))
       }
     }
     drag.active = false
