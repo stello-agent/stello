@@ -304,22 +304,24 @@ function buildMainSession(
 
       // 1. 扁平收集所有子 Session 的 L2
       const childSummaries = await storage.getAllSessionL2s()
+      const validChildSessionIds = new Set(childSummaries.map((child) => child.sessionId))
 
       // 2. 读取当前 synthesis
       const currentSynthesis = await storage.getMemory(currentMeta.id)
 
       // 3. 调用 IntegrateFn
       const result = await fn(childSummaries, currentSynthesis)
+      const filteredInsights = result.insights.filter(({ sessionId }) => validChildSessionIds.has(sessionId))
 
-      // 4. 保存 synthesis
-      await storage.putMemory(currentMeta.id, result.synthesis)
+      // 4. 在事务中一起保存 synthesis 和有效 insights，避免部分写入。
+      await storage.transaction(async (tx) => {
+        await tx.putMemory(currentMeta.id, result.synthesis)
+        for (const { sessionId, content } of filteredInsights) {
+          await tx.putInsight(sessionId, content)
+        }
+      })
 
-      // 5. 推送 insights 到各子 Session
-      for (const { sessionId, content } of result.insights) {
-        await storage.putInsight(sessionId, content)
-      }
-
-      return result
+      return { ...result, insights: filteredInsights }
     },
 
     async trimRecords(keepRecent: number): Promise<void> {

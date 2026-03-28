@@ -144,6 +144,24 @@ describe('MainSession integrate()', () => {
     expect(insight2).toBeTruthy()
   })
 
+  it('忽略返回给不存在 sessionId 的 insights', async () => {
+    const { main, storage, child1 } = await makeWithChildren()
+
+    const result = await main.integrate(async () => ({
+      synthesis: 'overview',
+      insights: [
+        { sessionId: child1.meta.id, content: '保留这条' },
+        { sessionId: 'fake-session-id', content: '丢弃这条' },
+      ],
+    }))
+
+    expect(result.insights).toEqual([
+      { sessionId: child1.meta.id, content: '保留这条' },
+    ])
+    expect(await storage.getInsight(child1.meta.id)).toBe('保留这条')
+    expect(await storage.getInsight('fake-session-id')).toBeNull()
+  })
+
   it('无子 Session 时 IntegrateFn 接收空数组', async () => {
     const { main } = await makeMainSession()
 
