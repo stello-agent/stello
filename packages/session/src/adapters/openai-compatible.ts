@@ -46,7 +46,7 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleOptions):
     const normalizedMessages = mergeConsecutiveSystemMessages(messages)
     return {
       model: options.model,
-      max_tokens: completeOptions?.maxTokens ?? 1024,
+      max_tokens: completeOptions?.maxTokens ?? 4096,
       ...(completeOptions?.temperature !== undefined && { temperature: completeOptions.temperature }),
       ...(completeOptions?.tools
         ? {
