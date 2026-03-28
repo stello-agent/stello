@@ -45,6 +45,23 @@ describe('createOpenAICompatibleAdapter', () => {
         { role: 'system', content: 'system prompt\n\nsynthesis' },
         { role: 'user', content: 'hello' },
       ],
+      max_tokens: 4096,
+      stream: false,
+    }))
+  })
+
+  it('显式传入 maxTokens 时优先使用调用方配置', async () => {
+    const adapter = createOpenAICompatibleAdapter({
+      apiKey: 'test-key',
+      baseURL: 'https://api.example.com/v1',
+      model: 'test-model',
+      maxContextTokens: 128_000,
+    })
+
+    await adapter.complete([{ role: 'user', content: 'hello' }], { maxTokens: 2048 })
+
+    expect(createCompletion).toHaveBeenCalledWith(expect.objectContaining({
+      max_tokens: 2048,
       stream: false,
     }))
   })
