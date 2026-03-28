@@ -10,4 +10,5 @@ export type {
   ToolsProvider,
   SkillsProvider,
   IntegrationProvider,
+  ResetProvider,
 } from './server/types.js'

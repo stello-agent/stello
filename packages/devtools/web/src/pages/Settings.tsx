@@ -21,10 +21,13 @@ import {
   Info,
   Sparkles,
   FileText,
+  RotateCcw,
 } from 'lucide-react'
-import { fetchConfig, patchConfig, fetchLLMConfig, patchLLMConfig, fetchPrompts, patchPrompts, fetchTools, toggleTool, fetchSkills, toggleSkill, type AgentConfig, type HotConfigPatch, type LLMConfig, type PromptsConfig, type ToolWithStatus, type SkillWithStatus } from '@/lib/api'
+import { fetchConfig, patchConfig, fetchLLMConfig, patchLLMConfig, fetchPrompts, patchPrompts, fetchTools, toggleTool, fetchSkills, toggleSkill, resetRuntime, type AgentConfig, type HotConfigPatch, type LLMConfig, type PromptsConfig, type ToolWithStatus, type SkillWithStatus } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
+import { useToast } from '@/lib/toast'
 import { EditDialog, type EditField } from '@/components/EditDialog'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 
 /** 配置卡片 */
 function Card({ title, icon: Icon, children }: { title: string; icon: React.ElementType; children: React.ReactNode }) {
@@ -141,6 +144,7 @@ interface SettingsSnapshotV1 {
 /** Settings 配置页面 */
 export function SettingsPage() {
   const { t } = useI18n()
+  const { showToast, persistToast } = useToast()
   const [config, setConfig] = useState<AgentConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -152,6 +156,8 @@ export function SettingsPage() {
   const [dialogTitle, setDialogTitle] = useState('')
   const [dialogFields, setDialogFields] = useState<EditField[]>([])
   const [dialogSaveFn, setDialogSaveFn] = useState<(values: Record<string, string | number>) => Promise<void>>(() => async () => {})
+  const [resetOpen, setResetOpen] = useState(false)
+  const [resetting, setResetting] = useState(false)
 
   /** 刷新设置页所有数据 */
   const refreshAll = useCallback(async () => {
@@ -189,10 +195,12 @@ export function SettingsPage() {
     try {
       const result = await patchConfig(patch)
       setConfig(result.config)
+      showToast('success', t('common.updateSuccess'))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
+      showToast('error', e instanceof Error ? e.message : String(e))
     }
-  }, [])
+  }, [showToast, t])
 
   /** 导出配置 JSON */
   const handleExport = useCallback(() => {
@@ -245,6 +253,7 @@ export function SettingsPage() {
         }
         if (Object.keys(patch).length > 0) {
           await patchConfig(patch)
+          showToast('success', t('common.importSuccess'))
         }
 
         const importedLlm = (json.llm && typeof json.llm === 'object') ? json.llm as Partial<LLMConfig> : null
@@ -282,10 +291,11 @@ export function SettingsPage() {
         await refreshAll()
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Invalid JSON file')
+        showToast('error', e instanceof Error ? e.message : 'Invalid JSON file')
       }
     }
     input.click()
-  }, [refreshAll])
+  }, [refreshAll, showToast, t])
 
   if (loading) {
     return (
@@ -358,6 +368,7 @@ export function SettingsPage() {
                   ], async (v) => {
                     const result = await patchLLMConfig({ model: String(v.model), baseURL: String(v.baseURL), apiKey: String(v.apiKey), temperature: Number(v.temperature), maxTokens: Number(v.maxTokens) })
                     setLlmConfig(result)
+                    showToast('success', t('common.updateSuccess'))
                   })}>
                     {llmConfig.model}
                   </ClickToEdit>
@@ -404,6 +415,7 @@ export function SettingsPage() {
                   ], async (v) => {
                     const result = await patchPrompts({ consolidate: String(v.consolidate), integrate: String(v.integrate) })
                     setPromptsConfig(result)
+                    showToast('success', t('common.updateSuccess'))
                   })}
                   className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 p-1 bg-surface rounded border border-border hover:border-primary transition-all"
                 >
@@ -612,6 +624,7 @@ export function SettingsPage() {
                     onClick={async () => {
                       const result = await toggleTool(tool.name, !tool.enabled)
                       setToolsList((prev) => ({ ...prev, tools: result.tools }))
+                      showToast('success', t('common.toggleSuccess'))
                     }}
                     className={`shrink-0 w-8 h-4 rounded-full transition-colors relative ${tool.enabled ? 'bg-primary' : 'bg-border'}`}
                   >
@@ -639,6 +652,7 @@ export function SettingsPage() {
                     onClick={async () => {
                       const result = await toggleSkill(skill.name, !skill.enabled)
                       setSkillsList((prev) => ({ ...prev, skills: result.skills }))
+                      showToast('success', t('common.toggleSuccess'))
                     }}
                     className={`shrink-0 w-8 h-4 rounded-full transition-colors relative ${skill.enabled ? 'bg-primary' : 'bg-border'}`}
                   >
@@ -668,6 +682,23 @@ export function SettingsPage() {
             <p className="text-[11px] text-text-muted italic">{t('settings.hooks.none')}</p>
           )}
         </Card>
+
+        <Card title={t('settings.reset.title')} icon={RotateCcw}>
+          <div className="space-y-3">
+            <p className="text-[11px] text-text-muted leading-relaxed">{t('settings.reset.desc')}</p>
+            <div className="flex items-start gap-2 px-3 py-2 bg-[#FFF1F1] border border-[#F1C3C3] rounded-lg">
+              <XCircle size={14} className="text-[#C84B4B] shrink-0 mt-0.5" />
+              <p className="text-[11px] leading-relaxed text-[#9F2F2F]">{t('settings.reset.warning')}</p>
+            </div>
+            <button
+              onClick={() => setResetOpen(true)}
+              className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold text-white bg-[#C84B4B] border border-[#B54242] rounded-lg hover:bg-[#B54242] transition-colors shadow-sm"
+            >
+              <RotateCcw size={13} />
+              {t('settings.reset.button')}
+            </button>
+          </div>
+        </Card>
       </div>
 
       <EditDialog
@@ -676,6 +707,25 @@ export function SettingsPage() {
         fields={dialogFields}
         onSave={dialogSaveFn}
         onClose={() => setDialogOpen(false)}
+      />
+      <ConfirmDialog
+        open={resetOpen}
+        title={t('settings.reset.confirmTitle')}
+        description={t('settings.reset.confirmBody')}
+        confirmLabel={resetting ? t('settings.reset.running') : t('settings.reset.button')}
+        destructive
+        loading={resetting}
+        onClose={() => setResetOpen(false)}
+        onConfirm={async () => {
+          setResetting(true)
+          try {
+            await resetRuntime()
+            persistToast('success', t('common.resetSuccess'))
+            window.location.href = '/conversation'
+          } finally {
+            setResetting(false)
+          }
+        }}
       />
     </div>
   )

@@ -109,6 +109,24 @@ body {
   animation: popIn 0.15s ease-out;
 }
 
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.toast-enter {
+  animation: toastIn 0.18s ease-out;
+}
+
+@keyframes toastOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(8px); }
+}
+
+.toast-exit {
+  animation: toastOut 0.22s ease-in forwards;
+}
+
 /* highlight.js 背景色覆盖 */
 .hljs {
   background: #2a2520 !important;

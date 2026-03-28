@@ -3,6 +3,7 @@ import { Sparkles, MessageSquare, Search, Activity, Settings, Globe, Sun, Moon }
 import { cn } from '@/lib/utils'
 import { I18nContext, useI18n, useI18nProvider } from '@/lib/i18n'
 import { ThemeContext, useTheme, useThemeProvider } from '@/lib/theme'
+import { ToastContext, useToastProvider } from '@/lib/toast'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { Topology } from '@/pages/Topology'
 import { Conversation } from '@/pages/Conversation'
@@ -74,42 +75,46 @@ export function App() {
   const location = useLocation()
   const i18n = useI18nProvider()
   const themeCtx = useThemeProvider()
+  const toast = useToastProvider()
 
   return (
     <ThemeContext.Provider value={themeCtx}>
-    <I18nContext.Provider value={i18n}>
-      <div className="flex h-screen w-screen overflow-hidden">
-        {/* 侧边栏 */}
-        <nav className="flex flex-col items-center w-16 bg-card border-r border-border py-4 gap-2 shrink-0 transition-colors duration-200">
-          <div className="flex items-center justify-center w-9 h-9 bg-primary rounded-[10px] mb-3 shadow-md transition-transform duration-200 hover:scale-110 cursor-pointer">
-            <span className="text-white text-lg font-bold">S</span>
-          </div>
-          {navItems.map((item) => (
-            <NavItem key={item.to} {...item} />
-          ))}
-          <div className="mt-auto flex flex-col gap-1">
-            <ThemeSwitcher />
-            <LocaleSwitcher />
-          </div>
-        </nav>
+      <I18nContext.Provider value={i18n}>
+        <ToastContext.Provider value={toast.contextValue}>
+          <div className="flex h-screen w-screen overflow-hidden">
+            {/* 侧边栏 */}
+            <nav className="flex flex-col items-center w-16 bg-card border-r border-border py-4 gap-2 shrink-0 transition-colors duration-200">
+              <div className="flex items-center justify-center w-9 h-9 bg-primary rounded-[10px] mb-3 shadow-md transition-transform duration-200 hover:scale-110 cursor-pointer">
+                <span className="text-white text-lg font-bold">S</span>
+              </div>
+              {navItems.map((item) => (
+                <NavItem key={item.to} {...item} />
+              ))}
+              <div className="mt-auto flex flex-col gap-1">
+                <ThemeSwitcher />
+                <LocaleSwitcher />
+              </div>
+            </nav>
 
-        {/* 主内容区 */}
-        <main className="flex-1 min-w-0 overflow-hidden">
-          <ErrorBoundary key={location.pathname}>
-            <div className="h-full page-enter">
-              <Routes location={location}>
-                <Route path="/" element={<Navigate to="/topology" replace />} />
-                <Route path="/topology" element={<Topology />} />
-                <Route path="/conversation" element={<Conversation />} />
-                <Route path="/inspector" element={<Inspector />} />
-                <Route path="/events" element={<Events />} />
-                <Route path="/settings" element={<SettingsPage />} />
-              </Routes>
-            </div>
-          </ErrorBoundary>
-        </main>
-      </div>
-    </I18nContext.Provider>
+            {/* 主内容区 */}
+            <main className="flex-1 min-w-0 overflow-hidden">
+              <ErrorBoundary key={location.pathname}>
+                <div className="h-full page-enter">
+                  <Routes location={location}>
+                    <Route path="/" element={<Navigate to="/topology" replace />} />
+                    <Route path="/topology" element={<Topology />} />
+                    <Route path="/conversation" element={<Conversation />} />
+                    <Route path="/inspector" element={<Inspector />} />
+                    <Route path="/events" element={<Events />} />
+                    <Route path="/settings" element={<SettingsPage />} />
+                  </Routes>
+                </div>
+              </ErrorBoundary>
+            </main>
+          </div>
+          {toast.viewport}
+        </ToastContext.Provider>
+      </I18nContext.Provider>
     </ThemeContext.Provider>
   )
 }

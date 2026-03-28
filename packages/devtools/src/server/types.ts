@@ -62,6 +62,11 @@ export interface IntegrationProvider {
   trigger(): Promise<{ synthesis: string; insightCount: number }>
 }
 
+/** 清空数据并重新初始化运行时。 */
+export interface ResetProvider {
+  reset(): Promise<void>
+}
+
 /** DevTools 可持久化的全局状态 */
 export interface DevtoolsPersistedState {
   hotConfig?: StelloAgentHotConfig
@@ -108,6 +113,8 @@ export interface DevtoolsOptions {
   skills?: SkillsProvider
   /** 手动触发 integration */
   integration?: IntegrationProvider
+  /** 清空数据并重新初始化 */
+  reset?: ResetProvider
   /** 全局 DevTools 状态持久化 */
   stateStore?: DevtoolsStateStore
 }

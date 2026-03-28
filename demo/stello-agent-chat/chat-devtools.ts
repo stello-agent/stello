@@ -1,4 +1,6 @@
 import 'dotenv/config'
+import { rm } from 'node:fs/promises'
+import { basename, resolve } from 'node:path'
 import {
   NodeFileSystemAdapter,
   SessionTreeImpl,
@@ -34,11 +36,13 @@ import type { Session } from '../../packages/session/src/types/session-api.ts'
 import type { SessionMeta as SessionComponentMeta } from '../../packages/session/src/types/session.ts'
 
 const dataDir = './tmp/stello-agent-chat'
+const dataDirAbs = resolve(process.cwd(), dataDir)
 const host = process.env.DEMO_HOST ?? '127.0.0.1'
 
 const openaiApiKey = process.env.OPENAI_API_KEY
 const openaiBaseURL = process.env.OPENAI_BASE_URL ?? 'https://api.minimaxi.com/v1'
 const openaiModel = process.env.OPENAI_MODEL ?? 'MiniMax-M2.7'
+const openaiMaxContextTokens = Number(process.env.OPENAI_MAX_CONTEXT_TOKENS ?? 1_000_000)
 
 if (!openaiApiKey) {
   console.error('Missing OPENAI_API_KEY')
@@ -455,8 +459,20 @@ async function bootstrap() {
   const fs = new NodeFileSystemAdapter(dataDir)
   const sessions = new SessionTreeImpl(fs)
   const stateStore = createFileDevtoolsStateStore(fs)
-  let currentLlm = createOpenAICompatibleAdapter({ apiKey: openaiApiKey!, baseURL: openaiBaseURL, model: openaiModel })
-  let currentLlmConfig = { model: openaiModel, baseURL: openaiBaseURL, apiKey: openaiApiKey!, temperature: 0.7, maxTokens: 2048 }
+  let currentLlm = createOpenAICompatibleAdapter({
+    apiKey: openaiApiKey!,
+    baseURL: openaiBaseURL,
+    model: openaiModel,
+    maxContextTokens: openaiMaxContextTokens,
+  })
+  let currentLlmConfig = {
+    model: openaiModel,
+    baseURL: openaiBaseURL,
+    apiKey: openaiApiKey!,
+    temperature: 0.7,
+    maxTokens: 2048,
+    maxContextTokens: openaiMaxContextTokens,
+  }
 
   const llmCall: LLMCallFn = async (messages) => {
     const result = await currentLlm.complete(
@@ -808,9 +824,21 @@ async function bootstrap() {
     },
     llm: {
       getConfig: () => ({ ...currentLlmConfig }),
-      setConfig: (cfg: { model: string; baseURL: string; apiKey?: string; temperature?: number; maxTokens?: number }) => {
-        const newLlm = createOpenAICompatibleAdapter({ apiKey: cfg.apiKey ?? currentLlmConfig.apiKey, baseURL: cfg.baseURL, model: cfg.model })
-        currentLlmConfig = { model: cfg.model, baseURL: cfg.baseURL, apiKey: cfg.apiKey ?? currentLlmConfig.apiKey, temperature: cfg.temperature ?? currentLlmConfig.temperature, maxTokens: cfg.maxTokens ?? currentLlmConfig.maxTokens }
+      setConfig: (cfg: { model: string; baseURL: string; apiKey?: string; temperature?: number; maxTokens?: number; maxContextTokens?: number }) => {
+        const newLlm = createOpenAICompatibleAdapter({
+          apiKey: cfg.apiKey ?? currentLlmConfig.apiKey,
+          baseURL: cfg.baseURL,
+          model: cfg.model,
+          maxContextTokens: cfg.maxContextTokens ?? currentLlmConfig.maxContextTokens,
+        })
+        currentLlmConfig = {
+          model: cfg.model,
+          baseURL: cfg.baseURL,
+          apiKey: cfg.apiKey ?? currentLlmConfig.apiKey,
+          temperature: cfg.temperature ?? currentLlmConfig.temperature,
+          maxTokens: cfg.maxTokens ?? currentLlmConfig.maxTokens,
+          maxContextTokens: cfg.maxContextTokens ?? currentLlmConfig.maxContextTokens,
+        }
         currentLlm = newLlm
         for (const entry of Array.from(sessionMap.values())) {
           const s = 'main' in entry && entry.main ? entry.main : entry.session
@@ -858,24 +886,87 @@ async function requireNode(sessions: SessionTreeImpl, sessionId: string): Promis
 }
 
 async function main() {
-  const app = await bootstrap()
+  type DemoApp = Awaited<ReturnType<typeof bootstrap>>
+  let currentApp: DemoApp = await bootstrap()
 
   if (process.env.DEMO_DRY_RUN === '1') {
     console.log('Bootstrap succeeded.')
     return
   }
 
+  const agentProxy = new Proxy({}, {
+    get(_target, prop) {
+      const value = currentApp.agent[prop as keyof typeof currentApp.agent]
+      return typeof value === 'function' ? value.bind(currentApp.agent) : value
+    },
+  })
+
+  const llmProxy = {
+    getConfig: () => currentApp.llm.getConfig(),
+    setConfig: (config: Parameters<typeof currentApp.llm.setConfig>[0]) => currentApp.llm.setConfig(config),
+  }
+
+  const promptsProxy = {
+    getPrompts: () => currentApp.prompts.getPrompts(),
+    setPrompts: (prompts: Parameters<typeof currentApp.prompts.setPrompts>[0]) => currentApp.prompts.setPrompts(prompts),
+  }
+
+  const sessionAccessProxy = {
+    getSystemPrompt: (sessionId: string) => currentApp.sessionAccess.getSystemPrompt(sessionId),
+    setSystemPrompt: (sessionId: string, content: string) => currentApp.sessionAccess.setSystemPrompt(sessionId, content),
+    getConsolidatePrompt: (sessionId: string) => currentApp.sessionAccess.getConsolidatePrompt?.(sessionId) ?? Promise.resolve(null),
+    setConsolidatePrompt: (sessionId: string, content: string) => currentApp.sessionAccess.setConsolidatePrompt?.(sessionId, content) ?? Promise.resolve(),
+    getIntegratePrompt: (sessionId: string) => currentApp.sessionAccess.getIntegratePrompt?.(sessionId) ?? Promise.resolve(null),
+    setIntegratePrompt: (sessionId: string, content: string) => currentApp.sessionAccess.setIntegratePrompt?.(sessionId, content) ?? Promise.resolve(),
+    getScope: (sessionId: string) => currentApp.sessionAccess.getScope?.(sessionId) ?? Promise.resolve(null),
+    setScope: (sessionId: string, content: string) => currentApp.sessionAccess.setScope?.(sessionId, content) ?? Promise.resolve(),
+    injectRecord: (sessionId: string, record: { role: string; content: string }) => currentApp.sessionAccess.injectRecord?.(sessionId, record) ?? Promise.resolve(),
+  }
+
+  const toolsProxy = {
+    getTools: () => currentApp.tools.getTools(),
+    setEnabled: (name: string, enabled: boolean) => currentApp.tools.setEnabled(name, enabled),
+  }
+
+  const skillsProxy = {
+    getSkills: () => currentApp.skills.getSkills(),
+    setEnabled: (name: string, enabled: boolean) => currentApp.skills.setEnabled(name, enabled),
+  }
+
+  const integrationProxy = {
+    trigger: () => currentApp.integration.trigger(),
+  }
+
+  const stateStoreProxy = {
+    load: () => currentApp.stateStore.load(),
+    save: (state: DevtoolsPersistedState) => currentApp.stateStore.save(state),
+    reset: () => currentApp.stateStore.reset?.() ?? Promise.resolve(),
+  }
+
+  const resetProxy = {
+    async reset() {
+      console.log('[Reset] clearing demo data and reinitializing...')
+      if (basename(dataDirAbs) !== 'stello-agent-chat') {
+        throw new Error(`Refusing to reset unexpected path: ${dataDirAbs}`)
+      }
+      await rm(dataDirAbs, { recursive: true, force: true })
+      currentApp = await bootstrap()
+      console.log('[Reset] demo reinitialized')
+    },
+  }
+
   const devtoolsPort = Number(process.env.DEVTOOLS_PORT ?? 4800)
-  const dt = await startDevtools(app.agent as never, {
+  const dt = await startDevtools(agentProxy as never, {
     port: devtoolsPort,
     open: false,
-    llm: app.llm,
-    prompts: app.prompts,
-    sessionAccess: app.sessionAccess,
-    tools: app.tools,
-    skills: app.skills,
-    integration: app.integration,
-    stateStore: app.stateStore,
+    llm: llmProxy,
+    prompts: promptsProxy,
+    sessionAccess: sessionAccessProxy,
+    tools: toolsProxy,
+    skills: skillsProxy,
+    integration: integrationProxy,
+    reset: resetProxy,
+    stateStore: stateStoreProxy,
   })
 
   console.log(`\nStello 留学选校顾问 Demo`)

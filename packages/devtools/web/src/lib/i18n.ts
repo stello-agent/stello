@@ -17,6 +17,7 @@ const dict: Record<string, Record<Locale, string>> = {
   'common.apply': { en: 'Apply', zh: '应用' },
   'common.export': { en: 'Export', zh: '导出' },
   'common.import': { en: 'Import', zh: '导入' },
+  'common.restart': { en: 'Start Over', zh: '从头开始' },
   'common.live': { en: 'Live', zh: '实时' },
   'common.active': { en: 'Active', zh: '活跃' },
   'common.archived': { en: 'Archived', zh: '已归档' },
@@ -30,6 +31,10 @@ const dict: Record<string, Record<Locale, string>> = {
   'common.custom': { en: 'Custom', zh: '自定义' },
   'common.default': { en: 'Default', zh: '默认' },
   'common.readOnly': { en: 'Read-only', zh: '只读' },
+  'common.updateSuccess': { en: 'Configuration updated', zh: '配置更新成功' },
+  'common.resetSuccess': { en: 'Data cleared successfully', zh: '数据清空成功' },
+  'common.importSuccess': { en: 'Configuration imported', zh: '配置导入成功' },
+  'common.toggleSuccess': { en: 'Status updated', zh: '状态更新成功' },
 
   // ─── Topology ───
   'topo.title': { en: 'Session Topology', zh: '会话拓扑' },
@@ -63,7 +68,9 @@ const dict: Record<string, Record<Locale, string>> = {
   'conv.loadFailed': { en: 'Failed to load sessions', zh: '加载会话失败' },
   'conv.noSession': { en: 'No session', zh: '未选择会话' },
   'conv.context': { en: 'Context', zh: '上下文' },
-  'conv.thinking': { en: 'Thinking...', zh: '思考中...' },
+  'conv.processing': { en: 'Processing request...', zh: '正在处理请求...' },
+  'conv.thinking': { en: 'Reasoning', zh: '内部推理' },
+  'conv.thinkingDone': { en: 'Reasoning complete', zh: '思考完成' },
   'conv.arguments': { en: 'ARGUMENTS', zh: '参数' },
   'conv.result': { en: 'RESULT', zh: '结果' },
   'conv.toolRound': { en: 'tool round', zh: '次工具轮' },
@@ -188,6 +195,13 @@ const dict: Record<string, Record<Locale, string>> = {
   'settings.cap.noSkills': { en: 'No skills registered', zh: '未注册技能' },
   'settings.hooks.title': { en: 'Engine Hooks', zh: '引擎钩子' },
   'settings.hooks.none': { en: 'No hooks registered', zh: '未注册钩子' },
+  'settings.reset.title': { en: 'Start Over', zh: '从头开始' },
+  'settings.reset.desc': { en: 'Clear all demo data and reinitialize the running app from scratch.', zh: '清空当前 demo 的全部数据，并重新初始化运行中的应用。' },
+  'settings.reset.warning': { en: 'Danger zone: this will permanently delete all demo data under /Users/bytedance/Github/stello/tmp/stello-agent-chat.', zh: '危险操作：这会永久删除目录 /Users/bytedance/Github/stello/tmp/stello-agent-chat 下的全部 demo 数据。' },
+  'settings.reset.button': { en: 'Delete all data and start over', zh: '清空全部数据并从头开始' },
+  'settings.reset.confirmTitle': { en: 'Clear all data and start over?', zh: '确认清空数据并重新开始？' },
+  'settings.reset.confirmBody': { en: 'This will delete all sessions, records, prompts, and runtime state under /Users/bytedance/Github/stello/tmp/stello-agent-chat, then bootstrap a fresh demo.\n\nThis action cannot be undone.', zh: '这会删除目录 /Users/bytedance/Github/stello/tmp/stello-agent-chat 中的全部会话、记录、提示词和运行时状态，然后重新初始化一个全新的 demo。\n\n此操作不可撤销。' },
+  'settings.reset.running': { en: 'Reinitializing...', zh: '重新初始化中...' },
 }
 
 /** i18n 上下文值 */

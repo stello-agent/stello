@@ -160,6 +160,7 @@ export async function startDevtools(
     options.tools,
     options.skills,
     options.integration,
+    options.reset,
     options.stateStore,
   )
   app.route('/api', api)

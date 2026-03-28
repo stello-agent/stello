@@ -212,14 +212,31 @@ describe('devtools REST routes', () => {
 
   it('GET /sessions/:id/detail 返回详细数据', async () => {
     const agent = createMockAgent()
+    agent.config.memory.readRecords.mockResolvedValue([
+      {
+        role: 'assistant',
+        content: '我先调研几个项目。',
+        timestamp: '2026-03-28T12:00:02.000Z',
+        metadata: {
+          toolCalls: [{ id: 'tool_1', name: 'search_programs', input: { region: 'US', major: 'CS' } }],
+        },
+      },
+    ])
     const app = new Hono()
     app.route('/api', createRoutes(agent as never))
 
     const res = await app.request('/api/sessions/sess-1/detail')
     expect(res.status).toBe(200)
-    const body = await res.json() as { meta: { id: string }; records: unknown[]; l2: null; scope: null }
+    const body = await res.json() as {
+      meta: { id: string }
+      records: Array<{ metadata?: { toolCalls?: Array<{ id: string; name: string; input: Record<string, unknown> }> } }>
+      l2: null
+      scope: null
+    }
     expect(body.meta.id).toBe('sess-1')
-    expect(body.records).toEqual([])
+    expect(body.records[0]?.metadata?.toolCalls).toEqual([
+      { id: 'tool_1', name: 'search_programs', input: { region: 'US', major: 'CS' } },
+    ])
   })
 
   it('GET /sessions/:id/detail 优先返回 sessionAccess 的实时 scope', async () => {
@@ -270,7 +287,7 @@ describe('devtools REST routes', () => {
       save: vi.fn().mockResolvedValue(undefined),
     }
     const app = new Hono()
-    app.route('/api', createRoutes(agent as never, undefined, undefined, llm, prompts, undefined, tools, skills, undefined, stateStore))
+    app.route('/api', createRoutes(agent as never, undefined, undefined, llm, prompts, undefined, tools, skills, undefined, undefined, stateStore))
 
     const res = await app.request('/api/prompts', {
       method: 'PATCH',
@@ -292,7 +309,7 @@ describe('devtools REST routes', () => {
       save: vi.fn().mockResolvedValue(undefined),
     }
     const app = new Hono()
-    app.route('/api', createRoutes(agent as never, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stateStore))
+    app.route('/api', createRoutes(agent as never, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, stateStore))
 
     const res = await app.request('/api/config', {
       method: 'PATCH',
@@ -305,5 +322,22 @@ describe('devtools REST routes', () => {
         runtime: { idleTtlMs: 5000 },
       }),
     }))
+  })
+
+  it('POST /reset 会清空 stateStore 并调用 reset provider', async () => {
+    const agent = createMockAgent()
+    const reset = { reset: vi.fn().mockResolvedValue(undefined) }
+    const stateStore = {
+      load: vi.fn().mockResolvedValue(null),
+      save: vi.fn().mockResolvedValue(undefined),
+      reset: vi.fn().mockResolvedValue(undefined),
+    }
+    const app = new Hono()
+    app.route('/api', createRoutes(agent as never, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, reset, stateStore))
+
+    const res = await app.request('/api/reset', { method: 'POST' })
+    expect(res.status).toBe(200)
+    expect(stateStore.reset).toHaveBeenCalledTimes(1)
+    expect(reset.reset).toHaveBeenCalledTimes(1)
   })
 })

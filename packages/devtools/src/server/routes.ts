@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import type { StelloAgent, StelloAgentHotConfig } from '@stello-ai/core'
-import type { LLMConfigProvider, PromptProvider, SessionAccessProvider, ToolsProvider, SkillsProvider, IntegrationProvider, DevtoolsPersistedState, DevtoolsStateStore } from './types.js'
+import type { LLMConfigProvider, PromptProvider, SessionAccessProvider, ToolsProvider, SkillsProvider, IntegrationProvider, ResetProvider, DevtoolsPersistedState, DevtoolsStateStore } from './types.js'
 
 /** 让主 session 固定排第一，其余保持原始顺序 */
 async function orderSessionsWithMainFirst(agent: StelloAgent) {
@@ -160,6 +160,7 @@ export function createRoutes(
   toolsProvider?: ToolsProvider,
   skillsProvider?: SkillsProvider,
   integrationProvider?: IntegrationProvider,
+  resetProvider?: ResetProvider,
   stateStore?: DevtoolsStateStore,
 ): Hono {
   const app = new Hono()
@@ -615,6 +616,15 @@ export function createRoutes(
     const result = await integrationProvider.trigger()
     onEvent?.({ type: 'integrate.done', data: { synthesis: result.synthesis.slice(0, 100), insightCount: result.insightCount } })
     return c.json({ ok: true, ...result })
+  })
+
+  /** 清空数据并重新初始化 */
+  app.post('/reset', async (c) => {
+    if (!resetProvider) return c.json({ error: 'Reset provider not configured' }, 400)
+    await stateStore?.reset?.()
+    await resetProvider.reset()
+    onEvent?.({ type: 'reset.done' })
+    return c.json({ ok: true })
   })
 
   /** 获取事件历史 */

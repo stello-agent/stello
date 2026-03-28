@@ -18,7 +18,17 @@ import {
   XCircle,
   Clock,
 } from 'lucide-react'
-import { fetchSessions, fetchConfig, fetchSessionDetail, enterSession, consolidateSession, sendTurn, type AgentConfig, type SessionDetail } from '@/lib/api'
+import {
+  fetchSessions,
+  fetchConfig,
+  fetchSessionDetail,
+  enterSession,
+  consolidateSession,
+  sendTurn,
+  type AgentConfig,
+  type SessionDetail,
+  type TurnRecord,
+} from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 
 /** 可点击的 Tool/Skill badge，展开显示详情列表 */
@@ -113,14 +123,146 @@ interface TurnStats {
   toolCallsExecuted: number
 }
 
-/** 对话消息 */
-interface ChatMessage {
+/** 对话时间线里的文本消息 */
+interface ChatTextItem {
   id: string
-  role: 'user' | 'assistant'
+  kind: 'user' | 'assistant'
   content: string
   streaming?: boolean
-  toolCalls?: ToolCallInfo[]
   turnStats?: TurnStats
+}
+
+/** 对话时间线里的工具事件 */
+interface ChatToolItem {
+  id: string
+  kind: 'tool'
+  toolCall: ToolCallInfo
+}
+
+/** Conversation 中间区的时间线元素。 */
+type ChatItem = ChatTextItem | ChatToolItem
+
+/** 解析 tool message 的 JSON 负载。 */
+function parseToolRecordContent(content: string): {
+  toolName: string
+  args: Record<string, unknown>
+  success: boolean
+  data: unknown
+  error: string | null
+} | null {
+  try {
+    const parsed = JSON.parse(content) as {
+      toolName?: unknown
+      args?: unknown
+      success?: unknown
+      data?: unknown
+      error?: unknown
+    }
+    return {
+      toolName: typeof parsed.toolName === 'string' ? parsed.toolName : 'tool_result',
+      args: typeof parsed.args === 'object' && parsed.args ? parsed.args as Record<string, unknown> : {},
+      success: Boolean(parsed.success),
+      data: parsed.data,
+      error: typeof parsed.error === 'string' ? parsed.error : null,
+    }
+  } catch {
+    return null
+  }
+}
+
+/** 生成 L3 侧边栏里更可读的 record 摘要。 */
+function summarizeRecord(record: TurnRecord): string {
+  if (record.role === 'tool') {
+    const parsed = parseToolRecordContent(record.content)
+    if (!parsed) return record.content
+    const status = parsed.success ? 'success' : 'error'
+    return `${parsed.toolName} (${status})`
+  }
+  return parseThinkContent(record.content).content || record.content
+}
+
+/** 从 assistant record 中抽取结构化的工具调用。 */
+function extractToolCalls(record: TurnRecord): ToolCallInfo[] {
+  if (!Array.isArray(record.metadata?.toolCalls)) return []
+  return record.metadata.toolCalls.map((toolCall) => ({
+    id: toolCall.id,
+    name: toolCall.name,
+    args: JSON.stringify(toolCall.input, null, 2),
+  }))
+}
+
+/** 把整段历史 L3 records 还原成按时序渲染的时间线。 */
+function buildHistoryItems(records: TurnRecord[]): ChatItem[] {
+  const items: ChatItem[] = []
+  const toolItemsById = new Map<string, ChatToolItem>()
+
+  for (const [index, record] of records.entries()) {
+    if (record.role === 'user') {
+      items.push({
+        id: `hist-${index}`,
+        kind: 'user',
+        content: record.content ?? '',
+      })
+      continue
+    }
+
+    if (record.role === 'tool') {
+      const parsed = parseToolRecordContent(record.content ?? '')
+      const toolCallId = record.metadata?.toolCallId
+      const matchedToolItem = toolCallId ? toolItemsById.get(toolCallId) : undefined
+
+      if (parsed && matchedToolItem) {
+        matchedToolItem.toolCall.result = parsed.error
+          ? parsed.error
+          : parsed.data !== undefined
+            ? JSON.stringify(parsed.data, null, 2)
+            : undefined
+        matchedToolItem.toolCall.success = parsed.success
+        matchedToolItem.toolCall.name = parsed.toolName
+        if (matchedToolItem.toolCall.args.trim().length === 0) {
+          matchedToolItem.toolCall.args = JSON.stringify(parsed.args, null, 2)
+        }
+        continue
+      }
+
+      const fallbackToolItem: ChatToolItem = {
+        id: `hist-${index}`,
+        kind: 'tool',
+        toolCall: {
+          id: toolCallId ?? `tool-result-${index}`,
+          name: parsed?.toolName ?? 'tool_result',
+          args: JSON.stringify(parsed?.args ?? {}, null, 2),
+          result: parsed?.error
+            ? parsed.error
+            : parsed?.data !== undefined
+              ? JSON.stringify(parsed.data, null, 2)
+              : record.content ?? '',
+          success: parsed?.success,
+        },
+      }
+      items.push(fallbackToolItem)
+      toolItemsById.set(fallbackToolItem.toolCall.id, fallbackToolItem)
+      continue
+    }
+
+    items.push({
+      id: `hist-${index}`,
+      kind: 'assistant',
+      content: record.content ?? '',
+    })
+
+    for (const toolCall of extractToolCalls(record)) {
+      const toolItem: ChatToolItem = {
+        id: `hist-${index}-tool-${toolCall.id}`,
+        kind: 'tool',
+        toolCall,
+      }
+      items.push(toolItem)
+      toolItemsById.set(toolCall.id, toolItem)
+    }
+  }
+
+  return items
 }
 
 /** 过滤 think 标签——提取 think 内容和正文 */
@@ -136,19 +278,21 @@ function MarkdownMessage({ text, streaming }: { text: string; streaming?: boolea
   const { t } = useI18n()
   const { think, content } = useMemo(() => parseThinkContent(text), [text])
   const displayText = content || (streaming ? '' : text)
+  const showReasoning = Boolean(think)
+  const reasoningLabel = streaming ? t('conv.thinking') : t('conv.thinkingDone')
 
   return (
     <div className="space-y-2">
       {streaming && !displayText && (
         <div className="flex items-center gap-2 text-[12px] text-text-secondary">
           <Loader2 size={14} className="animate-spin text-primary" />
-          <span>{t('common.loading')}</span>
+          <span>{t('conv.processing')}</span>
         </div>
       )}
-      {think && (
+      {showReasoning && (
         <details className="group">
           <summary className="text-[10px] text-text-muted cursor-pointer hover:text-text-secondary transition-colors">
-            {t('conv.thinking')}
+            {reasoningLabel}
           </summary>
           <div className="mt-1 px-3 py-2 bg-surface rounded-lg border border-border/30 text-[11px] text-text-muted leading-relaxed whitespace-pre-wrap">
             {think}
@@ -229,7 +373,7 @@ export function Conversation() {
   const initialSessionId = searchParams.get('session')
   const [sessions, setSessions] = useState<SessionItem[]>([])
   const [selectedSession, setSelectedSession] = useState<SessionItem | null>(null)
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [items, setItems] = useState<ChatItem[]>([])
   const [detail, setDetail] = useState<SessionDetail | null>(null)
   const [activeTab, setActiveTab] = useState<'l3' | 'l2' | 'insights' | 'prompt'>('l3')
   const [inputValue, setInputValue] = useState('')
@@ -311,19 +455,14 @@ export function Conversation() {
   /* 切换 session 时拉取 detail（L2/scope）+ 历史 records */
   useEffect(() => {
     if (!selectedSession) return
-    setMessages([])
+    setItems([])
     setDetail(null)
     fetchSessionDetail(selectedSession.id)
       .then((d) => {
         setDetail(d)
         const records = d?.records ?? []
         if (records.length > 0) {
-          const msgs: ChatMessage[] = records.map((r, i) => ({
-            id: `hist-${i}`,
-            role: r.role === 'user' ? 'user' as const : 'assistant' as const,
-            content: r.content ?? '',
-          }))
-          setMessages(msgs)
+          setItems(buildHistoryItems(records))
         }
       })
       .catch(() => {
@@ -334,7 +473,7 @@ export function Conversation() {
   /* 消息列表自动滚到底部 */
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [selectedSession, messages])
+  }, [selectedSession, items])
 
   /** 发送消息——统一走非流式 turn，发送期间显示加载占位。 */
   const handleSend = async () => {
@@ -342,14 +481,14 @@ export function Conversation() {
     if (!text || !selectedSession || sendingSessions.has(selectedSession.id)) return
 
     const sendingSessionId = selectedSession.id
-    const userMsg: ChatMessage = { id: String(nextIdRef.current++), role: 'user', content: text }
-    setMessages((prev) => [...prev, userMsg])
+    const userMsg: ChatTextItem = { id: String(nextIdRef.current++), kind: 'user', content: text }
+    setItems((prev) => [...prev, userMsg])
     setInputValue('')
     setSendingSessions((prev) => new Set(prev).add(sendingSessionId))
 
     const botId = String(nextIdRef.current++)
     /* 先创建空的 streaming 占位 */
-    setMessages((prev) => [...prev, { id: botId, role: 'assistant', content: '', streaming: true }])
+    setItems((prev) => [...prev, { id: botId, kind: 'assistant', content: '', streaming: true }])
 
     try {
       /* enter session */
@@ -361,19 +500,31 @@ export function Conversation() {
         toolRoundCount: turn.toolRoundCount ?? 0,
         toolCallsExecuted: turn.toolCallsExecuted ?? 0,
       } : undefined
-      const toolCalls: ToolCallInfo[] | undefined = turn?.toolCalls?.map((toolCall) => ({
-        id: toolCall.id,
-        name: toolCall.name,
-        args: JSON.stringify(toolCall.args, null, 2),
-        success: toolCall.success,
+      const toolItems: ChatToolItem[] = (turn?.toolCalls ?? []).map((toolCall) => ({
+        id: `${botId}-${toolCall.id}`,
+        kind: 'tool',
+        toolCall: {
+          id: toolCall.id,
+          name: toolCall.name,
+          args: JSON.stringify(toolCall.args, null, 2),
+          success: toolCall.success,
         result: toolCall.error
           ? toolCall.error
           : toolCall.data !== undefined
             ? JSON.stringify(toolCall.data, null, 2)
             : undefined,
         duration: toolCall.duration,
+        },
       }))
-      setMessages((prev) => prev.map((m) => m.id === botId ? { ...m, content, streaming: false, turnStats, toolCalls } : m))
+      setItems((prev) => {
+        const next = prev.map((item) => item.id === botId && item.kind === 'assistant'
+          ? { ...item, content, streaming: false, turnStats }
+          : item)
+        const placeholderIndex = next.findIndex((item) => item.id === botId)
+        if (placeholderIndex === -1 || toolItems.length === 0) return next
+        next.splice(placeholderIndex, 0, ...toolItems)
+        return next
+      })
 
       /* 刷新 detail 和 session 列表 */
       setTimeout(() => {
@@ -381,9 +532,9 @@ export function Conversation() {
         refreshSessions()
       }, 500)
     } catch (err) {
-      setMessages((prev) => prev.map((m) => m.id === botId
-        ? { ...m, content: `⚠ Error: ${err instanceof Error ? err.message : 'Failed to send'}`, streaming: false }
-        : m
+      setItems((prev) => prev.map((item) => item.id === botId && item.kind === 'assistant'
+        ? { ...item, content: `⚠ Error: ${err instanceof Error ? err.message : 'Failed to send'}`, streaming: false }
+        : item
       ))
     } finally {
       setSendingSessions((prev) => { const next = new Set(prev); next.delete(sendingSessionId); return next })
@@ -468,35 +619,32 @@ export function Conversation() {
         </div>
 
         <div className="flex-1 overflow-y-auto bg-surface px-6 py-5 space-y-4">
-          {messages.length === 0 && !(selectedSession && sendingSessions.has(selectedSession.id)) && (
+          {items.length === 0 && !(selectedSession && sendingSessions.has(selectedSession.id)) && (
             <div className="flex items-center justify-center h-full">
               <p className="text-sm text-text-muted">{t('conv.noMessages')}</p>
             </div>
           )}
-          {messages.map((msg, i) => (
-            <div key={msg.id} className="page-enter" style={{ animationDelay: `${i * 50}ms`, animationFillMode: 'both' }}>
-              {msg.role === 'user' ? (
+          {items.map((item, i) => (
+            <div key={item.id} className="page-enter" style={{ animationDelay: `${i * 50}ms`, animationFillMode: 'both' }}>
+              {item.kind === 'user' ? (
                 <div className="flex justify-end">
                   <div className="bg-primary text-white rounded-xl rounded-br-sm px-3.5 py-2.5 max-w-md transition-shadow hover:shadow-lg">
-                    <p className="text-[13px] leading-relaxed">{msg.content}</p>
+                    <p className="text-[13px] leading-relaxed">{item.content}</p>
                   </div>
+                </div>
+              ) : item.kind === 'tool' ? (
+                <div className="max-w-lg">
+                  <ToolCallCard toolCall={item.toolCall} />
                 </div>
               ) : (
                 <div className="space-y-2">
                   <div className="bg-card rounded-xl rounded-bl-sm px-3.5 py-2.5 max-w-lg shadow-sm border border-border/30 transition-shadow hover:shadow-md">
-                    <MarkdownMessage text={msg.content} streaming={msg.streaming} />
+                    <MarkdownMessage text={item.content} streaming={item.streaming} />
                   </div>
-                  {msg.toolCalls && msg.toolCalls.length > 0 && (
-                    <div className="space-y-1.5 max-w-lg">
-                      {msg.toolCalls.map((tc) => (
-                        <ToolCallCard key={tc.id} toolCall={tc} />
-                      ))}
-                    </div>
-                  )}
-                  {msg.turnStats && (msg.turnStats.toolRoundCount > 0 || msg.turnStats.toolCallsExecuted > 0) && (
+                  {item.turnStats && (item.turnStats.toolRoundCount > 0 || item.turnStats.toolCallsExecuted > 0) && (
                     <div className="flex items-center gap-3 text-[10px] text-text-muted">
-                      <span>{msg.turnStats.toolRoundCount} {t('conv.toolRounds')}</span>
-                      <span>{msg.turnStats.toolCallsExecuted} {t('conv.toolCalls')}</span>
+                      <span>{item.turnStats.toolRoundCount} {t('conv.toolRounds')}</span>
+                      <span>{item.turnStats.toolCallsExecuted} {t('conv.toolCalls')}</span>
                     </div>
                   )}
                 </div>
@@ -556,26 +704,31 @@ export function Conversation() {
           {activeTab === 'l3' && (
             <>
               <p className="text-[10px] font-semibold text-text-muted tracking-wide">
-                {t('conv.l3History')} ({detail?.records.length ?? messages.length} {t('conv.records')})
+                {t('conv.l3History')} ({detail?.records.length ?? items.length} {t('conv.records')})
               </p>
               {(detail?.records.length ?? 0) > 0 ? (
                 <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30 space-y-2 overflow-y-auto">
                   {detail!.records.map((r, i) => (
                     <div key={i} className="flex items-start gap-2">
-                      <RoleBadge role={r.role === 'user' ? 'user' : r.role === 'system' ? 'tool' : 'asst'} />
+                      <RoleBadge role={r.role === 'user' ? 'user' : r.role === 'tool' || r.role === 'system' ? 'tool' : 'asst'} />
                       <span className="text-[11px] text-text-secondary">
-                        {(() => { const c = parseThinkContent(r.content).content || r.content; return c.length > 100 ? c.slice(0, 100) + '...' : c })()}
+                        {(() => { const c = summarizeRecord(r); return c.length > 100 ? c.slice(0, 100) + '...' : c })()}
                       </span>
                     </div>
                   ))}
                 </div>
-              ) : messages.length > 0 ? (
+              ) : items.length > 0 ? (
                 <div className="bg-card rounded-lg p-3 shadow-sm border border-border/30 space-y-2 overflow-y-auto">
-                  {messages.map((m, i) => (
+                  {items.map((item, i) => (
                     <div key={i} className="flex items-start gap-2">
-                      <RoleBadge role={m.role === 'user' ? 'user' : 'asst'} />
+                      <RoleBadge role={item.kind === 'user' ? 'user' : item.kind === 'tool' ? 'tool' : 'asst'} />
                       <span className="text-[11px] text-text-secondary">
-                        {(() => { const c = parseThinkContent(m.content).content || m.content; return c.length > 100 ? c.slice(0, 100) + '...' : c })()}
+                        {(() => {
+                          const c = item.kind === 'tool'
+                            ? `${item.toolCall.name}${item.toolCall.success !== undefined ? ` (${item.toolCall.success ? 'success' : 'error'})` : ''}`
+                            : parseThinkContent(item.content).content || item.content
+                          return c.length > 100 ? c.slice(0, 100) + '...' : c
+                        })()}
                       </span>
                     </div>
                   ))}

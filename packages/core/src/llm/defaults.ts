@@ -30,6 +30,7 @@ export const DEFAULT_INTEGRATE_PROMPT = `你是一个跨会话综合分析助手
 要求：
 - synthesis 综合所有子会话的核心发现
 - insights 给每个子会话提供跨会话视角的建议
+- insights.sessionId 必须使用输入里提供的 sessionId 原样返回，不要使用 label，也不要编造值
 - 用中文输出`
 
 /** 根据 prompt 创建默认 consolidateFn：prompt + L3 历史 → L2 */
@@ -65,7 +66,7 @@ export function createDefaultIntegrateFn(
       parts.push(`当前综合:\n${currentSynthesis}`)
     }
     parts.push(
-      `子 Session 摘要:\n${children.map((c) => `- ${c.label}: ${c.l2}`).join('\n')}`,
+      `子 Session 摘要:\n${children.map((c) => `- [sessionId=${c.sessionId}] ${c.label}: ${c.l2}`).join('\n')}`,
     )
     const raw = await llm([
       { role: 'system', content: prompt },

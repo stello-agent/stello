@@ -27,10 +27,17 @@ export interface SessionTreeNode {
 
 /** L3 对话记录 */
 export interface TurnRecord {
-  role: 'user' | 'assistant' | 'system'
+  role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
   timestamp: string
-  metadata?: Record<string, unknown>
+  metadata?: {
+    toolCallId?: string
+    toolCalls?: Array<{
+      id: string
+      name: string
+      input: Record<string, unknown>
+    }>
+  } & Record<string, unknown>
 }
 
 /** Session 详细数据 */
@@ -181,6 +188,13 @@ export function patchConfig(patch: HotConfigPatch) {
   return request<{ ok: boolean; config: AgentConfig }>('/config', {
     method: 'PATCH',
     body: JSON.stringify(patch),
+  })
+}
+
+/** 清空数据并重新初始化 */
+export function resetRuntime() {
+  return request<{ ok: boolean }>('/reset', {
+    method: 'POST',
   })
 }
 

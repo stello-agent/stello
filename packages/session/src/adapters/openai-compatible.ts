@@ -18,6 +18,22 @@ export interface OpenAICompatibleOptions {
   extraBody?: Record<string, unknown>
 }
 
+/** 合并连续的 system 消息，兼容只接受单条 system 的提供方。 */
+function mergeConsecutiveSystemMessages(messages: Message[]): Message[] {
+  const merged: Message[] = []
+
+  for (const message of messages) {
+    const previous = merged[merged.length - 1]
+    if (message.role === 'system' && previous?.role === 'system') {
+      previous.content = `${previous.content}\n\n${message.content}`
+      continue
+    }
+    merged.push({ ...message })
+  }
+
+  return merged
+}
+
 /** 创建 OpenAI 兼容协议的 LLMAdapter，可对接 MiniMax / DeepSeek / OpenAI 等 */
 export function createOpenAICompatibleAdapter(options: OpenAICompatibleOptions): LLMAdapter {
   const client = new OpenAI({
@@ -27,6 +43,7 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleOptions):
 
   /** 构建公共请求参数 */
   function buildParams(messages: Message[], completeOptions?: LLMCompleteOptions) {
+    const normalizedMessages = mergeConsecutiveSystemMessages(messages)
     return {
       model: options.model,
       max_tokens: completeOptions?.maxTokens ?? 1024,
@@ -43,7 +60,7 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleOptions):
             })),
           }
         : {}),
-      messages: messages.map((m) => ({
+      messages: normalizedMessages.map((m) => ({
         role: m.role as 'system' | 'user' | 'assistant' | 'tool',
         content: m.content,
         ...(m.role === 'tool' && m.toolCallId ? { tool_call_id: m.toolCallId } : {}),
