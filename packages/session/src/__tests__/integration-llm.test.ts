@@ -87,7 +87,12 @@ describe.skipIf(!openaiKey)('OpenAI 兼容集成测试', () => {
   let llm: LLMAdapter
   // 延迟创建，避免无 key 时 SDK 抛错
   if (openaiKey) {
-    llm = createOpenAICompatibleAdapter({ apiKey: openaiKey, model: openaiModel, baseURL: openaiBaseURL })
+    llm = createOpenAICompatibleAdapter({
+      apiKey: openaiKey,
+      model: openaiModel,
+      maxContextTokens: 128_000,
+      baseURL: openaiBaseURL,
+    })
   }
   defineLLMTests(() => llm)
   defineMainSessionLLMTests(() => llm)
@@ -102,7 +107,12 @@ const anthropicBaseURL = process.env.ANTHROPIC_BASE_URL
 describe.skipIf(!anthropicKey)('Anthropic 集成测试', () => {
   let llm: LLMAdapter
   if (anthropicKey) {
-    llm = createAnthropicAdapter({ apiKey: anthropicKey, model: anthropicModel, baseURL: anthropicBaseURL })
+    llm = createAnthropicAdapter({
+      apiKey: anthropicKey,
+      model: anthropicModel,
+      maxContextTokens: 200_000,
+      baseURL: anthropicBaseURL,
+    })
   }
   defineLLMTests(() => llm)
   defineMainSessionLLMTests(() => llm)

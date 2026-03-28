@@ -149,6 +149,7 @@ describe('send() 契约', () => {
 
   it('send() 会把 tools 定义传给 LLMAdapter.complete', async () => {
     const llm = {
+      maxContextTokens: 1_000_000,
       complete: vi.fn(async () => ({ content: null, toolCalls: [] })),
     }
     const { session } = await makeSession({
@@ -207,6 +208,7 @@ describe('send() 契约', () => {
   it('stream() 支持逐 chunk 输出，并在结束后保存 L3', async () => {
     const { session } = await makeSession({
       llm: {
+        maxContextTokens: 1_000_000,
         async complete() {
           return { content: '你好，世界' }
         },

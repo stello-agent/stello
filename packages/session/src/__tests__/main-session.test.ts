@@ -9,6 +9,7 @@ import type { LLMAdapter, LLMResult, Message } from '../types/llm.js'
 /** 创建 mock LLMAdapter */
 function makeMockLLM(response: Partial<LLMResult> = {}): LLMAdapter {
   return {
+    maxContextTokens: 1_000_000,
     complete: vi.fn(async () => ({
       content: response.content ?? 'mock response',
       toolCalls: response.toolCalls,
@@ -218,6 +219,7 @@ describe('MainSession send()', () => {
 
   it('toolResults continuation 会回放 assistant toolCalls 和 tool 消息', async () => {
     const llm = {
+      maxContextTokens: 1_000_000,
       complete: vi
         .fn()
         .mockResolvedValueOnce({
@@ -307,6 +309,7 @@ describe('MainSession send()', () => {
 
   it('stream() 流式输出', async () => {
     const llm: LLMAdapter = {
+      maxContextTokens: 1_000_000,
       complete: vi.fn(async () => ({ content: 'hello stream' })),
       async *stream() {
         yield { delta: 'hello ' }

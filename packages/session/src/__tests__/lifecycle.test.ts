@@ -226,6 +226,7 @@ describe('updateMeta() + archive() + fork()', () => {
       const llm = createMockLLM([{ content: 'ok' }])
       // 拦截 LLM 调用以检查传入的 tools
       const spyLlm = {
+        maxContextTokens: llm.maxContextTokens,
         async complete(messages: unknown[], opts?: { tools?: unknown[] }) {
           capturedTools.push(opts?.tools)
           return llm.complete(messages as never[], opts as never)
