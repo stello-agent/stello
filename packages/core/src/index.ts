@@ -131,10 +131,6 @@ export type {
   StelloAgentOrchestrationConfig,
 } from './agent/stello-agent';
 
-// 导出辅助函数
-export { toVisualizerFormat } from './utils/export';
-export type { VisualizerNode } from './utils/export';
-
 // 导出 LLM 默认实现
 export {
   createDefaultConsolidateFn,

@@ -181,7 +181,7 @@ pnpm install
 pnpm build
 ```
 
-这会按拓扑顺序构建所有包（`core`, `session`, `server`, `devtools`, `visualizer`）。
+这会按拓扑顺序构建所有包（`core`, `session`, `server`, `devtools`）。
 
 ### 6. 运行测试
 
@@ -205,7 +205,6 @@ stello/
 │   ├── server/        # 服务化层 - PostgreSQL + HTTP/WebSocket
 │   ├── devtools/      # 开发调试工具 - 星空图可视化
 │   │   └── web/       # devtools 的前端界面（独立 Vite 项目）
-│   └── visualizer/    # React 可视化组件库
 ├── demo/              # 示例代码
 ├── docs/              # 设计文档
 ├── .changeset/        # Changesets 配置和变更日志
@@ -218,7 +217,6 @@ stello/
 
 ```
 server → core → session
-visualizer → (无依赖)
 devtools → core + session
 ```
 
@@ -254,7 +252,6 @@ git checkout -b feat/your-feature-name
 - **只需要单个对话 + 记忆** → 修改 `packages/session`
 - **需要多分支对话 + 全局整合** → 修改 `packages/core`
 - **需要生产级部署 + 多租户** → 修改 `packages/server`
-- **可视化组件** → 修改 `packages/visualizer`
 - **开发调试界面** → 修改 `packages/devtools`
 
 #### 开发时的常用命令
@@ -420,7 +417,7 @@ pnpm format
 
 **Scope（可选）：**
 
-包名或模块名，如 `core`, `session`, `server`, `devtools`, `visualizer`
+包名或模块名，如 `core`, `session`, `server`, `devtools`
 
 **Subject（必填）：**
 

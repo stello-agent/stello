@@ -1005,4 +1005,4 @@ const engine = createEngine({
 - Canvas 动画
 - Skill Pipeline 权限
 - 时间轴回溯
-- 多布局模式（visualizer）
+- 多布局模式
