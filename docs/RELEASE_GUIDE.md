@@ -240,7 +240,6 @@ npm view @stello-ai/server version
 - [@stello-ai/session](https://www.npmjs.com/package/@stello-ai/session)
 - [@stello-ai/server](https://www.npmjs.com/package/@stello-ai/server)
 - [@stello-ai/devtools](https://www.npmjs.com/package/@stello-ai/devtools)
-- [@stello-ai/visualizer](https://www.npmjs.com/package/@stello-ai/visualizer)
 
 确认：
 

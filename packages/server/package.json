@@ -1,6 +1,6 @@
 {
   "name": "@stello-ai/server",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Stello server — PG-backed multi-user multi-space service layer",
   "license": "Apache-2.0",
   "author": "Stello Contributors",

@@ -1,8 +1,0 @@
-{"role":"user","content":"你好！我想用 Stello 做一个知识管理系统，能帮我规划一下吗？","timestamp":"2026-03-18T04:57:06.220Z"}
-{"role":"assistant","content":"当然可以！Stello 非常适合做知识管理系统。我建议：\n1. 用根 Session 管理整体项目规划\n2. 为不同领域（技术、产品、设计）创建子 Session\n3. 利用跨分支引用关联相关知识点\n4. 用记忆系统自动提取关键概念","timestamp":"2026-03-18T04:57:06.220Z"}
-{"role":"user","content":"听起来不错！那我应该先从哪里开始？需要准备什么？","timestamp":"2026-03-18T04:57:19.220Z"}
-{"role":"assistant","content":"建议你先：\n1. 定义核心 Schema（决定要记录哪些关键信息）\n2. 创建根 Session 作为项目入口\n3. 准备 LLM API（用于自动提取记忆）\n4. 开始第一轮对话，Stello 会自动管理记忆和分支","timestamp":"2026-03-18T04:57:19.220Z"}
-{"role":"user","content":"你好！我想用 Stello 做一个知识管理系统，能帮我规划一下吗？","timestamp":"2026-03-18T04:57:59.486Z"}
-{"role":"assistant","content":"当然可以！Stello 非常适合做知识管理系统。我建议：\n1. 用根 Session 管理整体项目规划\n2. 为不同领域（技术、产品、设计）创建子 Session\n3. 利用跨分支引用关联相关知识点\n4. 用记忆系统自动提取关键概念","timestamp":"2026-03-18T04:57:59.487Z"}
-{"role":"user","content":"听起来不错！那我应该先从哪里开始？需要准备什么？","timestamp":"2026-03-18T04:58:18.528Z"}
-{"role":"assistant","content":"建议你先：\n1. 定义核心 Schema（决定要记录哪些关键信息）\n2. 创建根 Session 作为项目入口\n3. 准备 LLM API（用于自动提取记忆）\n4. 开始第一轮对话，Stello 会自动管理记忆和分支","timestamp":"2026-03-18T04:58:18.528Z"}

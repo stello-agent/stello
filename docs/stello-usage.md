@@ -34,8 +34,6 @@
   - 开发调试工具
   - Inspector 面板：查看 Session 拓扑、对话历史、per-session prompt 编辑
   - 状态持久化、工具/技能展示
-- `@stello-ai/visualizer`
-  - Session 拓扑可视化（星空图）
 - `demo/stello-agent-basic`
   - 最小 `StelloAgent` 使用示例
 - `demo/stello-agent-chat`

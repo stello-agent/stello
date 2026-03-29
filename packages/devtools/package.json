@@ -1,6 +1,6 @@
 {
   "name": "@stello-ai/devtools",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Developer debugging frontend for Stello agents",
   "license": "Apache-2.0",
   "author": "Stello Contributors",
