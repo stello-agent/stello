@@ -26,6 +26,7 @@ function rowToMessage(row: Record<string, unknown>): Message {
     role: row['role'] as Message['role'],
     content: row['content'] as string,
   }
+  if (row['tool_calls']) msg.toolCalls = row['tool_calls'] as Message['toolCalls']
   if (row['tool_call_id']) msg.toolCallId = row['tool_call_id'] as string
   if (row['timestamp']) msg.timestamp = (row['timestamp'] as Date).toISOString()
   return msg
@@ -80,12 +81,13 @@ export class PgSessionStorage implements SessionStorage {
   /** 追加一条对话记录 */
   async appendRecord(sessionId: string, record: Message): Promise<void> {
     await this.client.query(
-      `INSERT INTO records (session_id, role, content, tool_call_id, "timestamp", metadata)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+      `INSERT INTO records (session_id, role, content, tool_calls, tool_call_id, "timestamp", metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         sessionId,
         record.role,
         record.content,
+        record.toolCalls ? JSON.stringify(record.toolCalls) : null,
         record.toolCallId ?? null,
         record.timestamp ?? new Date().toISOString(),
         null,
