@@ -4,9 +4,9 @@
 
 <div align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./stello_logo_light.svg">
-    <source media="(prefers-color-scheme: light)" srcset="./stello_logo.svg">
-    <img src="./stello_logo.svg" alt="Stello" width="200">
+    <source media="(prefers-color-scheme: dark)" srcset="./assets/stello_logo_light.svg">
+    <source media="(prefers-color-scheme: light)" srcset="./assets/stello_logo.svg">
+    <img src="./assets/stello_logo.svg" alt="Stello" width="200">
   </picture>
 
   <h1>Stello</h1>
