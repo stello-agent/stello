@@ -1,1 +1,0 @@
-../.claude/skills/development-log/SKILL.md
