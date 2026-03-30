@@ -26,17 +26,17 @@
 
 Ever feel your AI conversations trapped in a single thread? Your thinking diverges, branching in multiple directions, weaving together—but the dialogue keeps growing, context tightens, and response quality quietly degrades. Two hours later you close the window—no structure remains. Days later you want to continue, but can't even recall where you left off.
 
-**It's not the model—it's how you collaborate with AI that's primitive!**
+**It's not the model—it's how you collaborate with AI that's primitive!** Your thinking is branching and evolving, yet AI interacts with you linearly through a scrolling window!
 
-Your thinking is branching and evolving, yet AI interacts with you linearly through a scrolling window!
+**Stello explodes that line into a network!**
 
-Stello explodes that line into a network! It builds a new collaboration paradigm between humans and AI, where every conversation constructs a self-aware, growing cognitive topology.
+We've built a new collaboration paradigm between humans and AI, where every conversation constructs a self-aware, growing cognitive topology.
 
 <br/>
 
-## 💡 What is Stello?
+## 🌟 What is Stello?
 
-**The first AI-Native Cognitive Topology Engine.**
+**The first AI-Native Agent Cognitive Topology Engine.**
 
 Stello is an open-source cognitive topology engine for AI Agent and AI application developers. It provides four core capabilities: auto-splitting conversations, three-layer hierarchical memory, global consciousness integration, and topology visualization.
 
