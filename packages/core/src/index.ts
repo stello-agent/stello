@@ -139,3 +139,32 @@ export {
   DEFAULT_INTEGRATE_PROMPT,
 } from './llm/defaults';
 export type { LLMCallFn } from './llm/defaults';
+
+// Re-export @stello-ai/session 常用接口，core 用户无需额外 import session 包
+export { createSession, loadSession } from '@stello-ai/session';
+export { createMainSession, loadMainSession } from '@stello-ai/session';
+export { createClaude } from '@stello-ai/session';
+export { createGPT } from '@stello-ai/session';
+export { createOpenAICompatibleAdapter } from '@stello-ai/session';
+export { createAnthropicAdapter } from '@stello-ai/session';
+export { InMemoryStorageAdapter } from '@stello-ai/session';
+export { createSessionTool } from '@stello-ai/session';
+export { tool } from '@stello-ai/session';
+export type {
+  // LLM 适配器
+  LLMAdapter, LLMResult, LLMChunk, LLMCompleteOptions, Message,
+  ClaudeModel, ClaudeOptions,
+  GPTModel, GPTOptions,
+  OpenAICompatibleOptions,
+  AnthropicAdapterOptions,
+  // Session API
+  Session, MainSession, SendResult, StreamResult,
+  // 存储
+  SessionStorage, MainStorage, ListRecordsOptions,
+  // 函数签名
+  ConsolidateFn, IntegrateFn, IntegrateResult, ChildL2Summary,
+  CreateSessionOptions as SessionCreateOptions,
+  LoadSessionOptions, CreateMainSessionOptions, LoadMainSessionOptions,
+  // 工具
+  Tool, CallToolResult,
+} from '@stello-ai/session';
