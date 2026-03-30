@@ -1,8 +1,6 @@
 <p align="right">
-  <a href="#english">English</a> | <a href="./README.md">中文</a>
+  <strong>English</strong> | <a href="./README.md">中文</a>
 </p>
-
-<a id="english"></a>
 
 <div align="center">
   <img src="./stello_logo.svg" alt="Stello" width="200">
@@ -10,6 +8,7 @@
   <h1>Stello</h1>
 
   <p><strong>Think AI-Native. Know the World AI-Native.</strong></p>
+  <p>Open-source Cognitive Topology Engine · For Multi-Session AI Systems</p>
   <p>Your thinking is branching and growing—don't let linear chat limit it!</p>
 
   <p>
@@ -20,7 +19,7 @@
 
 <br/>
 
-## 🤔 What Problem Does Stello Solve?
+## 🌟 What Problem Does Stello Solve?
 
 Ever feel your AI conversations trapped in a single thread? Your thinking diverges, branching in multiple directions, weaving together—but the dialogue keeps growing, context tightens, and response quality quietly degrades. Two hours later you close the window—no structure remains. Days later you want to continue, but can't even recall where you left off.
 
@@ -28,226 +27,191 @@ Ever feel your AI conversations trapped in a single thread? Your thinking diverg
 
 Your thinking is branching and evolving, yet AI interacts with you linearly through a scrolling window!
 
-Stello explodes that line into a network! Stello builds a new collaboration paradigm between humans and AI, where every conversation constructs a self-aware, growing cognitive topology.
-
-**You and AI, co-evolving in Stello.**
+Stello explodes that line into a network! It builds a new collaboration paradigm between humans and AI, where every conversation constructs a self-aware, growing cognitive topology.
 
 <br/>
 
 ## 💡 What is Stello?
 
-**The first AI-Native cognitive topology system.**
+**The first AI-Native Cognitive Topology Engine.**
 
-Stello is an open-source conversation topology engine for AI Agent and AI application developers. It provides four core capabilities: auto-splitting conversations, three-layer hierarchical memory, global consciousness integration, and topology visualization.
+Stello is an open-source cognitive topology engine for AI Agent and AI application developers. It provides four core capabilities: auto-splitting conversations, three-layer hierarchical memory, global consciousness integration, and topology visualization.
 
 Conversations auto-split into independent Sessions by semantics, forming tree-structured topologies. The three-layer memory system inherits hierarchically across Sessions. The global consciousness layer (Main Session) perceives conflicts and dependencies across all branches, pushing targeted insights. The entire cognitive topology renders as a growable, conversable star-node graph.
 
+Linear chat doesn't fit workflows that branch, recurse, or need context isolation. Common problems include:
+
+- Multiple sub-problems piled into one thread, diluting context
+- No way to visualize relationships between different branches
+- No stable cross-branch synthesis mechanism
+- Long-running sessions lack structural information when resumed
+
+Stello's approach explicitly separates three things:
+
+- **Branch Execution:** Child Sessions hold their own L3 history
+- **External Description:** Child Sessions distill L3 into L2 for external consumption
+- **Global Integration:** Main Session reads all L2s, producing synthesis and insights
+
 ---
 
-## ✨ Core Capabilities
+## Core Capabilities
 
-- 🌳 **Auto-splitting Conversations** — AI detects topic branches and creates child sessions via tool calling, each with clear scope
-- 🧠 **Three-layer Memory** — L3 raw records / L2 skill descriptions / L1 global cognition, memory flows between layers
-- 🔄 **Global Synthesis** — Main Session collects all L2s from child sessions, generates synthesis and pushes insights
-- ⚡️ **Zero Overhead in Dialogue** — All memory consolidation executes async (fire-and-forget), never blocks conversation flow
-- 🎨 **Star Map Visualization** — Each star is a thought direction, connections show relationships, size maps depth, brightness maps activity
-- 🔌 **Fully Decoupled Architecture** — No LLM lock-in / storage lock-in / UI lock-in, Session and Topology are separate
+- **Auto-splitting Conversations** — AI detects topic branches and creates child Sessions via tool calling, each with clear scope
+- **Three-layer Memory** — L3 raw records / L2 skill descriptions / L1 global cognition, memory flows between layers
+- **Global Synthesis** — Main Session collects all child Session L2s, generates synthesis and pushes insights
+- **Zero Overhead in Dialogue** — All memory consolidation executes async (fire-and-forget), never blocks conversation flow
+- **Star Map Visualization** — Each star is a thought direction, connections show relationships, size maps depth, brightness maps activity
+- **Fully Decoupled Architecture** — No LLM / storage / UI lock-in, Session and Topology are separate
 
 ---
 
-## 🚀 Quick Start
+## Core Concepts
+
+### The Skill Metaphor
+
+Each child Session can be seen as a skill with a private implementation and a public description.
+
+```text
+Child Session
+  L3 = The session's raw conversation history
+  L2 = External summary consumed by Main Session
+
+Main Session
+  synthesis = Integrated view of all child Session L2s
+  insights = Targeted suggestions pushed to specific child Sessions
+```
+
+### Three-layer Memory
+
+| Layer | Meaning | Consumer |
+| --- | --- | --- |
+| L3 | Raw conversation history | The session's own LLM |
+| L2 | Session's external summary | Main Session |
+| L1 | Global structured state and synthesis | Application layer / Main Session |
+
+### Architectural Constraints
+
+- Child Sessions do not read their own L2.
+- Main Session reads L2, not child Sessions' L3.
+- Child Sessions do not communicate directly.
+- Cross-Session information propagates through Main Session insights.
+
+## Packages
+
+### `@stello-ai/session`
+
+Handles Session-level capabilities:
+
+- Assemble prompt context
+- Store and replay L3 records
+- Consolidate L3 into L2
+- Handle LLM adapters with streaming and tool call support
+
+If you only need a single Session abstraction with memory, start here.
+
+### `@stello-ai/core`
+
+Handles core orchestration:
+
+- Turn execution with tool-call loops
+- Fork orchestration
+- Consolidation / integration scheduling
+- Runtime management and orchestration strategy
+
+If you need a Session topology with Main Session coordinating everything, start here.
+
+### `@stello-ai/server`
+
+Handles service-level packaging:
+
+- REST and WebSocket API
+- PostgreSQL persistence
+- Multi-space / multi-tenant hosting
+- Long-lifecycle agent runtime management
+
+If you need a deployable backend rather than an in-process SDK, start here.
+
+### `@stello-ai/devtools`
+
+Handles development debugging:
+
+- Topology graph inspection
+- Conversation replay
+- Prompt / settings editing
+- Event stream observation
+- Local agent behavior debugging
+
+This package is for development, not a production UI dependency.
+
+## Quick Start
 
 ### Installation
 
 ```bash
-npm install @stello-ai/core @stello-ai/session
-# or
 pnpm add @stello-ai/core @stello-ai/session
 
-# For development debugging
+# Optional for development
 pnpm add -D @stello-ai/devtools
 ```
 
-### 30-Second Example
+### Create an Agent
 
-```typescript
+```ts
 import { createStelloAgent } from '@stello-ai/core'
-import { FileSystemStorageAdapter } from '@stello-ai/core/adapters'
 
-// Create Agent
-const agent = await createStelloAgent({
+const agent = createStelloAgent({
   sessions: /* SessionTree implementation */,
-  memory: /* MemoryEngine implementation */,
   session: {
-    llm: yourLLMAdapter,
-    sessionResolver: async (id) => /* return Session instance */,
+    llm: /* LLM adapter */,
+    sessionResolver: async (id) => {
+      /* return session-compatible runtime */
+    },
   },
 })
 
-// Start conversation
-const result = await agent.turn('main-session-id', 'Help me plan a startup')
-
-// AI auto-detects topic branches, creates child sessions
-// Dive deep in different branches, Main Session maintains global view
+const result = await agent.turn('main-session-id', 'Help me plan a product strategy')
 ```
 
-### Launch Visual Debugger
+### Launch Devtools
 
-```typescript
+```ts
 import { startDevtools } from '@stello-ai/devtools'
 
 await startDevtools(agent, {
   port: 4800,
-  open: true
+  open: true,
 })
-
-// Browser opens automatically at http://localhost:4800
-// See star map + conversation panels + live event streams
 ```
 
----
+## Documentation
 
-## 📦 Packages
+- [Usage Guide](./docs/usage.md)
+- [Stello Overview](./docs/stello-usage.md)
+- [Orchestrator Guide](./docs/orchestrator-usage.md)
+- [Server Design](./docs/server-package-plan.md)
+- [API / Config Reference](./docs/stello-agent-config-reference.md)
+- [Contributing](./CONTRIBUTING.md)
 
-<table>
-<tr>
-<td width="50%" valign="top">
+## Development
 
-### @stello-ai/session
-
-**Standalone conversation unit**, minimal three-layer memory implementation.
-
-- ✅ Single LLM calls (send / stream)
-- ✅ L3 conversation record persistence
-- ✅ L2 skill description generation (consolidate)
-- ✅ Fully decoupled from tree structure
-- ✅ Streaming output and tool calling support
-
-**Use for:** Simple scenarios needing single conversation + memory
-
-</td>
-<td width="50%" valign="top">
-
-### @stello-ai/core
-
-**Orchestration engine**, session tree scheduler.
-
-- ✅ Tool call loops (turn)
-- ✅ Consolidation / Integration scheduling
-- ✅ Main Session global consciousness
-- ✅ Session tree management (fork / archive / refs)
-- ✅ Split protection and policy configuration
-- ✅ Lifecycle hooks and event system
-
-**Use for:** Complex apps needing multi-branch dialogue + global synthesis
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-### @stello-ai/server
-
-**Service layer**, PostgreSQL + HTTP/WebSocket.
-
-- ✅ REST + WebSocket dual channels
-- ✅ PostgreSQL persistence (7 tables)
-- ✅ Multi-tenant Space management
-- ✅ AgentPool lazy-loading + auto-eviction
-- ✅ Per-session prompt 3-tier fallback
-- ✅ Out-of-box Docker Compose
-
-**Use for:** Production deployments + multi-user isolation for SaaS apps
-
-</td>
-<td width="50%" valign="top">
-
-### @stello-ai/devtools
-
-**Development debugger**, star map + live panels.
-
-- ✅ Interactive star map (drag / zoom)
-- ✅ Conversation panel + file browser
-- ✅ Real-time event monitoring
-- ✅ Apple Liquid Glass visual style
-- ✅ One-line integration
-
-**Use for:** Development debugging (not production dependency)
-
-</td>
-</tr>
-</table>
-
----
-
-## 🎯 Core Concepts
-
-### The Skill Metaphor
-
-Each child session is a **skill**. Main Session is the **skill orchestrator**.
-
-```
-Child Session = Skill
-  L3 = Skill's detailed knowledge base (internal consumption)
-  L2 = Skill's description (external interface, Main Session consumes)
-
-Main Session = Orchestrator
-  synthesis = Synthesized cognition of all L2s
-  insights = Targeted suggestions pushed to each child session
+```bash
+pnpm install
+pnpm build
+pnpm test
+pnpm typecheck
 ```
 
-**Core Constraints:**
-- L2 invisible to child session itself — L2 is external description, not self-use memory
-- Main Session only reads L2, never reads child session's L3
-- Child sessions completely isolated, only cross-branch info source is Main Session's pushed insights
+Common local commands:
 
----
+```bash
+pnpm demo:agent
+pnpm demo:chat
+```
 
-### Three-layer Memory
-
-| Layer | Content | Consumer |
-|-------|---------|----------|
-| **L3** | Raw conversation records | The session's own LLM |
-| **L2** | Skill description (external view) | Main Session (via integration) |
-| **L1** | Global key-value + synthesis | Application layer direct access |
-
-**Memory Flow:**
-- **Upward Reporting** — L3 → L2 → Main Session index
-- **Downward Push** — Main Session insights → Child Sessions
-- **Horizontal Isolation** — No direct communication between child sessions
-
----
-
-## 💡 Use Cases
-
-- **Deep Consulting** — Legal, medical, financial multi-dimensional analysis, avoid information pollution
-- **Knowledge Exploration** — Learning, researching multiple topics in parallel, auto-build knowledge maps
-- **Goal Decomposition** — Startup planning, project management, OKR execution with hierarchical tasks
-- **System Building** — Course systems, knowledge systems, product architecture with layered design
-- **Creative Production** — Content, design exploring multiple approaches in parallel, maintain global consistency
-- **Office Collaboration** — Multi-task coordination, AI discovers omissions and cross-task dependencies
-
-For scenarios needing **simultaneous multi-directional progress + global oversight**.
-
----
-
-## 📚 Documentation
-
-- 📖 **Complete Guide** — _Coming Soon_
-- 🎯 **Core Concepts** — _Coming Soon_
-- 📦 **API Reference** — _Coming Soon_
-- 💡 **Examples** — _Coming Soon_
-- 🏗️ **Architecture** — _Coming Soon_
-- 💬 **Community** — _Coming Soon_
-
----
-
-## 🤝 Contributing
-
-Contributions welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md)
-
----
-
-## 📄 License
+## License
 
 Apache-2.0 © [Stello Team](https://github.com/stello-agent)
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=stello-agent/stello&type=Date)](https://star-history.com/#stello-agent/stello&Date)
