@@ -98,6 +98,10 @@ Stello 的做法是明确拆分三件事：
 
 ## 包说明
 
+<table>
+<tr>
+<td width="50%" valign="top">
+
 ### `@stello-ai/session`
 
 负责 Session 级别的能力：
@@ -108,6 +112,9 @@ Stello 的做法是明确拆分三件事：
 - 处理支持 streaming 和 tool call 的 LLM 适配器
 
 如果你只需要一个具备记忆能力的单 Session 抽象，优先看这个包。
+
+</td>
+<td width="50%" valign="top">
 
 ### `@stello-ai/core`
 
@@ -120,6 +127,11 @@ Stello 的做法是明确拆分三件事：
 
 如果你需要一棵 Session 拓扑，并由 Main Session 统一调度，优先看这个包。
 
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
 ### `@stello-ai/server`
 
 负责服务化封装：
@@ -130,6 +142,9 @@ Stello 的做法是明确拆分三件事：
 - 长生命周期 agent runtime 管理
 
 如果你需要可部署的后端，而不只是进程内 SDK，优先看这个包。
+
+</td>
+<td width="50%" valign="top">
 
 ### `@stello-ai/devtools`
 
@@ -142,6 +157,10 @@ Stello 的做法是明确拆分三件事：
 - 本地 agent 行为调试
 
 这个包面向开发阶段，不是生产环境 UI 依赖。
+
+</td>
+</tr>
+</table>
 
 ## 快速开始
 

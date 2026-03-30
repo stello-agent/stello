@@ -98,6 +98,10 @@ Main Session
 
 ## Packages
 
+<table>
+<tr>
+<td width="50%" valign="top">
+
 ### `@stello-ai/session`
 
 Handles Session-level capabilities:
@@ -108,6 +112,9 @@ Handles Session-level capabilities:
 - Handle LLM adapters with streaming and tool call support
 
 If you only need a single Session abstraction with memory, start here.
+
+</td>
+<td width="50%" valign="top">
 
 ### `@stello-ai/core`
 
@@ -120,6 +127,11 @@ Handles core orchestration:
 
 If you need a Session topology with Main Session coordinating everything, start here.
 
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
 ### `@stello-ai/server`
 
 Handles service-level packaging:
@@ -130,6 +142,9 @@ Handles service-level packaging:
 - Long-lifecycle agent runtime management
 
 If you need a deployable backend rather than an in-process SDK, start here.
+
+</td>
+<td width="50%" valign="top">
 
 ### `@stello-ai/devtools`
 
@@ -142,6 +157,10 @@ Handles development debugging:
 - Local agent behavior debugging
 
 This package is for development, not a production UI dependency.
+
+</td>
+</tr>
+</table>
 
 ## Quick Start
 
