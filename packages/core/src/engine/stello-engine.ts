@@ -2,7 +2,6 @@ import type { SessionTree } from '../types/session';
 import type { MemoryEngine, TurnRecord } from '../types/memory';
 import type {
   BootstrapResult,
-  IngestResult,
   AfterTurnResult,
   ConfirmProtocol,
   SkillRouter,
@@ -244,12 +243,6 @@ export class StelloEngineImpl implements StelloEngine {
     const bootstrap = await this.lifecycle.bootstrap(this.session.id);
     this.fireHook('onSessionEnter', { sessionId: this.session.id });
     return bootstrap;
-  }
-
-  /** skill 匹配入口 */
-  async ingest(message: TurnRecord): Promise<IngestResult> {
-    const skill = this.skills.match(message);
-    return { matchedSkill: skill?.name ?? null };
   }
 
   /** 兼容旧的 afterTurn 流程 */

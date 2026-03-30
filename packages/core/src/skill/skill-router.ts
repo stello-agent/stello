@@ -1,13 +1,11 @@
-// ─── Skill 路由器 ───
+// ─── Skill 注册表 ───
 
 import type { Skill, SkillRouter } from '../types/lifecycle';
-import type { TurnRecord } from '../types/memory';
 
 /**
- * Skill 路由器
+ * Skill 注册表
  *
- * v0.1 简单关键词匹配，不做意图路由。
- * 开发者注册 Skill 后通过 match 查找匹配项。
+ * 纯注册 + 查询，不做意图匹配。匹配由 LLM 通过 Skill Tool 自行决定。
  */
 export class SkillRouterImpl implements SkillRouter {
   private skills = new Map<string, Skill>();
@@ -17,15 +15,9 @@ export class SkillRouterImpl implements SkillRouter {
     this.skills.set(skill.name, skill);
   }
 
-  /** 根据消息内容匹配 Skill（不区分大小写） */
-  match(message: TurnRecord): Skill | null {
-    const content = message.content.toLowerCase();
-    for (const skill of this.skills.values()) {
-      if (skill.keywords.some((kw) => content.includes(kw.toLowerCase()))) {
-        return skill;
-      }
-    }
-    return null;
+  /** 按名称查找 Skill */
+  get(name: string): Skill | undefined {
+    return this.skills.get(name);
   }
 
   /** 获取所有已注册的 Skill */

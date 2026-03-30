@@ -1,6 +1,5 @@
 import type { CreateSessionOptions } from '../types/session';
-import type { BootstrapResult, IngestResult } from '../types/lifecycle';
-import type { TurnRecord } from '../types/memory';
+import type { BootstrapResult } from '../types/lifecycle';
 import { TurnRunner, type ToolCallParser, type TurnRunnerOptions } from '../engine/turn-runner';
 import type { EngineTurnResult } from '../engine/stello-engine';
 import type { EngineStreamResult } from '../engine/stello-engine';
@@ -232,11 +231,6 @@ export class StelloAgent {
     options?: TurnRunnerOptions,
   ): Promise<EngineStreamResult> {
     return this.orchestrator.stream(sessionId, input, options);
-  }
-
-  /** 在指定 session 上做 skill ingest */
-  ingest(sessionId: string, message: TurnRecord): Promise<IngestResult> {
-    return this.orchestrator.ingest(sessionId, message);
   }
 
   /** 离开指定 session */

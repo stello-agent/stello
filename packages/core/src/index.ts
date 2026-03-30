@@ -21,12 +21,9 @@ export type {
   FileSystemAdapter,
   // 生命周期钩子
   BootstrapResult,
-  IngestResult,
   AfterTurnResult,
   LifecycleHooks,
   // Skill 插槽
-  SkillContext,
-  SkillResult,
   Skill,
   SkillRouter,
   // Agent Tools

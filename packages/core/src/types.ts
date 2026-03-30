@@ -19,11 +19,8 @@ export type { FileSystemAdapter } from './types/fs';
 // 生命周期钩子 + Skill + 确认协议 + Agent Tools
 export type {
   BootstrapResult,
-  IngestResult,
   AfterTurnResult,
   LifecycleHooks,
-  SkillContext,
-  SkillResult,
   Skill,
   SkillRouter,
   ToolDefinition,

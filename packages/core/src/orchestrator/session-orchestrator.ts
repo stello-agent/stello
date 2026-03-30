@@ -1,6 +1,5 @@
 import type { CreateSessionOptions, SessionMeta, TopologyNode, SessionTree } from '../types/session';
-import type { BootstrapResult, IngestResult } from '../types/lifecycle';
-import type { TurnRecord } from '../types/memory';
+import type { BootstrapResult } from '../types/lifecycle';
 import type { StelloEngine } from '../types/engine';
 import type { EngineTurnResult } from '../engine/stello-engine';
 import type { EngineStreamResult } from '../engine/stello-engine';
@@ -134,14 +133,6 @@ export class SessionOrchestrator {
         },
       }
     })
-  }
-
-  /** 在指定 session 上做 skill ingest */
-  async ingest(sessionId: string, message: TurnRecord): Promise<IngestResult> {
-    return this.runSerial(sessionId, async () => {
-      await this.requireSession(sessionId);
-      return this.withRuntime(sessionId, (engine) => engine.ingest(message));
-    });
   }
 
   /** 离开指定 session */

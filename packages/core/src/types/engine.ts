@@ -7,7 +7,6 @@ import type {
 } from './memory';
 import type {
   BootstrapResult,
-  IngestResult,
   AfterTurnResult,
   SkillRouter,
   ToolDefinition,
@@ -82,8 +81,6 @@ export interface StelloEngine {
   /** 确认协议 */
   readonly confirm: ConfirmProtocol;
 
-  /** 处理用户消息：意图识别 + 漂移检测 */
-  ingest(message: TurnRecord): Promise<IngestResult>;
   /** 轮次结束处理：提取写 L1 + 提炼 L2 + 追加 L3 */
   afterTurn(userMsg: TurnRecord, assistantMsg: TurnRecord): Promise<AfterTurnResult>;
   /** 进入当前绑定 Session 的整轮对话 */
