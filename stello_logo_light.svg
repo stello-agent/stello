@@ -1,19 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="44 38 114 124">
-  <polygon points="100,68 107,88 118,82 110,93 130,100 110,107 118,118 107,112 100,132 93,112 82,118 90,107 70,100 90,93 82,82 93,88" fill="#E6DCC8"/>
-  <circle cx="100" cy="58" r="2.5" fill="#E6DCC8"/><circle cx="120" cy="62" r="2" fill="#E6DCC8"/>
-  <circle cx="136" cy="74" r="2.2" fill="#E6DCC8"/><circle cx="140" cy="92" r="2" fill="#E6DCC8"/>
-  <circle cx="142" cy="108" r="2.3" fill="#E6DCC8"/><circle cx="134" cy="124" r="2" fill="#E6DCC8"/>
-  <circle cx="122" cy="136" r="2.2" fill="#E6DCC8"/><circle cx="106" cy="142" r="2" fill="#E6DCC8"/>
-  <circle cx="88" cy="138" r="2.3" fill="#E6DCC8"/><circle cx="74" cy="128" r="2" fill="#E6DCC8"/>
-  <circle cx="64" cy="114" r="2.2" fill="#E6DCC8"/><circle cx="60" cy="98" r="2" fill="#E6DCC8"/>
-  <circle cx="64" cy="82" r="2.3" fill="#E6DCC8"/><circle cx="76" cy="70" r="2" fill="#E6DCC8"/>
-  <circle cx="100" cy="46" r="1.8" fill="#E6DCC8"/><circle cx="116" cy="50" r="1.5" fill="#E6DCC8"/>
-  <circle cx="130" cy="58" r="1.6" fill="#E6DCC8"/><circle cx="148" cy="80" r="1.5" fill="#E6DCC8"/>
-  <circle cx="152" cy="100" r="1.7" fill="#E6DCC8"/><circle cx="148" cy="118" r="1.5" fill="#E6DCC8"/>
-  <circle cx="138" cy="134" r="1.6" fill="#E6DCC8"/><circle cx="124" cy="148" r="1.5" fill="#E6DCC8"/>
-  <circle cx="108" cy="152" r="1.7" fill="#E6DCC8"/><circle cx="90" cy="150" r="1.5" fill="#E6DCC8"/>
-  <circle cx="76" cy="142" r="1.6" fill="#E6DCC8"/><circle cx="62" cy="130" r="1.5" fill="#E6DCC8"/>
-  <circle cx="52" cy="114" r="1.7" fill="#E6DCC8"/><circle cx="50" cy="96" r="1.5" fill="#E6DCC8"/>
-  <circle cx="54" cy="78" r="1.6" fill="#E6DCC8"/><circle cx="66" cy="62" r="1.5" fill="#E6DCC8"/>
-  <circle cx="82" cy="52" r="1.7" fill="#E6DCC8"/>
+  <polygon points="100,68 107,88 118,82 110,93 130,100 110,107 118,118 107,112 100,132 93,112 82,118 90,107 70,100 90,93 82,82 93,88" fill="#FFFFFF"/>
+  <circle cx="100" cy="58" r="2.5" fill="#FFFFFF"/><circle cx="120" cy="62" r="2" fill="#FFFFFF"/>
+  <circle cx="136" cy="74" r="2.2" fill="#FFFFFF"/><circle cx="140" cy="92" r="2" fill="#FFFFFF"/>
+  <circle cx="142" cy="108" r="2.3" fill="#FFFFFF"/><circle cx="134" cy="124" r="2" fill="#FFFFFF"/>
+  <circle cx="122" cy="136" r="2.2" fill="#FFFFFF"/><circle cx="106" cy="142" r="2" fill="#FFFFFF"/>
+  <circle cx="88" cy="138" r="2.3" fill="#FFFFFF"/><circle cx="74" cy="128" r="2" fill="#FFFFFF"/>
+  <circle cx="64" cy="114" r="2.2" fill="#FFFFFF"/><circle cx="60" cy="98" r="2" fill="#FFFFFF"/>
+  <circle cx="64" cy="82" r="2.3" fill="#FFFFFF"/><circle cx="76" cy="70" r="2" fill="#FFFFFF"/>
+  <circle cx="100" cy="46" r="1.8" fill="#FFFFFF"/><circle cx="116" cy="50" r="1.5" fill="#FFFFFF"/>
+  <circle cx="130" cy="58" r="1.6" fill="#FFFFFF"/><circle cx="148" cy="80" r="1.5" fill="#FFFFFF"/>
+  <circle cx="152" cy="100" r="1.7" fill="#FFFFFF"/><circle cx="148" cy="118" r="1.5" fill="#FFFFFF"/>
+  <circle cx="138" cy="134" r="1.6" fill="#FFFFFF"/><circle cx="124" cy="148" r="1.5" fill="#FFFFFF"/>
+  <circle cx="108" cy="152" r="1.7" fill="#FFFFFF"/><circle cx="90" cy="150" r="1.5" fill="#FFFFFF"/>
+  <circle cx="76" cy="142" r="1.6" fill="#FFFFFF"/><circle cx="62" cy="130" r="1.5" fill="#FFFFFF"/>
+  <circle cx="52" cy="114" r="1.7" fill="#FFFFFF"/><circle cx="50" cy="96" r="1.5" fill="#FFFFFF"/>
+  <circle cx="54" cy="78" r="1.6" fill="#FFFFFF"/><circle cx="66" cy="62" r="1.5" fill="#FFFFFF"/>
+  <circle cx="82" cy="52" r="1.7" fill="#FFFFFF"/>
 </svg>
