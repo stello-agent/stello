@@ -143,8 +143,8 @@ const agent = createStelloAgent({
 
 更详细的配置说明见：
 
-- [config-design.md](/Users/bytedance/Github/stello/docs/config-design.md)
-- [stello-agent-config.template.ts](/Users/bytedance/Github/stello/docs/stello-agent-config.template.ts)
+- [config-design.md](./config-design.md)
+- [stello-agent-config.template.ts](./stello-agent-config.template.ts)
 
 ---
 
@@ -185,7 +185,7 @@ const agent = createStelloAgent({
 
 更完整的 API 说明见：
 
-- [stello-agent-api.md](/Users/bytedance/Github/stello/docs/stello-agent-api.md)
+- [stello-agent-api.md](./stello-agent-api.md)
 
 ---
 
@@ -228,8 +228,8 @@ StelloAgent
 
 更多说明见：
 
-- [orchestrator-usage.md](/Users/bytedance/Github/stello/docs/orchestrator-usage.md)
-- [orchestrator-strategies.md](/Users/bytedance/Github/stello/docs/orchestrator-strategies.md)
+- [orchestrator-usage.md](./orchestrator-usage.md)
+- [orchestrator-strategies.md](./orchestrator-strategies.md)
 
 ---
 
@@ -319,7 +319,7 @@ LLM 调用 `stello_create_session` 工具时，自动 fork 出子 Session 并返
 
 更多 Session 设计细节见：
 
-- [session-usage.md](/Users/bytedance/Github/stello/docs/session-usage.md)
+- [session-usage.md](./session-usage.md)
 
 ---
 
@@ -384,8 +384,8 @@ OPENAI_API_KEY=fake DEMO_DRY_RUN=1 node --import tsx demo/stello-agent-chat/chat
 
 相关设计见：
 
-- [server-package-plan.md](/Users/bytedance/Github/stello/docs/server-package-plan.md)
-- [server-ws-connection-model.md](/Users/bytedance/Github/stello/docs/server-ws-connection-model.md)
+- [server-package-plan.md](./server-package-plan.md)
+- [server-ws-connection-model.md](./server-ws-connection-model.md)
 
 ---
 
@@ -394,10 +394,10 @@ OPENAI_API_KEY=fake DEMO_DRY_RUN=1 node --import tsx demo/stello-agent-chat/chat
 如果你是第一次接触这个仓库，建议按这个顺序：
 
 1. 先看这篇总览
-2. 再看 [stello-agent-api.md](/Users/bytedance/Github/stello/docs/stello-agent-api.md)
-3. 再看 [config-design.md](/Users/bytedance/Github/stello/docs/config-design.md)
-4. 需要理解编排时，再看 [orchestrator-usage.md](/Users/bytedance/Github/stello/docs/orchestrator-usage.md)
-5. 需要理解长期目标时，再看 [sdk-final-vision.md](/Users/bytedance/Github/stello/docs/sdk-final-vision.md)
+2. 再看 [stello-agent-api.md](./stello-agent-api.md)
+3. 再看 [config-design.md](./config-design.md)
+4. 需要理解编排时，再看 [orchestrator-usage.md](./orchestrator-usage.md)
+5. 需要理解长期目标时，再看 [sdk-final-vision.md](./sdk-final-vision.md)
 
 ---
 

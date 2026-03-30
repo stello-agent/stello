@@ -148,7 +148,7 @@ export type { DevtoolsOptions } from './server/types.js'
 
 - [ ] **Step 5: pnpm install 验证包结构**
 
-Run: `cd /Users/bytedance/Github/stello && pnpm install`
+Run: `pnpm install`
 Expected: 无报错，packages/devtools 被识别
 
 - [ ] **Step 6: Commit**

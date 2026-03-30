@@ -957,6 +957,9 @@ async function main() {
       currentApp = await bootstrap()
       console.log('[Reset] demo reinitialized')
     },
+    getDataDir() {
+      return dataDirAbs
+    },
   }
 
   const devtoolsPort = Number(process.env.DEVTOOLS_PORT ?? 4800)

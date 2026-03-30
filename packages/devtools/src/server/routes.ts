@@ -627,6 +627,11 @@ export function createRoutes(
     return c.json({ ok: true })
   })
 
+  /** 获取 devtools 运行时信息（如数据目录路径） */
+  app.get('/info', (c) => {
+    return c.json({ dataDir: resetProvider?.getDataDir?.() ?? null })
+  })
+
   /** 获取事件历史 */
   app.get('/events', (c) => {
     const events = getEventHistory?.() ?? []

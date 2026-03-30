@@ -23,7 +23,7 @@ import {
   FileText,
   RotateCcw,
 } from 'lucide-react'
-import { fetchConfig, patchConfig, fetchLLMConfig, patchLLMConfig, fetchPrompts, patchPrompts, fetchTools, toggleTool, fetchSkills, toggleSkill, resetRuntime, type AgentConfig, type HotConfigPatch, type LLMConfig, type PromptsConfig, type ToolWithStatus, type SkillWithStatus } from '@/lib/api'
+import { fetchConfig, patchConfig, fetchLLMConfig, patchLLMConfig, fetchPrompts, patchPrompts, fetchTools, toggleTool, fetchSkills, toggleSkill, resetRuntime, fetchInfo, type AgentConfig, type HotConfigPatch, type LLMConfig, type PromptsConfig, type ToolWithStatus, type SkillWithStatus } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { useToast } from '@/lib/toast'
 import { EditDialog, type EditField } from '@/components/EditDialog'
@@ -158,15 +158,17 @@ export function SettingsPage() {
   const [dialogSaveFn, setDialogSaveFn] = useState<(values: Record<string, string | number>) => Promise<void>>(() => async () => {})
   const [resetOpen, setResetOpen] = useState(false)
   const [resetting, setResetting] = useState(false)
+  const [dataDir, setDataDir] = useState<string | null>(null)
 
   /** 刷新设置页所有数据 */
   const refreshAll = useCallback(async () => {
-    const [nextConfig, nextLlm, nextPrompts, nextTools, nextSkills] = await Promise.all([
+    const [nextConfig, nextLlm, nextPrompts, nextTools, nextSkills, nextInfo] = await Promise.all([
       fetchConfig(),
       fetchLLMConfig().catch(() => null),
       fetchPrompts().catch(() => null),
       fetchTools().catch(() => ({ configured: false, tools: [] as ToolWithStatus[] })),
       fetchSkills().catch(() => ({ configured: false, skills: [] as SkillWithStatus[] })),
+      fetchInfo().catch(() => ({ dataDir: null })),
     ])
 
     setConfig(nextConfig)
@@ -174,6 +176,7 @@ export function SettingsPage() {
     setPromptsConfig(nextPrompts)
     setToolsList(nextTools)
     setSkillsList(nextSkills)
+    setDataDir(nextInfo.dataDir)
   }, [])
 
   /** 打开编辑 Dialog */
@@ -688,7 +691,7 @@ export function SettingsPage() {
             <p className="text-[11px] text-text-muted leading-relaxed">{t('settings.reset.desc')}</p>
             <div className="flex items-start gap-2 px-3 py-2 bg-[#FFF1F1] border border-[#F1C3C3] rounded-lg">
               <XCircle size={14} className="text-[#C84B4B] shrink-0 mt-0.5" />
-              <p className="text-[11px] leading-relaxed text-[#9F2F2F]">{t('settings.reset.warning')}</p>
+              <p className="text-[11px] leading-relaxed text-[#9F2F2F]">{t('settings.reset.warning', dataDir ? { dataDir } : undefined)}</p>
             </div>
             <button
               onClick={() => setResetOpen(true)}
@@ -711,7 +714,7 @@ export function SettingsPage() {
       <ConfirmDialog
         open={resetOpen}
         title={t('settings.reset.confirmTitle')}
-        description={t('settings.reset.confirmBody')}
+        description={t('settings.reset.confirmBody', dataDir ? { dataDir } : undefined)}
         confirmLabel={resetting ? t('settings.reset.running') : t('settings.reset.button')}
         destructive
         loading={resetting}

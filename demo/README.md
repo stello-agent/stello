@@ -46,4 +46,4 @@ pnpm demo:chat
 
 说明文档：
 
-- [stello-agent-chat/README.md](/Users/bytedance/Github/stello/demo/stello-agent-chat/README.md)
+- [stello-agent-chat/README.md](./stello-agent-chat/README.md)

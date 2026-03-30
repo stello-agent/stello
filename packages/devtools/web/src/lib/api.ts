@@ -348,3 +348,8 @@ export function triggerIntegration() {
     method: 'POST',
   })
 }
+
+/** 获取 devtools 运行时信息 */
+export function fetchInfo() {
+  return request<{ dataDir: string | null }>('/info')
+}

@@ -65,6 +65,8 @@ export interface IntegrationProvider {
 /** 清空数据并重新初始化运行时。 */
 export interface ResetProvider {
   reset(): Promise<void>
+  /** 返回数据目录的绝对路径，供前端展示 */
+  getDataDir?(): string
 }
 
 /** DevTools 可持久化的全局状态 */

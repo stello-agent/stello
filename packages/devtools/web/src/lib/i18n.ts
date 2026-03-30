@@ -197,10 +197,10 @@ const dict: Record<string, Record<Locale, string>> = {
   'settings.hooks.none': { en: 'No hooks registered', zh: '未注册钩子' },
   'settings.reset.title': { en: 'Start Over', zh: '从头开始' },
   'settings.reset.desc': { en: 'Clear all demo data and reinitialize the running app from scratch.', zh: '清空当前 demo 的全部数据，并重新初始化运行中的应用。' },
-  'settings.reset.warning': { en: 'Danger zone: this will permanently delete all demo data under /Users/bytedance/Github/stello/tmp/stello-agent-chat.', zh: '危险操作：这会永久删除目录 /Users/bytedance/Github/stello/tmp/stello-agent-chat 下的全部 demo 数据。' },
+  'settings.reset.warning': { en: 'Danger zone: this will permanently delete all demo data under {dataDir}.', zh: '危险操作：这会永久删除目录 {dataDir} 下的全部 demo 数据。' },
   'settings.reset.button': { en: 'Delete all data and start over', zh: '清空全部数据并从头开始' },
   'settings.reset.confirmTitle': { en: 'Clear all data and start over?', zh: '确认清空数据并重新开始？' },
-  'settings.reset.confirmBody': { en: 'This will delete all sessions, records, prompts, and runtime state under /Users/bytedance/Github/stello/tmp/stello-agent-chat, then bootstrap a fresh demo.\n\nThis action cannot be undone.', zh: '这会删除目录 /Users/bytedance/Github/stello/tmp/stello-agent-chat 中的全部会话、记录、提示词和运行时状态，然后重新初始化一个全新的 demo。\n\n此操作不可撤销。' },
+  'settings.reset.confirmBody': { en: 'This will delete all sessions, records, prompts, and runtime state under {dataDir}, then bootstrap a fresh demo.\n\nThis action cannot be undone.', zh: '这会删除目录 {dataDir} 中的全部会话、记录、提示词和运行时状态，然后重新初始化一个全新的 demo。\n\n此操作不可撤销。' },
   'settings.reset.running': { en: 'Reinitializing...', zh: '重新初始化中...' },
 }
 
@@ -208,7 +208,7 @@ const dict: Record<string, Record<Locale, string>> = {
 export interface I18nContextValue {
   locale: Locale
   setLocale: (locale: Locale) => void
-  t: (key: string) => string
+  t: (key: string, vars?: Record<string, string>) => string
 }
 
 /** 默认上下文 */
@@ -235,8 +235,10 @@ export function useI18nProvider(): I18nContextValue {
     localStorage.setItem('stello-devtools-locale', l)
   }, [])
 
-  const t = useCallback((key: string): string => {
-    return dict[key]?.[locale] ?? key
+  const t = useCallback((key: string, vars?: Record<string, string>): string => {
+    const raw = dict[key]?.[locale] ?? key
+    if (!vars) return raw
+    return raw.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? `{${k}}`)
   }, [locale])
 
   return { locale, setLocale: setAndSave, t }
