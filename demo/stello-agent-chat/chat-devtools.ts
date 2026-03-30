@@ -21,6 +21,8 @@ import {
   type TurnRecord,
   createDefaultConsolidateFn,
   createDefaultIntegrateFn,
+  createSkillToolDefinition,
+  executeSkillTool,
   type LLMCallFn,
 } from '../../packages/core/src/index'
 import { startDevtools, type DevtoolsPersistedState, type DevtoolsStateStore } from '../../packages/devtools/src/index'
@@ -530,6 +532,14 @@ async function bootstrap() {
     },
   ] as const
 
+  // 将 skill tool 转换为 demo toolDef 格式，加入 session 的 tool 列表
+  const skillToolDef = createSkillToolDefinition(skillRouter)
+  const skillToolEntry = {
+    name: skillToolDef.name,
+    description: skillToolDef.description,
+    inputSchema: skillToolDef.parameters,
+  }
+
   const memory = createFileMemoryEngine(fs, sessions)
 
   /* 复用已有 root 或创建 */
@@ -552,7 +562,7 @@ async function bootstrap() {
     rootLabel,
     MAIN_SYSTEM_PROMPT,
     currentLlm,
-    [...toolDefs],
+    [...toolDefs, skillToolEntry],
   )
   await hydrateRuntimeState(sessionStorage, memory, rootId)
   sessionMap.set(rootId, { main: mainSession })
@@ -568,7 +578,7 @@ async function bootstrap() {
       meta.label,
       makeRegionPrompt(meta.scope ?? meta.label, meta.label),
       currentLlm,
-      [...toolDefs],
+      [...toolDefs, skillToolEntry],
     )
     await hydrateRuntimeState(sessionStorage, memory, meta.id)
     sessionMap.set(meta.id, { session: childSession })
@@ -616,7 +626,7 @@ async function bootstrap() {
         sessions,
         sessionStorage,
         currentLlm,
-        [...toolDefs],
+        [...toolDefs, skillToolEntry],
         sessionMap,
         memory,
         {
@@ -631,15 +641,21 @@ async function bootstrap() {
 
   // ─── Tool Runtime ───
 
-  const allToolDefs = toolDefs.map((t) => ({
-    name: t.name,
-    description: t.description,
-    parameters: t.inputSchema as Record<string, unknown>,
-  }))
+  const allToolDefs = [
+    ...toolDefs.map((t) => ({
+      name: t.name,
+      description: t.description,
+      parameters: t.inputSchema as Record<string, unknown>,
+    })),
+    skillToolDef,
+  ]
 
   const tools: EngineToolRuntime = {
     getToolDefinitions: () => allToolDefs.filter((t) => !disabledTools.has(t.name)),
     async executeTool(name, args) {
+      if (name === 'activate_skill') {
+        return executeSkillTool(skillRouter, args as { name: string })
+      }
       if (name === 'stello_create_session') {
         if (!currentToolSessionId) return { success: false, error: 'No active session context' }
         const source = await requireNode(sessions, currentToolSessionId)
@@ -654,7 +670,7 @@ async function bootstrap() {
               sessions,
               sessionStorage,
               currentLlm,
-              [...toolDefs],
+              [...toolDefs, skillToolEntry],
               sessionMap,
               memory,
               {
