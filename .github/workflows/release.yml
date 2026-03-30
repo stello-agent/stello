@@ -2,29 +2,31 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - 'v*'
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+permissions:
+  contents: write
 
 jobs:
   release:
-    name: Release
+    name: Build & Publish
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v5
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v5
-        with:
-          version: 9.15.4
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 20
-          cache: 'pnpm'
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
 
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
@@ -32,13 +34,15 @@ jobs:
       - name: Build Packages
         run: pnpm build
 
-      - name: Create Release Pull Request or Publish to npm
-        id: changesets
-        uses: changesets/action@v1
-        with:
-          publish: pnpm release
-          commit: 'chore: release packages'
-          title: 'chore: release packages'
+      - name: Run Tests
+        run: pnpm test
+
+      - name: Publish to npm
+        run: pnpm -r publish --no-git-checks --access public
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

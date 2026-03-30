@@ -11,10 +11,9 @@
     "demo:chat": "tsx demo/stello-agent-chat/chat-devtools.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "release": "pnpm build && changeset publish"
+    "release": "pnpm build && pnpm -r publish --no-git-checks --access public"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.30.0",
     "eslint": "^10.0.3",
     "openai": "^6.32.0",
     "prettier": "^3.8.1",

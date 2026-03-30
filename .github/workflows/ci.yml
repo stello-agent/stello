@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - '**'
+    tags-ignore:
+      - 'v*'
   pull_request:
   workflow_dispatch:
 
@@ -16,7 +18,7 @@ permissions:
 
 jobs:
   quality:
-    name: Lint And Typecheck
+    name: Lint, Build & Test
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -26,13 +28,11 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v5
-        with:
-          version: 9.15.4
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Install Dependencies
@@ -46,3 +46,6 @@ jobs:
 
       - name: Run Type Check
         run: pnpm typecheck
+
+      - name: Run Tests
+        run: pnpm test
