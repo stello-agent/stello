@@ -23,7 +23,7 @@ describe('StelloEngineImpl', () => {
 
   const memory = {} as MemoryEngine;
   const skills = {
-    match: vi.fn().mockReturnValue(null),
+    get: vi.fn().mockReturnValue(undefined),
     register: vi.fn(),
     getAll: vi.fn().mockReturnValue([]),
   } as unknown as SkillRouter;

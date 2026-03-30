@@ -54,7 +54,7 @@ describe('StelloAgent', () => {
           executeTool: vi.fn(),
         },
         skills: {
-          match: vi.fn().mockReturnValue(null),
+          get: vi.fn().mockReturnValue(undefined),
           register: vi.fn(),
           getAll: vi.fn().mockReturnValue([]),
         } as unknown as SkillRouter,
@@ -176,7 +176,7 @@ describe('StelloAgent', () => {
           executeTool: vi.fn(),
         },
         skills: {
-          match: vi.fn().mockReturnValue(null),
+          get: vi.fn().mockReturnValue(undefined),
           register: vi.fn(),
           getAll: vi.fn().mockReturnValue([]),
         } as unknown as SkillRouter,
@@ -346,7 +346,7 @@ describe('StelloAgent', () => {
           executeTool: vi.fn().mockResolvedValue({ success: true, data: {} }),
         },
         skills: {
-          match: vi.fn().mockReturnValue(null),
+          get: vi.fn().mockReturnValue(undefined),
           register: vi.fn(),
           getAll: vi.fn().mockReturnValue([]),
         } as unknown as SkillRouter,
