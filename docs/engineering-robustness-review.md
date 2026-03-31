@@ -145,7 +145,7 @@ event log 上的 cursor 天然提供 freshness 感知和增量消费。详见「
 
 - ConsolidateFn 输出 L2（某种格式）
 - IntegrateFn 读取 L2（期望同种格式）
-- 框架对 L2 内容格式完全无感知（设计决策 #12）
+- 框架对 L2 内容格式完全无感知（CLAUDE.md 设计决策第 12 条）
 
 ### 具体风险
 
