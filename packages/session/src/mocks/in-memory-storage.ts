@@ -2,6 +2,7 @@ import type { MainStorage, SessionStorage, ListRecordsOptions, TopologyNode } fr
 import type { SessionMeta, SessionFilter } from '../types/session.js'
 import type { ChildL2Summary } from '../types/functions.js'
 import type { Message } from '../types/llm.js'
+import { tryParseEnvelope } from '../context-utils.js'
 
 /**
  * InMemoryStorageAdapter — 完整的内存存储实现，主要用于测试
@@ -103,14 +104,29 @@ export class InMemoryStorageAdapter implements MainStorage {
     this.memories.set(sessionId, content)
   }
 
-  /** 扁平收集所有 standard session 的 L2 */
+  /** 扁平收集所有 standard session 的 L2（解包信封提取 content + metadata） */
   async getAllSessionL2s(): Promise<ChildL2Summary[]> {
     const result: ChildL2Summary[] = []
     for (const session of this.sessions.values()) {
       if (session.role !== 'standard' || session.status !== 'active') continue
-      const l2 = this.memories.get(session.id)
-      if (l2 === undefined) continue
-      result.push({ sessionId: session.id, label: session.label, l2 })
+      const raw = this.memories.get(session.id)
+      if (raw === undefined) continue
+      const envelope = tryParseEnvelope(raw)
+      if (envelope) {
+        result.push({
+          sessionId: session.id, label: session.label,
+          l2: envelope.content,
+          sequence: envelope.sequence,
+          timestamp: envelope.timestamp,
+        })
+      } else {
+        result.push({
+          sessionId: session.id, label: session.label,
+          l2: raw,
+          sequence: 0,
+          timestamp: '',
+        })
+      }
     }
     return result
   }

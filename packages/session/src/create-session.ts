@@ -4,7 +4,9 @@ import { SessionArchivedError } from './types/session-api.js'
 import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './types/session.js'
 import type { Message } from './types/llm.js'
 import type { ConsolidateFn, CreateSessionOptions, LoadSessionOptions, SendResult, StreamResult } from './types/functions.js'
+import type { EventEnvelope } from './types/functions.js'
 import { assembleSessionContext } from './context-utils.js'
+import { parseEnvelopeContent, parseEnvelopeSequence } from './context-utils.js'
 
 interface ToolResultEnvelope {
   toolResults: Array<{
@@ -67,7 +69,8 @@ async function assembleSessionReplayContext(
     insightConsumed = true
   }
 
-  const memory = await storage.getMemory(sessionId)
+  const rawMem = await storage.getMemory(sessionId)
+  const memory = parseEnvelopeContent(rawMem)
   if (memory) {
     messages.push({ role: 'system', content: memory })
   }
@@ -324,17 +327,26 @@ function buildSession(
     },
 
     async memory(): Promise<string | null> {
-      return storage.getMemory(currentMeta.id)
+      const raw = await storage.getMemory(currentMeta.id)
+      return parseEnvelopeContent(raw)
     },
 
     async consolidate(fn: ConsolidateFn): Promise<void> {
       if (currentMeta.status === 'archived') {
         throw new SessionArchivedError(currentMeta.id)
       }
-      const currentMemory = await storage.getMemory(currentMeta.id)
+      const rawMemory = await storage.getMemory(currentMeta.id)
+      const currentContent = parseEnvelopeContent(rawMemory)
+      const currentSequence = parseEnvelopeSequence(rawMemory)
       const messages = await storage.listRecords(currentMeta.id)
-      const newMemory = await fn(currentMemory, messages)
-      await storage.putMemory(currentMeta.id, newMemory)
+      const newContent = await fn(currentContent, messages)
+      const envelope: EventEnvelope = {
+        sessionId: currentMeta.id,
+        sequence: (currentSequence ?? 0) + 1,
+        timestamp: new Date().toISOString(),
+        content: newContent,
+      }
+      await storage.putMemory(currentMeta.id, JSON.stringify(envelope))
     },
 
     async trimRecords(keepRecent: number): Promise<void> {

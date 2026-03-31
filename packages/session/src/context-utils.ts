@@ -1,5 +1,31 @@
 import type { Message } from './types/llm.js'
 import type { SessionStorage } from './types/storage.js'
+import type { EventEnvelope } from './types/functions.js'
+
+/** 尝试从 memory 槽位解析信封，返回完整信封对象；非信封格式返回 null */
+export function tryParseEnvelope(raw: string | null): EventEnvelope | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    if (parsed && typeof parsed.content === 'string' && typeof parsed.sequence === 'number' && typeof parsed.timestamp === 'string') {
+      return parsed as unknown as EventEnvelope
+    }
+  } catch { /* 非 JSON，视为 legacy 裸字符串 */ }
+  return null
+}
+
+/** 从 memory 槽位提取 content（信封格式解包，裸字符串原样返回） */
+export function parseEnvelopeContent(raw: string | null): string | null {
+  if (!raw) return null
+  const envelope = tryParseEnvelope(raw)
+  return envelope ? envelope.content : raw
+}
+
+/** 从 memory 槽位提取 sequence（非信封格式返回 null） */
+export function parseEnvelopeSequence(raw: string | null): number | null {
+  const envelope = tryParseEnvelope(raw)
+  return envelope ? envelope.sequence : null
+}
 
 /** 粗估消息的 token 数（字符数 / 4） */
 function estimateTokens(messages: Message[]): number {
@@ -92,7 +118,8 @@ export async function assembleSessionContext(
   }
 
   // 超阈值：检查是否有 L2 可用
-  const memory = await storage.getMemory(sessionId)
+  const rawMemory = await storage.getMemory(sessionId)
+  const memory = parseEnvelopeContent(rawMemory)
   if (!memory) {
     // 无 L2 → 仍发全量（无法压缩）
     return { messages: fullMessages, insightConsumed, userTimestamp, compressed: false }
@@ -133,8 +160,9 @@ export async function assembleMainSessionContext(
     prefixMessages.push({ role: 'system', content: sysPrompt })
   }
 
-  // 2. synthesis（始终注入）
-  const synthContent = await storage.getMemory(sessionId)
+  // 2. synthesis（始终注入，解包信封）
+  const rawSynth = await storage.getMemory(sessionId)
+  const synthContent = parseEnvelopeContent(rawSynth)
   if (synthContent) {
     prefixMessages.push({ role: 'system', content: synthContent })
   }

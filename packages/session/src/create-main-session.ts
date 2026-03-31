@@ -9,6 +9,7 @@ import type {
   SendResult, StreamResult,
 } from './types/functions.js'
 import { assembleMainSessionContext } from './context-utils.js'
+import { parseEnvelopeContent } from './context-utils.js'
 
 interface ToolResultEnvelope {
   toolResults: Array<{
@@ -64,7 +65,8 @@ async function assembleMainSessionReplayContext(
     messages.push({ role: 'system', content: sysPrompt })
   }
 
-  const synthContent = await storage.getMemory(sessionId)
+  const rawSynth = await storage.getMemory(sessionId)
+  const synthContent = parseEnvelopeContent(rawSynth)
   if (synthContent) {
     messages.push({ role: 'system', content: synthContent })
   }
@@ -294,7 +296,8 @@ function buildMainSession(
     },
 
     async synthesis(): Promise<string | null> {
-      return storage.getMemory(currentMeta.id)
+      const raw = await storage.getMemory(currentMeta.id)
+      return parseEnvelopeContent(raw)
     },
 
     async integrate(fn: IntegrateFn): Promise<IntegrateResult> {
@@ -305,8 +308,9 @@ function buildMainSession(
       // 1. 扁平收集所有子 Session 的 L2
       const childSummaries = await storage.getAllSessionL2s()
 
-      // 2. 读取当前 synthesis
-      const currentSynthesis = await storage.getMemory(currentMeta.id)
+      // 2. 读取当前 synthesis（解包信封）
+      const rawSynthesis = await storage.getMemory(currentMeta.id)
+      const currentSynthesis = parseEnvelopeContent(rawSynthesis)
 
       // 3. 调用 IntegrateFn
       const result = await fn(childSummaries, currentSynthesis)

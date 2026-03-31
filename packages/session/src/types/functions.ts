@@ -4,11 +4,30 @@ import type { SessionStorage, MainStorage } from './storage.js'
 /** consolidate 函数签名：L3 → L2，接收当前 L2 和 L3 记录，返回新 L2 */
 export type ConsolidateFn = (currentMemory: string | null, messages: Message[]) => Promise<string>
 
+/**
+ * EventEnvelope — 事件信封
+ * 包裹 L2/insight 内容的 metadata 层，框架只读信封字段不解析 content
+ */
+export interface EventEnvelope {
+  /** 产出该事件的 Session ID */
+  sessionId: string
+  /** 单调递增序号，用于 cursor 追踪 */
+  sequence: number
+  /** 事件产生时间（ISO 8601） */
+  timestamp: string
+  /** 框架不解析的内容 — ConsolidateFn/IntegrateFn 自行定义格式 */
+  content: string
+}
+
 /** 子 Session 的 L2 摘要，供 IntegrateFn 消费 */
 export interface ChildL2Summary {
   sessionId: string
   label: string
   l2: string
+  /** L2 产出时的序号（consolidation 次数计数） */
+  sequence: number
+  /** L2 产出时间（ISO 8601） */
+  timestamp: string
 }
 
 /** IntegrateFn 的返回结果 */

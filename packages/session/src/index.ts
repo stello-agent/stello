@@ -24,6 +24,7 @@ export type {
   IntegrateFn,
   IntegrateResult,
   ChildL2Summary,
+  EventEnvelope,
   CreateSessionOptions,
   LoadSessionOptions,
   CreateMainSessionOptions,
