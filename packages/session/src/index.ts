@@ -22,8 +22,10 @@ export type {
 export type {
   ConsolidateFn,
   IntegrateFn,
+  IntegrateContext,
   IntegrateResult,
   ChildL2Summary,
+  EventEnvelope,
   CreateSessionOptions,
   LoadSessionOptions,
   CreateMainSessionOptions,

@@ -10,8 +10,20 @@ describe('createDefaultIntegrateFn', () => {
     const fn = createDefaultIntegrateFn(DEFAULT_INTEGRATE_PROMPT, llm)
 
     await fn([
-      { sessionId: 'sess-1', label: '选校', l2: '已完成第一轮筛选' },
-      { sessionId: 'sess-2', label: '文书', l2: 'PS 初稿待修改' },
+      {
+        sessionId: 'sess-1',
+        label: '选校',
+        l2: '已完成第一轮筛选',
+        sequence: 1,
+        timestamp: '2026-04-01T00:00:00.000Z',
+      },
+      {
+        sessionId: 'sess-2',
+        label: '文书',
+        l2: 'PS 初稿待修改',
+        sequence: 2,
+        timestamp: '2026-04-01T00:00:01.000Z',
+      },
     ], null)
 
     expect(llm).toHaveBeenCalledTimes(1)

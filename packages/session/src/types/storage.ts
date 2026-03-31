@@ -1,6 +1,6 @@
 import type { SessionMeta, SessionFilter } from './session.js'
 import type { Message } from './llm.js'
-import type { ChildL2Summary } from './functions.js'
+import type { ChildL2Summary, EventEnvelope } from './functions.js'
 
 /** 列举消息记录时的选项 */
 export interface ListRecordsOptions {
@@ -44,6 +44,20 @@ export interface SessionStorage {
   /** 写入 Session 的记忆摘要 */
   putMemory(sessionId: string, content: string): Promise<void>
 
+  /** 追加一条 memory 事件（append-only L2 log） */
+  appendMemoryEvent(sessionId: string, content: string, timestamp?: string): Promise<EventEnvelope>
+  /** 读取某个 Session 最新的 memory 事件 */
+  getLatestMemoryEvent(sessionId: string): Promise<EventEnvelope | null>
+
+  /** 追加一条 insight 事件（append-only insight log） */
+  appendInsightEvent(sessionId: string, content: string, timestamp?: string): Promise<EventEnvelope>
+  /** 读取某个 Session 的所有未消费 insight 事件 */
+  listInsightEvents(sessionId: string, afterSequence?: number): Promise<EventEnvelope[]>
+  /** 读取某个 Session 的 insight 消费 cursor */
+  getInsightCursor(sessionId: string): Promise<number>
+  /** 更新某个 Session 的 insight 消费 cursor */
+  setInsightCursor(sessionId: string, sequence: number): Promise<void>
+
   /** 在事务中执行操作（内存实现可直接执行 fn） */
   transaction<T>(fn: (tx: SessionStorage) => Promise<T>): Promise<T>
 }
@@ -65,6 +79,13 @@ export interface TopologyNode {
 export interface MainStorage extends SessionStorage {
   /** 批量获取所有子 Session 的 L2（integration 专用，扁平收集，不走树） */
   getAllSessionL2s(): Promise<ChildL2Summary[]>
+
+  /** 读取指定序号之后的 memory 事件（integration 增量消费） */
+  listMemoryEvents(afterSequence?: number, limit?: number): Promise<EventEnvelope[]>
+  /** 读取 MainSession 的 integration cursor */
+  getIntegrationCursor(sessionId: string): Promise<number>
+  /** 更新 MainSession 的 integration cursor */
+  setIntegrationCursor(sessionId: string, sequence: number): Promise<void>
 
   /** 列举 Session，可按条件过滤 */
   listSessions(filter?: SessionFilter): Promise<SessionMeta[]>

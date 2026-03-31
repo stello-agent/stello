@@ -70,6 +70,36 @@ describe('send() 契约', () => {
     expect(secondCall[3]!.content).toBe('问题2')
   })
 
+  it('多条 insight 会在下一次 send 时一起注入，然后一次性消费', async () => {
+    const capturedMessages: unknown[] = []
+    const llm = createMockLLM([simpleResponse, { content: '第二次回复' }])
+    const originalComplete = llm.complete.bind(llm)
+    llm.complete = async (msgs) => {
+      capturedMessages.push([...msgs])
+      return originalComplete(msgs)
+    }
+
+    const { session } = await makeSession({
+      llm,
+      systemPrompt: '你是助手',
+    })
+    await session.setInsight('英国方向发现用户更看重就业')
+    await session.setInsight('预算更新为 50 万')
+
+    await session.send('问题1')
+
+    const firstCall = capturedMessages[0] as Array<{ role: string; content: string }>
+    expect(firstCall[1]).toEqual({
+      role: 'system',
+      content: '英国方向发现用户更看重就业\n\n预算更新为 50 万',
+    })
+
+    await session.send('问题2')
+
+    const secondCall = capturedMessages[1] as Array<{ role: string; content: string }>
+    expect(secondCall.every((message) => message.content !== '英国方向发现用户更看重就业\n\n预算更新为 50 万')).toBe(true)
+  })
+
   it('send() 返回 toolCalls 时透传', async () => {
     const responseWithTools: LLMResult = {
       content: null,
@@ -145,6 +175,42 @@ describe('send() 契约', () => {
 
     const persisted = await session.messages()
     expect(persisted.map((message) => message.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
+  })
+
+  it('toolResults continuation 回放时会解包 event-envelope memory', async () => {
+    const capturedMessages: Message[][] = []
+    const llm = createMockLLM([
+      {
+        content: '',
+        toolCalls: [{ id: 'tc_1', name: 'search', input: { q: 'test' } }],
+      },
+      {
+        content: '最终答案',
+      },
+    ])
+    const originalComplete = llm.complete.bind(llm)
+    llm.complete = async (msgs, options) => {
+      capturedMessages.push(msgs.map((msg) => ({ ...msg })))
+      return originalComplete(msgs, options)
+    }
+
+    const { session } = await makeSession({ llm })
+    await session.consolidate(async () => '这是最新摘要')
+    await session.send('搜索 test')
+    await session.send(JSON.stringify({
+      toolResults: [{
+        toolCallId: 'tc_1',
+        toolName: 'search',
+        args: { q: 'test' },
+        success: true,
+        data: { hits: 3 },
+        error: null,
+      }],
+    }))
+
+    const secondCall = capturedMessages[1]!
+    expect(secondCall.find((message) => message.role === 'system' && message.content === '这是最新摘要')).toBeTruthy()
+    expect(secondCall.some((message) => message.content.includes('"sessionId"'))).toBe(false)
   })
 
   it('send() 会把 tools 定义传给 LLMAdapter.complete', async () => {

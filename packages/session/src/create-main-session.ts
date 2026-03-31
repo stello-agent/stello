@@ -8,7 +8,7 @@ import type {
   IntegrateFn, IntegrateResult, CreateMainSessionOptions, LoadMainSessionOptions,
   SendResult, StreamResult,
 } from './types/functions.js'
-import { assembleMainSessionContext } from './context-utils.js'
+import { assembleMainSessionContext, parseEnvelopeContent } from './context-utils.js'
 
 interface ToolResultEnvelope {
   toolResults: Array<{
@@ -64,7 +64,8 @@ async function assembleMainSessionReplayContext(
     messages.push({ role: 'system', content: sysPrompt })
   }
 
-  const synthContent = await storage.getMemory(sessionId)
+  const rawSynthContent = await storage.getMemory(sessionId)
+  const synthContent = parseEnvelopeContent(rawSynthContent)
   if (synthContent) {
     messages.push({ role: 'system', content: synthContent })
   }
@@ -294,7 +295,8 @@ function buildMainSession(
     },
 
     async synthesis(): Promise<string | null> {
-      return storage.getMemory(currentMeta.id)
+      const rawSynthesis = await storage.getMemory(currentMeta.id)
+      return parseEnvelopeContent(rawSynthesis)
     },
 
     async integrate(fn: IntegrateFn): Promise<IntegrateResult> {
@@ -307,19 +309,40 @@ function buildMainSession(
       const validChildSessionIds = new Set(childSummaries.map((child) => child.sessionId))
 
       // 2. 读取当前 synthesis
-      const currentSynthesis = await storage.getMemory(currentMeta.id)
+      const rawSynthesis = await storage.getMemory(currentMeta.id)
+      const currentSynthesis = parseEnvelopeContent(rawSynthesis)
 
-      // 3. 调用 IntegrateFn
-      const result = await fn(childSummaries, currentSynthesis)
+      // 3. 读取增量 memory 事件
+      const currentCursor = await storage.getIntegrationCursor(currentMeta.id)
+      const newEvents = await storage.listMemoryEvents(currentCursor)
+      const shouldBootstrap = currentCursor === 0
+
+      if (newEvents.length === 0 && !shouldBootstrap) {
+        return {
+          synthesis: currentSynthesis ?? '',
+          insights: [],
+        }
+      }
+
+      // 4. 调用 IntegrateFn
+      const result = await fn(childSummaries, currentSynthesis, { newEvents })
       const filteredInsights = result.insights.filter(({ sessionId }) => validChildSessionIds.has(sessionId))
 
-      // 4. 在事务中一起保存 synthesis 和有效 insights，避免部分写入。
+      // 5. 在事务中一起保存 synthesis 和有效 insights，避免部分写入。
       await storage.transaction(async (tx) => {
         await tx.putMemory(currentMeta.id, result.synthesis)
         for (const { sessionId, content } of filteredInsights) {
           await tx.putInsight(sessionId, content)
         }
       })
+
+      // 6. 推进 integration cursor。
+      if (newEvents.length > 0) {
+        const latestSequence = newEvents[newEvents.length - 1]!.sequence
+        await storage.setIntegrationCursor(currentMeta.id, latestSequence)
+      } else if (currentCursor === 0) {
+        await storage.setIntegrationCursor(currentMeta.id, -1)
+      }
 
       return { ...result, insights: filteredInsights }
     },

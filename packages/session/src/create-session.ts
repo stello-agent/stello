@@ -3,8 +3,14 @@ import type { Session, MessageQueryOptions } from './types/session-api.js'
 import { SessionArchivedError } from './types/session-api.js'
 import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './types/session.js'
 import type { Message } from './types/llm.js'
-import type { ConsolidateFn, CreateSessionOptions, LoadSessionOptions, SendResult, StreamResult } from './types/functions.js'
-import { assembleSessionContext } from './context-utils.js'
+import type {
+  ConsolidateFn,
+  CreateSessionOptions,
+  LoadSessionOptions,
+  SendResult,
+  StreamResult,
+} from './types/functions.js'
+import { assembleSessionContext, parseEnvelopeContent } from './context-utils.js'
 
 interface ToolResultEnvelope {
   toolResults: Array<{
@@ -68,8 +74,9 @@ async function assembleSessionReplayContext(
   }
 
   const memory = await storage.getMemory(sessionId)
-  if (memory) {
-    messages.push({ role: 'system', content: memory })
+  const memoryContent = parseEnvelopeContent(memory)
+  if (memoryContent) {
+    messages.push({ role: 'system', content: memoryContent })
   }
 
   const history = await storage.listRecords(sessionId)
@@ -324,17 +331,20 @@ function buildSession(
     },
 
     async memory(): Promise<string | null> {
-      return storage.getMemory(currentMeta.id)
+      const rawMemory = await storage.getMemory(currentMeta.id)
+      return parseEnvelopeContent(rawMemory)
     },
 
     async consolidate(fn: ConsolidateFn): Promise<void> {
       if (currentMeta.status === 'archived') {
         throw new SessionArchivedError(currentMeta.id)
       }
-      const currentMemory = await storage.getMemory(currentMeta.id)
+      const rawMemory = await storage.getMemory(currentMeta.id)
+      const currentMemory = parseEnvelopeContent(rawMemory)
       const messages = await storage.listRecords(currentMeta.id)
       const newMemory = await fn(currentMemory, messages)
-      await storage.putMemory(currentMeta.id, newMemory)
+      // 通过 append-only memory event 持久化新的 L2。
+      await storage.appendMemoryEvent(currentMeta.id, newMemory)
     },
 
     async trimRecords(keepRecent: number): Promise<void> {

@@ -55,6 +55,38 @@ describe('PgMainStorage', () => {
       expect(l2s[0]!.label).toBe('S1')
       expect(l2s[0]!.l2).toBe('L2 for S1')
     })
+
+    it('优先返回 memory event，并暴露 sequence / timestamp', async () => {
+      const mainId = await insertSession({ role: 'main', label: 'Main' })
+      const s1 = await insertSession({ label: 'S1', parentId: mainId })
+
+      const event = await storage.appendMemoryEvent(s1, 'event L2 for S1')
+
+      const l2s = await storage.getAllSessionL2s()
+      expect(l2s).toHaveLength(1)
+      expect(l2s[0]!.l2).toBe('event L2 for S1')
+      expect(l2s[0]!.sequence).toBe(event.sequence)
+      expect(l2s[0]!.timestamp).toBeTruthy()
+    })
+  })
+
+  describe('memory events + integration cursor', () => {
+    it('支持按 integration cursor 增量读取 memory events', async () => {
+      const mainId = await insertSession({ role: 'main', label: 'Main' })
+      const s1 = await insertSession({ label: 'S1', parentId: mainId })
+      const s2 = await insertSession({ label: 'S2', parentId: mainId })
+
+      const event1 = await storage.appendMemoryEvent(s1, 'L2-A')
+      const event2 = await storage.appendMemoryEvent(s2, 'L2-B')
+
+      await storage.setIntegrationCursor(mainId, event1.sequence)
+      expect(await storage.getIntegrationCursor(mainId)).toBe(event1.sequence)
+
+      const unread = await storage.listMemoryEvents(await storage.getIntegrationCursor(mainId))
+      expect(unread).toHaveLength(1)
+      expect(unread[0]!.sequence).toBe(event2.sequence)
+      expect(unread[0]!.content).toBe('L2-B')
+    })
   })
 
   describe('listSessions', () => {

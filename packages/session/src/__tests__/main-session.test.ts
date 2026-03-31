@@ -106,8 +106,8 @@ describe('MainSession integrate()', () => {
     expect(children.find((c) => c.label === '选校')?.l2).toBe('已确定 top5 CS 项目')
   })
 
-  it('IntegrateFn 接收当前 synthesis', async () => {
-    const { main } = await makeWithChildren()
+  it('IntegrateFn 接收当前 synthesis 和新事件', async () => {
+    const { main, child1 } = await makeWithChildren()
 
     // 先做一次 integrate
     await main.integrate(async () => ({
@@ -115,15 +115,41 @@ describe('MainSession integrate()', () => {
       insights: [],
     }))
 
-    // 第二次应收到 first synthesis
-    const fn = vi.fn<IntegrateFn>(async (_children, current) => ({
+    await child1.consolidate(async () => '选校方向已更新为就业导向')
+
+    // 第二次应收到 first synthesis，并只看到新的 memory event
+    const fn = vi.fn<IntegrateFn>(async (_children, current, context) => ({
       synthesis: `updated from: ${current}`,
       insights: [],
     }))
     await main.integrate(fn)
 
     expect(fn.mock.calls[0]![1]).toBe('first synthesis')
+    expect(fn.mock.calls[0]![2]?.newEvents).toHaveLength(1)
+    expect(fn.mock.calls[0]![2]?.newEvents[0]?.content).toBe('选校方向已更新为就业导向')
     expect(await main.synthesis()).toBe('updated from: first synthesis')
+  })
+
+  it('没有新的 memory event 时跳过 IntegrateFn', async () => {
+    const { main } = await makeWithChildren()
+
+    await main.integrate(async () => ({
+      synthesis: 'first synthesis',
+      insights: [],
+    }))
+
+    const fn = vi.fn<IntegrateFn>(async () => ({
+      synthesis: 'should not run',
+      insights: [],
+    }))
+
+    const result = await main.integrate(fn)
+
+    expect(fn).not.toHaveBeenCalled()
+    expect(result).toEqual({
+      synthesis: 'first synthesis',
+      insights: [],
+    })
   })
 
   it('insights 推送到子 Session', async () => {
@@ -274,6 +300,43 @@ describe('MainSession send()', () => {
 
     const persisted = await main.messages()
     expect(persisted.map((message) => message.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
+  })
+
+  it('toolResults continuation 回放时会解包 synthesis memory', async () => {
+    const llm = {
+      maxContextTokens: 1_000_000,
+      complete: vi
+        .fn()
+        .mockResolvedValueOnce({
+          content: '',
+          toolCalls: [{ id: 'tc_1', name: 'search', input: { q: 'test' } }],
+        })
+        .mockResolvedValueOnce({
+          content: '最终答案',
+          usage: { promptTokens: 10, completionTokens: 5 },
+        }),
+    } satisfies LLMAdapter
+    const { main } = await makeMainSession({ llm })
+    await main.integrate(async () => ({
+      synthesis: '这是综合认知',
+      insights: [],
+    }))
+
+    await main.send('搜索 test')
+    await main.send(JSON.stringify({
+      toolResults: [{
+        toolCallId: 'tc_1',
+        toolName: 'search',
+        args: { q: 'test' },
+        success: true,
+        data: { hits: 2 },
+        error: null,
+      }],
+    }))
+
+    const secondCall = (llm.complete as ReturnType<typeof vi.fn>).mock.calls[1]![0] as Array<Message>
+    expect(secondCall.find((message) => message.role === 'system' && message.content === '这是综合认知')).toBeTruthy()
+    expect(secondCall.some((message) => message.content.includes('"sessionId"'))).toBe(false)
   })
 
   it('自动存 L3（user + assistant）', async () => {

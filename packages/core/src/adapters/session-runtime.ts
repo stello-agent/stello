@@ -32,8 +32,11 @@ export type SessionCompatibleConsolidateFn = (
 
 /** 结构兼容 @stello-ai/session 的 integrate 函数签名 */
 export type SessionCompatibleIntegrateFn = (
-  children: Array<{ sessionId: string; label: string; l2: string }>,
+  children: Array<{ sessionId: string; label: string; l2: string; sequence: number; timestamp: string }>,
   currentSynthesis: string | null,
+  context?: {
+    newEvents: Array<{ sessionId: string; sequence: number; timestamp: string; content: string }>;
+  },
 ) => Promise<{
   synthesis: string;
   insights: Array<{ sessionId: string; content: string }>;

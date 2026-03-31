@@ -177,6 +177,39 @@ describe('PgSessionStorage', () => {
     })
   })
 
+  describe('event logs', () => {
+    let sessionId: string
+
+    beforeEach(async () => {
+      sessionId = await createSession(storage)
+    })
+
+    it('memory event 追加后可读取最新事件', async () => {
+      const event1 = await storage.appendMemoryEvent(sessionId, 'first')
+      const event2 = await storage.appendMemoryEvent(sessionId, 'second')
+
+      expect(event2.sequence).toBeGreaterThan(event1.sequence)
+
+      const latest = await storage.getLatestMemoryEvent(sessionId)
+      expect(latest).not.toBeNull()
+      expect(latest!.content).toBe('second')
+      expect(latest!.sequence).toBe(event2.sequence)
+    })
+
+    it('insight event 采用追加 + cursor 消费语义', async () => {
+      await storage.appendInsightEvent(sessionId, 'insight-a')
+      await storage.appendInsightEvent(sessionId, 'insight-b')
+
+      expect(await storage.getInsight(sessionId)).toBe('insight-a\n\ninsight-b')
+
+      await storage.clearInsight(sessionId)
+      expect(await storage.getInsight(sessionId)).toBeNull()
+
+      await storage.appendInsightEvent(sessionId, 'insight-c')
+      expect(await storage.getInsight(sessionId)).toBe('insight-c')
+    })
+  })
+
   describe('transaction', () => {
     it('成功提交', async () => {
       const id = uuid()

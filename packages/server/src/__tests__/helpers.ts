@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import pg from 'pg'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -23,7 +23,9 @@ export function createTestPool(): pg.Pool {
 /** 执行迁移 + 清空数据（每个测试文件调用一次） */
 export async function setupDatabase(pool: pg.Pool): Promise<void> {
   const migrationsDir = join(__dirname, '..', 'db', 'migrations')
-  const files = ['001_init.sql', '002_integrate_prompt.sql']
+  const files = readdirSync(migrationsDir)
+    .filter((file) => file.endsWith('.sql'))
+    .sort()
   for (const file of files) {
     const sql = readFileSync(join(migrationsDir, file), 'utf-8')
     await pool.query(sql)
@@ -33,7 +35,7 @@ export async function setupDatabase(pool: pg.Pool): Promise<void> {
 /** 清空所有表数据（每个测试用例前调用） */
 export async function cleanDatabase(pool: pg.Pool): Promise<void> {
   await pool.query(`
-    TRUNCATE users, spaces, sessions, records, session_data, session_refs, core_data CASCADE
+    TRUNCATE users, spaces, sessions, records, session_data, session_refs, core_data, session_events CASCADE
   `)
 }
 

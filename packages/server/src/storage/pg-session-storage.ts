@@ -1,5 +1,5 @@
 import type pg from 'pg'
-import type { SessionStorage, ListRecordsOptions } from '@stello-ai/session'
+import type { EventEnvelope, SessionStorage, ListRecordsOptions } from '@stello-ai/session'
 import type { SessionMeta } from '@stello-ai/session'
 import type { Message } from '@stello-ai/session'
 
@@ -146,16 +146,30 @@ export class PgSessionStorage implements SessionStorage {
 
   /** 读取 insight */
   async getInsight(sessionId: string): Promise<string | null> {
+    const cursor = await this.getInsightCursor(sessionId)
+    const unreadEvents = await this.listInsightEvents(sessionId, cursor)
+    if (unreadEvents.length > 0) {
+      return unreadEvents.map((event) => event.content).join('\n\n')
+    }
     return this.getSlot(sessionId, 'insight')
   }
 
   /** 写入 insight */
   async putInsight(sessionId: string, content: string): Promise<void> {
-    await this.putSlot(sessionId, 'insight', content)
+    await this.appendInsightEvent(sessionId, content)
   }
 
   /** 清除 insight */
   async clearInsight(sessionId: string): Promise<void> {
+    const { rows } = await this.client.query(
+      `SELECT id FROM session_events
+       WHERE space_id = $1 AND stream = 'insight' AND session_id = $2
+       ORDER BY id DESC
+       LIMIT 1`,
+      [this.spaceId, sessionId],
+    )
+    const latestSequence = rows.length > 0 ? Number(rows[0]!['id']) : 0
+    await this.setInsightCursor(sessionId, latestSequence)
     await this.client.query(
       `DELETE FROM session_data WHERE session_id = $1 AND key = 'insight'`,
       [sessionId],
@@ -164,12 +178,95 @@ export class PgSessionStorage implements SessionStorage {
 
   /** 读取 memory（L2 / synthesis） */
   async getMemory(sessionId: string): Promise<string | null> {
+    const latestEvent = await this.getLatestMemoryEvent(sessionId)
+    if (latestEvent) {
+      return JSON.stringify(latestEvent)
+    }
     return this.getSlot(sessionId, 'memory')
   }
 
   /** 写入 memory */
   async putMemory(sessionId: string, content: string): Promise<void> {
     await this.putSlot(sessionId, 'memory', content)
+  }
+
+  /** 追加一条 memory 事件。 */
+  async appendMemoryEvent(sessionId: string, content: string, timestamp = new Date().toISOString()): Promise<EventEnvelope> {
+    const { rows } = await this.client.query(
+      `INSERT INTO session_events (space_id, stream, session_id, content, event_timestamp)
+       VALUES ($1, 'memory', $2, $3, $4)
+       RETURNING id, session_id AS "sessionId", content, event_timestamp AS "timestamp"`,
+      [this.spaceId, sessionId, content, timestamp],
+    )
+    return {
+      sessionId: rows[0]!['sessionId'] as string,
+      sequence: Number(rows[0]!['id']),
+      content: rows[0]!['content'] as string,
+      timestamp: (rows[0]!['timestamp'] as Date).toISOString(),
+    }
+  }
+
+  /** 读取某个 Session 最新的 memory 事件。 */
+  async getLatestMemoryEvent(sessionId: string): Promise<EventEnvelope | null> {
+    const { rows } = await this.client.query(
+      `SELECT id, session_id AS "sessionId", content, event_timestamp AS "timestamp"
+       FROM session_events
+       WHERE space_id = $1 AND stream = 'memory' AND session_id = $2
+       ORDER BY id DESC
+       LIMIT 1`,
+      [this.spaceId, sessionId],
+    )
+    if (rows.length === 0) return null
+    return {
+      sessionId: rows[0]!['sessionId'] as string,
+      sequence: Number(rows[0]!['id']),
+      content: rows[0]!['content'] as string,
+      timestamp: (rows[0]!['timestamp'] as Date).toISOString(),
+    }
+  }
+
+  /** 追加一条 insight 事件。 */
+  async appendInsightEvent(sessionId: string, content: string, timestamp = new Date().toISOString()): Promise<EventEnvelope> {
+    const { rows } = await this.client.query(
+      `INSERT INTO session_events (space_id, stream, session_id, content, event_timestamp)
+       VALUES ($1, 'insight', $2, $3, $4)
+       RETURNING id, session_id AS "sessionId", content, event_timestamp AS "timestamp"`,
+      [this.spaceId, sessionId, content, timestamp],
+    )
+    return {
+      sessionId: rows[0]!['sessionId'] as string,
+      sequence: Number(rows[0]!['id']),
+      content: rows[0]!['content'] as string,
+      timestamp: (rows[0]!['timestamp'] as Date).toISOString(),
+    }
+  }
+
+  /** 读取某个 Session 的 insight 事件。 */
+  async listInsightEvents(sessionId: string, afterSequence = 0): Promise<EventEnvelope[]> {
+    const { rows } = await this.client.query(
+      `SELECT id, session_id AS "sessionId", content, event_timestamp AS "timestamp"
+       FROM session_events
+       WHERE space_id = $1 AND stream = 'insight' AND session_id = $2 AND id > $3
+       ORDER BY id ASC`,
+      [this.spaceId, sessionId, afterSequence],
+    )
+    return rows.map((row) => ({
+      sessionId: row['sessionId'] as string,
+      sequence: Number(row['id']),
+      content: row['content'] as string,
+      timestamp: (row['timestamp'] as Date).toISOString(),
+    }))
+  }
+
+  /** 读取某个 Session 的 insight cursor。 */
+  async getInsightCursor(sessionId: string): Promise<number> {
+    const raw = await this.getSlot(sessionId, 'insight_cursor')
+    return raw ? Number(raw) : 0
+  }
+
+  /** 更新某个 Session 的 insight cursor。 */
+  async setInsightCursor(sessionId: string, sequence: number): Promise<void> {
+    await this.putSlot(sessionId, 'insight_cursor', String(sequence))
   }
 
   /** 在事务中执行操作 */

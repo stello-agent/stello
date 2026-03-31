@@ -43,11 +43,11 @@ describe('insight() + setInsight()', () => {
     expect(await session.insight()).toBe('Some insights here')
   })
 
-  it('setInsight 覆盖已有值', async () => {
+  it('setInsight 采用追加语义', async () => {
     const { session } = await makeSession()
     await session.setInsight('first')
     await session.setInsight('second')
-    expect(await session.insight()).toBe('second')
+    expect(await session.insight()).toBe('first\n\nsecond')
   })
 
   it('不同 session 的 insight 互不干扰', async () => {

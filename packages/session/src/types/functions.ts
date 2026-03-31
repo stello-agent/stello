@@ -4,11 +4,30 @@ import type { SessionStorage, MainStorage } from './storage.js'
 /** consolidate 函数签名：L3 → L2，接收当前 L2 和 L3 记录，返回新 L2 */
 export type ConsolidateFn = (currentMemory: string | null, messages: Message[]) => Promise<string>
 
+/**
+ * EventEnvelope — 事件信封
+ * 包裹 L2 / insight 内容的 metadata 层，框架只读信封字段，不解析 content
+ */
+export interface EventEnvelope {
+  /** 产出该事件的 Session ID */
+  sessionId: string
+  /** 单调递增序号，用于 cursor 追踪 */
+  sequence: number
+  /** 事件产生时间（ISO 8601） */
+  timestamp: string
+  /** 框架不解析的内容 */
+  content: string
+}
+
 /** 子 Session 的 L2 摘要，供 IntegrateFn 消费 */
 export interface ChildL2Summary {
   sessionId: string
   label: string
   l2: string
+  /** L2 产出时的序号 */
+  sequence: number
+  /** L2 产出时间 */
+  timestamp: string
 }
 
 /** IntegrateFn 的返回结果 */
@@ -19,10 +38,17 @@ export interface IntegrateResult {
   insights: Array<{ sessionId: string; content: string }>
 }
 
+/** integrate 调用时附带的增量上下文 */
+export interface IntegrateContext {
+  /** 自上次 integration cursor 以来新增的 memory 事件 */
+  newEvents: EventEnvelope[]
+}
+
 /** integrate 函数签名：所有子 L2 + 当前 synthesis → 新 synthesis + per-child insights */
 export type IntegrateFn = (
   children: ChildL2Summary[],
-  currentSynthesis: string | null
+  currentSynthesis: string | null,
+  context?: IntegrateContext,
 ) => Promise<IntegrateResult>
 
 /** createSession() 的选项 */
