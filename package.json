@@ -14,6 +14,7 @@
     "release": "pnpm build && pnpm -r publish --no-git-checks --access public"
   },
   "devDependencies": {
+    "dotenv": "^17.4.0",
     "eslint": "^10.0.3",
     "openai": "^6.32.0",
     "prettier": "^3.8.1",
