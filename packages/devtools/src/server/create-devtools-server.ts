@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import type { Server as HttpServer } from 'node:http'
 import { Hono } from 'hono'
 import type { StelloAgent } from '@stello-ai/core'
+import { loadSkillsFromDirectory } from '@stello-ai/core'
 import { createRoutes } from './routes.js'
 import { createWsHandler } from './ws-handler.js'
 import { EventBus, wrapAgentWithEvents } from './event-bus.js'
@@ -145,6 +146,15 @@ export async function startDevtools(
 
   const persistedState = options.stateStore ? await options.stateStore.load() : null
   await restorePersistedState(agent, persistedState, options)
+
+  /* 从文件系统加载 skills 到 agent 的 SkillRouter */
+  if (options.skillDirs?.length) {
+    const router = agent.config.capabilities.skills;
+    for (const dir of options.skillDirs) {
+      const skills = await loadSkillsFromDirectory(dir);
+      for (const skill of skills) router.register(skill);
+    }
+  }
 
   /* Proxy 包装 agent，拦截操作自动广播事件 */
   const wrappedAgent = wrapAgentWithEvents(agent, eventBus)
