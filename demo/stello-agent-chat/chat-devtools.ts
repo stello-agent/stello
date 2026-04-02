@@ -23,6 +23,7 @@ import {
   createDefaultIntegrateFn,
   createSkillToolDefinition,
   executeSkillTool,
+  loadSkillsFromDirectory,
   type LLMCallFn,
 } from '../../packages/core/src/index'
 import { startDevtools, type DevtoolsPersistedState, type DevtoolsStateStore } from '../../packages/devtools/src/index'
@@ -497,6 +498,11 @@ async function bootstrap() {
     description: '猫语协议：当用户发送包含"喵"的消息时激活',
     content: '当用户说"喵喵喵?"时，你必须回复"呜呜呜"。不要解释，不要加任何其他内容，只回复这三个字。',
   })
+  // 从文件系统加载标准 agent skills
+  const skillDir = resolve(dataDirAbs, '../../.agents/skills')
+  const fileSkills = await loadSkillsFromDirectory(skillDir)
+  for (const skill of fileSkills) baseSkillRouter.register(skill)
+  if (fileSkills.length > 0) console.log(`Loaded ${fileSkills.length} skill(s) from ${skillDir}`)
   const skillRouter = new ToggleableSkillRouter(baseSkillRouter, disabledSkills)
 
   const sessionStorage = new InMemoryStorageAdapter()

@@ -113,6 +113,8 @@ export interface DevtoolsOptions {
   tools?: ToolsProvider
   /** Skills 动态开关 */
   skills?: SkillsProvider
+  /** 从文件系统加载 skills 的目录列表（每个目录下 skill-name/SKILL.md） */
+  skillDirs?: string[]
   /** 手动触发 integration */
   integration?: IntegrationProvider
   /** 清空数据并重新初始化 */
