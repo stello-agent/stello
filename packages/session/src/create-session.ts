@@ -132,8 +132,10 @@ function buildSession(
   const tools = options.tools
   let lastPromptTokens: number | null = null
   let compressionCache: CompressionCache | null = null
-  // 未提供 compressFn 但有 LLM 时，自动使用内置 LLM 压缩
-  const compressFn = options.compressFn ?? (options.llm ? createBuiltinCompressFn(options.llm) : undefined)
+  /** 解析 compressFn：用户提供 > 内置 LLM 压缩 */
+  function resolveCompressFn() {
+    return options.compressFn ?? createBuiltinCompressFn(options.llm!)
+  }
 
   const session: Session = {
     get meta(): Readonly<SessionMeta> {
@@ -151,7 +153,7 @@ function buildSession(
       // 组装上下文（自动压缩）
       const assembled = await assembleSessionContext(
         currentMeta.id, storage, content,
-        { maxContextTokens: options.llm.maxContextTokens, lastPromptTokens, compressFn, compressionCache },
+        { maxContextTokens: options.llm.maxContextTokens, lastPromptTokens, compressFn: resolveCompressFn(), compressionCache },
       )
       if (assembled.compressionCache !== undefined) {
         compressionCache = assembled.compressionCache
@@ -219,7 +221,7 @@ function buildSession(
         // 组装上下文（自动压缩）
         const assembled = await assembleSessionContext(
           currentMeta.id, storage, content,
-          { maxContextTokens: options.llm!.maxContextTokens, lastPromptTokens, compressFn, compressionCache },
+          { maxContextTokens: options.llm!.maxContextTokens, lastPromptTokens, compressFn: resolveCompressFn(), compressionCache },
         )
         if (assembled.compressionCache !== undefined) {
           compressionCache = assembled.compressionCache

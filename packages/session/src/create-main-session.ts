@@ -129,7 +129,9 @@ function buildMainSession(
   const tools = options.tools
   let lastPromptTokens: number | null = null
   let compressionCache: CompressionCache | null = null
-  const compressFn = options.compressFn ?? (options.llm ? createBuiltinCompressFn(options.llm) : undefined)
+  function resolveCompressFn() {
+    return options.compressFn ?? createBuiltinCompressFn(options.llm!)
+  }
 
   const mainSession: MainSession = {
     get meta(): Readonly<SessionMeta> {
@@ -147,7 +149,7 @@ function buildMainSession(
       // 组装上下文（自动压缩）
       const assembled = await assembleMainSessionContext(
         currentMeta.id, storage, content,
-        { maxContextTokens: options.llm.maxContextTokens, lastPromptTokens, compressFn, compressionCache },
+        { maxContextTokens: options.llm.maxContextTokens, lastPromptTokens, compressFn: resolveCompressFn(), compressionCache },
       )
       if (assembled.compressionCache !== undefined) {
         compressionCache = assembled.compressionCache
@@ -207,7 +209,7 @@ function buildMainSession(
         // 组装上下文（自动压缩）
         const assembled = await assembleMainSessionContext(
           currentMeta.id, storage, content,
-          { maxContextTokens: options.llm!.maxContextTokens, lastPromptTokens, compressFn, compressionCache },
+          { maxContextTokens: options.llm!.maxContextTokens, lastPromptTokens, compressFn: resolveCompressFn(), compressionCache },
         )
         if (assembled.compressionCache !== undefined) {
           compressionCache = assembled.compressionCache

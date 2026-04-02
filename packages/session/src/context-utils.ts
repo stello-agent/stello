@@ -57,8 +57,8 @@ export interface CompressContext {
   maxContextTokens: number
   /** 上次 send() 返回的 promptTokens，用于估算（首次为 null） */
   lastPromptTokens: number | null
-  /** 上下文压缩函数（超阈值时调用） */
-  compressFn?: CompressFn
+  /** 上下文压缩函数（超阈值时调用），由 Session 闭包保证始终存在 */
+  compressFn: CompressFn
   /** 压缩缓存（Session 闭包持有，跨 send() 复用） */
   compressionCache?: CompressionCache | null
 }
@@ -86,9 +86,8 @@ export interface AssembleResult {
 /**
  * 组装 Session 上下文，支持自动压缩
  *
- * 默认全量回放。当估算 token 数超过 maxContextTokens * 0.8 时：
- * - 有 compressFn：调用压缩函数生成摘要，注入 system + 摘要 + 近期 L3
- * - 无 compressFn：滑动窗口截断，仅保留近期 L3
+ * 默认全量回放。当估算 token 数超过 maxContextTokens * 0.8 时，
+ * 调用 compressFn 生成摘要，注入 system + 摘要 + 近期 L3。
  */
 export async function assembleSessionContext(
   sessionId: string,
@@ -130,10 +129,8 @@ export async function assembleSessionContext(
     return { messages: fullMessages, insightConsumed, userTimestamp, compressed: false }
   }
 
-  // 超阈值：根据是否有 compressFn 选择压缩策略
-  return compress.compressFn
-    ? compressWithFn(prefixMessages, history, userMessage, threshold, compress, insightConsumed, userTimestamp)
-    : truncateByWindow(prefixMessages, history, userMessage, threshold, insightConsumed, userTimestamp)
+  // 超阈值 → 调用 compressFn 压缩
+  return compressWithFn(prefixMessages, history, userMessage, threshold, compress, insightConsumed, userTimestamp)
 }
 
 /** 用 compressFn 做 LLM 摘要式压缩 */
@@ -200,35 +197,10 @@ async function compressWithFn(
   }
 }
 
-/** 无 compressFn 时的滑动窗口截断 */
-function truncateByWindow(
-  prefix: Message[],
-  history: Message[],
-  userMessage: Message,
-  threshold: number,
-  insightConsumed: boolean,
-  userTimestamp: string,
-): AssembleResult {
-  const fixedTokens = estimateTokens([...prefix, userMessage])
-  const historyBudget = threshold - fixedTokens
-  const selectedHistory = historyBudget > 0
-    ? selectHistoryByBudget(history, historyBudget)
-    : []
-
-  return {
-    messages: [...prefix, ...selectedHistory, userMessage],
-    insightConsumed,
-    userTimestamp,
-    compressed: true,
-  }
-}
-
 /**
  * 组装 MainSession 上下文，支持自动压缩
  *
- * MainSession 始终注入 synthesis。超阈值时：
- * - 有 compressFn：调用压缩函数 + 近期 L3
- * - 无 compressFn：滑动窗口截断
+ * MainSession 始终注入 synthesis。超阈值时调用 compressFn 压缩 + 近期 L3。
  */
 export async function assembleMainSessionContext(
   sessionId: string,
@@ -268,59 +240,44 @@ export async function assembleMainSessionContext(
     return { messages: fullMessages, userTimestamp, compressed: false }
   }
 
-  // 超阈值 + compressFn → LLM 摘要式压缩
-  if (compress.compressFn) {
-    const fixedTokens = estimateTokens([...prefixMessages, userMessage])
-    const cachedSummary = compress.compressionCache?.summary
-    const summaryEstimate = cachedSummary
-      ? Math.ceil(cachedSummary.length / 4)
-      : ESTIMATED_SUMMARY_TOKENS
-    const recentBudget = threshold - fixedTokens - summaryEstimate
-    const recentMessages = recentBudget > 0
-      ? selectHistoryByBudget(history, recentBudget)
-      : []
+  // 超阈值 → 调用 compressFn 压缩
+  const fixedTokens = estimateTokens([...prefixMessages, userMessage])
+  const cachedSummary = compress.compressionCache?.summary
+  const summaryEstimate = cachedSummary
+    ? Math.ceil(cachedSummary.length / 4)
+    : ESTIMATED_SUMMARY_TOKENS
+  const recentBudget = threshold - fixedTokens - summaryEstimate
+  const recentMessages = recentBudget > 0
+    ? selectHistoryByBudget(history, recentBudget)
+    : []
 
-    const compressCount = history.length - recentMessages.length
+  const compressCount = history.length - recentMessages.length
 
-    if (compressCount === 0) {
-      return { messages: fullMessages, userTimestamp, compressed: false }
-    }
-
-    let summary: string
-    let newCache: CompressionCache
-    if (compress.compressionCache && compress.compressionCache.compressedCount === compressCount) {
-      summary = compress.compressionCache.summary
-      newCache = compress.compressionCache
-    } else {
-      summary = await compress.compressFn(history.slice(0, compressCount))
-      newCache = { summary, compressedCount: compressCount }
-    }
-
-    const summaryMessage: Message = { role: 'system', content: summary }
-    const actualFixedTokens = estimateTokens([...prefixMessages, summaryMessage, userMessage])
-    const actualBudget = threshold - actualFixedTokens
-    const finalRecent = actualBudget > 0
-      ? selectHistoryByBudget(history, actualBudget)
-      : []
-
-    return {
-      messages: [...prefixMessages, summaryMessage, ...finalRecent, userMessage],
-      userTimestamp,
-      compressed: true,
-      compressionCache: newCache,
-    }
+  if (compressCount === 0) {
+    return { messages: fullMessages, userTimestamp, compressed: false }
   }
 
-  // 超阈值 + 无 compressFn → 滑动窗口截断
-  const fixedTokens = estimateTokens([...prefixMessages, userMessage])
-  const historyBudget = threshold - fixedTokens
-  const selectedHistory = historyBudget > 0
-    ? selectHistoryByBudget(history, historyBudget)
+  let summary: string
+  let newCache: CompressionCache
+  if (compress.compressionCache && compress.compressionCache.compressedCount === compressCount) {
+    summary = compress.compressionCache.summary
+    newCache = compress.compressionCache
+  } else {
+    summary = await compress.compressFn(history.slice(0, compressCount))
+    newCache = { summary, compressedCount: compressCount }
+  }
+
+  const summaryMessage: Message = { role: 'system', content: summary }
+  const actualFixedTokens = estimateTokens([...prefixMessages, summaryMessage, userMessage])
+  const actualBudget = threshold - actualFixedTokens
+  const finalRecent = actualBudget > 0
+    ? selectHistoryByBudget(history, actualBudget)
     : []
 
   return {
-    messages: [...prefixMessages, ...selectedHistory, userMessage],
+    messages: [...prefixMessages, summaryMessage, ...finalRecent, userMessage],
     userTimestamp,
     compressed: true,
+    compressionCache: newCache,
   }
 }
