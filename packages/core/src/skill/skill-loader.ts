@@ -1,8 +1,15 @@
 // ─── 文件系统 Skill 加载器 ───
 
 import { readdir, readFile, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Skill } from '../types/lifecycle';
+
+/** 展开路径中的 ~ 为用户主目录 */
+function expandHome(p: string): string {
+  if (p.startsWith('~/') || p === '~') return join(homedir(), p.slice(1));
+  return p;
+}
 
 /** 解析 SKILL.md 的 YAML frontmatter，返回 name/description/content */
 export function parseFrontmatter(raw: string): Skill | null {
@@ -32,16 +39,17 @@ export function parseFrontmatter(raw: string): Skill | null {
 
 /** 从目录扫描并加载所有 SKILL.md，返回 Skill 数组 */
 export async function loadSkillsFromDirectory(dir: string): Promise<Skill[]> {
+  const resolved = expandHome(dir);
   let entries: string[];
   try {
-    entries = await readdir(dir);
+    entries = await readdir(resolved);
   } catch {
     return [];
   }
 
   const skills: Skill[] = [];
   for (const entry of entries) {
-    const entryPath = join(dir, entry);
+    const entryPath = join(resolved, entry);
     const entryStat = await stat(entryPath).catch(() => null);
     if (!entryStat?.isDirectory()) continue;
 
