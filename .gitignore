@@ -1,4 +1,5 @@
 .claude/plans
+.claude/settings.json
 # Logs
 log
 logs
