@@ -48,6 +48,7 @@ export { SplitGuard } from './session/split-guard';
 export type { SplitCheckResult } from './session/split-guard';
 export { SkillRouterImpl } from './skill/skill-router';
 export { createSkillToolDefinition, executeSkillTool } from './skill/skill-tool';
+export { loadSkillsFromDirectory, parseFrontmatter } from './skill/skill-loader';
 export {
   adaptSessionToEngineRuntime,
   adaptMainSessionToSchedulerMainSession,
