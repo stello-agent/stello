@@ -114,7 +114,7 @@ beforeEach(async () => {
 })
 
 afterAll(async () => {
-  await closeServer()
+  if (closeServer) await closeServer()
   await pool.end()
 })
 
