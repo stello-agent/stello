@@ -4,6 +4,9 @@ import type { SessionStorage, MainStorage } from './storage.js'
 /** consolidate 函数签名：L3 → L2，接收当前 L2 和 L3 记录，返回新 L2 */
 export type ConsolidateFn = (currentMemory: string | null, messages: Message[]) => Promise<string>
 
+/** 上下文压缩函数签名：接收需压缩的消息列表，返回摘要文本 */
+export type CompressFn = (messages: Message[]) => Promise<string>
+
 /** 子 Session 的 L2 摘要，供 IntegrateFn 消费 */
 export interface ChildL2Summary {
   sessionId: string
@@ -41,6 +44,8 @@ export interface CreateSessionOptions {
   metadata?: Record<string, unknown>
   /** 可用工具定义 */
   tools?: LLMCompleteOptions['tools']
+  /** 上下文压缩函数（超阈值时调用） */
+  compressFn?: CompressFn
 
 }
 
@@ -54,6 +59,8 @@ export interface LoadSessionOptions {
   systemPrompt?: string
   /** 可用工具定义 */
   tools?: LLMCompleteOptions['tools']
+  /** 上下文压缩函数（超阈值时调用） */
+  compressFn?: CompressFn
 
 }
 
@@ -73,6 +80,8 @@ export interface CreateMainSessionOptions {
   metadata?: Record<string, unknown>
   /** 可用工具定义 */
   tools?: LLMCompleteOptions['tools']
+  /** 上下文压缩函数（超阈值时调用） */
+  compressFn?: CompressFn
 
 }
 
@@ -86,6 +95,8 @@ export interface LoadMainSessionOptions {
   systemPrompt?: string
   /** 可用工具定义 */
   tools?: LLMCompleteOptions['tools']
+  /** 上下文压缩函数（超阈值时调用） */
+  compressFn?: CompressFn
 
 }
 

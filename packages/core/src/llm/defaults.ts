@@ -1,6 +1,7 @@
 import type {
   SessionCompatibleConsolidateFn,
   SessionCompatibleIntegrateFn,
+  SessionCompatibleCompressFn,
 } from '../adapters/session-runtime.js'
 
 /** 最小 LLM 调用接口，仅用于 consolidation/integration 内置默认实现 */
@@ -86,5 +87,28 @@ export function createDefaultIntegrateFn(
     } catch {
       return { synthesis: cleaned, insights: [] }
     }
+  }
+}
+
+/** 默认 context 压缩提示词 */
+export const DEFAULT_COMPRESS_PROMPT = `你是对话压缩助手。请将以下对话历史压缩为一段简洁的摘要，保留关键上下文信息。
+要求：
+- 保留对话的核心主题、已做出的决定和关键事实
+- 省略重复信息和冗余细节
+- 输出一段连贯文字
+- 语言精炼，像一份上下文备忘录`
+
+/** 根据 prompt 创建默认 compressFn：历史消息 → 压缩摘要 */
+export function createDefaultCompressFn(
+  prompt: string,
+  llm: LLMCallFn,
+): SessionCompatibleCompressFn {
+  return async (messages) => {
+    const content = messages.map((m) => `${m.role}: ${m.content}`).join('\n')
+    const raw = await llm([
+      { role: 'system', content: prompt },
+      { role: 'user', content: `对话记录:\n${content}` },
+    ])
+    return raw.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim()
   }
 }

@@ -30,6 +30,11 @@ export type SessionCompatibleConsolidateFn = (
   messages: Array<{ role: string; content: string; timestamp?: string }>,
 ) => Promise<string>;
 
+/** 结构兼容 @stello-ai/session 的 compress 函数签名 */
+export type SessionCompatibleCompressFn = (
+  messages: Array<{ role: string; content: string; timestamp?: string }>,
+) => Promise<string>;
+
 /** 结构兼容 @stello-ai/session 的 integrate 函数签名 */
 export type SessionCompatibleIntegrateFn = (
   children: Array<{ sessionId: string; label: string; l2: string }>,

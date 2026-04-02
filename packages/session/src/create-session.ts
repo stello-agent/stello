@@ -4,7 +4,7 @@ import { SessionArchivedError } from './types/session-api.js'
 import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './types/session.js'
 import type { Message } from './types/llm.js'
 import type { ConsolidateFn, CreateSessionOptions, LoadSessionOptions, SendResult, StreamResult } from './types/functions.js'
-import { assembleSessionContext } from './context-utils.js'
+import { assembleSessionContext, createBuiltinCompressFn, type CompressionCache } from './context-utils.js'
 
 interface ToolResultEnvelope {
   toolResults: Array<{
@@ -131,6 +131,9 @@ function buildSession(
   const { storage } = options
   const tools = options.tools
   let lastPromptTokens: number | null = null
+  let compressionCache: CompressionCache | null = null
+  // 未提供 compressFn 但有 LLM 时，自动使用内置 LLM 压缩
+  const compressFn = options.compressFn ?? (options.llm ? createBuiltinCompressFn(options.llm) : undefined)
 
   const session: Session = {
     get meta(): Readonly<SessionMeta> {
@@ -146,18 +149,21 @@ function buildSession(
       }
 
       // 组装上下文（自动压缩）
-      const { messages, insightConsumed, userTimestamp } = await assembleSessionContext(
+      const assembled = await assembleSessionContext(
         currentMeta.id, storage, content,
-        { maxContextTokens: options.llm.maxContextTokens, lastPromptTokens },
+        { maxContextTokens: options.llm.maxContextTokens, lastPromptTokens, compressFn, compressionCache },
       )
+      if (assembled.compressionCache !== undefined) {
+        compressionCache = assembled.compressionCache
+      }
 
       // 消费 insight
-      if (insightConsumed) {
+      if (assembled.insightConsumed) {
         await storage.clearInsight(currentMeta.id)
       }
 
-      let promptMessages = messages
-      let recordsToPersist: Message[] = [{ role: 'user', content, timestamp: userTimestamp }]
+      let promptMessages = assembled.messages
+      let recordsToPersist: Message[] = [{ role: 'user', content, timestamp: assembled.userTimestamp }]
       const toolEnvelope = parseToolResultEnvelope(content)
       if (toolEnvelope) {
         const replayContext = await assembleSessionReplayContext(currentMeta.id, storage)
@@ -167,7 +173,7 @@ function buildSession(
             role: 'tool' as const,
             toolCallId: result.toolCallId ?? undefined,
             content: serializeToolResultContent(result),
-            timestamp: userTimestamp,
+            timestamp: assembled.userTimestamp,
           })),
         ]
         recordsToPersist = promptMessages.slice(replayContext.messages.length)
@@ -211,18 +217,21 @@ function buildSession(
 
       return createStreamResult(async (push) => {
         // 组装上下文（自动压缩）
-        const { messages, insightConsumed, userTimestamp } = await assembleSessionContext(
+        const assembled = await assembleSessionContext(
           currentMeta.id, storage, content,
-          { maxContextTokens: options.llm!.maxContextTokens, lastPromptTokens },
+          { maxContextTokens: options.llm!.maxContextTokens, lastPromptTokens, compressFn, compressionCache },
         )
+        if (assembled.compressionCache !== undefined) {
+          compressionCache = assembled.compressionCache
+        }
 
         // 消费 insight
-        if (insightConsumed) {
+        if (assembled.insightConsumed) {
           await storage.clearInsight(currentMeta.id)
         }
 
-        let promptMessages = messages
-        let recordsToPersist: Message[] = [{ role: 'user', content, timestamp: userTimestamp }]
+        let promptMessages = assembled.messages
+        let recordsToPersist: Message[] = [{ role: 'user', content, timestamp: assembled.userTimestamp }]
         const toolEnvelope = parseToolResultEnvelope(content)
         if (toolEnvelope) {
           const replayContext = await assembleSessionReplayContext(currentMeta.id, storage)
@@ -232,7 +241,7 @@ function buildSession(
               role: 'tool' as const,
               toolCallId: result.toolCallId ?? undefined,
               content: serializeToolResultContent(result),
-              timestamp: userTimestamp,
+              timestamp: assembled.userTimestamp,
             })),
           ]
           recordsToPersist = promptMessages.slice(replayContext.messages.length)

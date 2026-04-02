@@ -28,6 +28,7 @@ import {
   type SessionCompatible,
   type SessionCompatibleConsolidateFn,
   type SessionCompatibleIntegrateFn,
+  type SessionCompatibleCompressFn,
   type SessionCompatibleSendResult,
 } from '../adapters/session-runtime';
 import type { SessionTree } from '../types/session';
@@ -60,6 +61,8 @@ export interface StelloAgentSessionConfig {
   consolidateFn?: SessionCompatibleConsolidateFn;
   /** MainSession integration 函数 */
   integrateFn?: SessionCompatibleIntegrateFn;
+  /** 上下文压缩函数（超阈值时调用） */
+  compressFn?: SessionCompatibleCompressFn;
   /** send() 结果序列化方式，默认 JSON 序列化 */
   serializeSendResult?: (result: SessionCompatibleSendResult) => string;
   /** TurnRunner 用的 tool call parser，默认 sessionSendResultParser */

@@ -20,6 +20,7 @@ export type {
 
 // 类型导出 — 函数签名与选项
 export type {
+  CompressFn,
   ConsolidateFn,
   IntegrateFn,
   IntegrateResult,

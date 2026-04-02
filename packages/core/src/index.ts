@@ -65,6 +65,7 @@ export type {
   SessionCompatibleSendResult,
   SessionCompatibleConsolidateFn,
   SessionCompatibleIntegrateFn,
+  SessionCompatibleCompressFn,
 } from './adapters/session-runtime';
 export { TurnRunner } from './engine/turn-runner';
 export type {
@@ -134,8 +135,10 @@ export type {
 export {
   createDefaultConsolidateFn,
   createDefaultIntegrateFn,
+  createDefaultCompressFn,
   DEFAULT_CONSOLIDATE_PROMPT,
   DEFAULT_INTEGRATE_PROMPT,
+  DEFAULT_COMPRESS_PROMPT,
 } from './llm/defaults';
 export type { LLMCallFn } from './llm/defaults';
 
@@ -161,7 +164,7 @@ export type {
   // 存储
   SessionStorage, MainStorage, ListRecordsOptions,
   // 函数签名
-  ConsolidateFn, IntegrateFn, IntegrateResult, ChildL2Summary,
+  CompressFn, ConsolidateFn, IntegrateFn, IntegrateResult, ChildL2Summary,
   CreateSessionOptions as SessionCreateOptions,
   LoadSessionOptions, CreateMainSessionOptions, LoadMainSessionOptions,
   // 工具
