@@ -19,7 +19,7 @@ import {
   Clock,
 } from 'lucide-react'
 import {
-  fetchSessions,
+  fetchSessionTree,
   fetchConfig,
   fetchSessionDetail,
   enterSession,
@@ -27,6 +27,7 @@ import {
   sendTurn,
   type AgentConfig,
   type SessionDetail,
+  type SessionTreeNode,
   type TurnRecord,
 } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
@@ -105,6 +106,233 @@ interface SessionItem {
   turns: number
   status: 'active' | 'archived'
   color: string
+  children: SessionItem[]
+  depth: number
+}
+
+/** 按 sourceSessionId 重建视觉层级树（与 Topology 一致） */
+function buildDisplayTree(root: SessionTreeNode): SessionItem[] {
+  /* 先扁平收集所有节点 */
+  const allNodes: SessionTreeNode[] = []
+  const collectAll = (node: SessionTreeNode) => {
+    allNodes.push(node)
+    node.children.forEach(collectAll)
+  }
+  collectAll(root)
+
+  /* 按 sourceSessionId 分组，构建视觉父子关系 */
+  const childrenMap = new Map<string, SessionTreeNode[]>()
+  for (const node of allNodes) {
+    const displayParentId = node.sourceSessionId && node.sourceSessionId !== node.id
+      ? node.sourceSessionId
+      : null
+    if (displayParentId) {
+      const siblings = childrenMap.get(displayParentId) ?? []
+      siblings.push(node)
+      childrenMap.set(displayParentId, siblings)
+    }
+  }
+
+  /* 递归构建 SessionItem */
+  const buildNode = (node: SessionTreeNode, depth: number): SessionItem => {
+    const visualChildren = childrenMap.get(node.id) ?? []
+    return {
+      id: node.id,
+      label: node.label,
+      turns: node.turnCount ?? 0,
+      status: node.status,
+      color: depth === 0 ? '#C4A882' : node.status === 'archived' ? '#D89575' : '#B8956A',
+      depth,
+      children: visualChildren.map((child) => buildNode(child, depth + 1)),
+    }
+  }
+
+  return [buildNode(root, 0)]
+}
+
+/** 扁平化树为列表（用于搜索匹配和计数） */
+function flattenTree(items: SessionItem[]): SessionItem[] {
+  const result: SessionItem[] = []
+  for (const item of items) {
+    result.push(item)
+    if (item.children.length > 0) result.push(...flattenTree(item.children))
+  }
+  return result
+}
+
+/** 收集所有有子节点的 session id（用于默认全部展开） */
+function collectBranchIds(items: SessionItem[]): string[] {
+  const ids: string[] = []
+  for (const item of items) {
+    if (item.children.length > 0) {
+      ids.push(item.id)
+      ids.push(...collectBranchIds(item.children))
+    }
+  }
+  return ids
+}
+
+/** 递归树节点组件 */
+function SessionTreeItemView({
+  node,
+  selectedId,
+  sendingSessions,
+  expanded,
+  onToggle,
+  onSelect,
+  filter,
+  isLast,
+  t,
+}: {
+  node: SessionItem
+  selectedId: string | null
+  sendingSessions: Set<string>
+  expanded: Set<string>
+  onToggle: (id: string) => void
+  onSelect: (node: SessionItem) => void
+  filter: string
+  isLast: boolean
+  t: (key: string) => string
+}) {
+  const hasChildren = node.children.length > 0
+  const isExpanded = expanded.has(node.id)
+  const isSelected = selectedId === node.id
+  const isRoot = node.depth === 0
+  const isSending = sendingSessions.has(node.id)
+  const matchesFilter = !filter || node.label.toLowerCase().includes(filter.toLowerCase())
+
+  /* 搜索时检查子树是否有匹配项 */
+  const childrenMatchFilter = filter
+    ? flattenTree(node.children).some((c) => c.label.toLowerCase().includes(filter.toLowerCase()))
+    : true
+
+  if (filter && !matchesFilter && !childrenMatchFilter) return null
+
+  /* 缩进基准：根节点 12px，子节点 20px/层 */
+  const indent = isRoot ? 12 : node.depth * 20 + 4
+
+  return (
+    <div className="relative">
+      {/* 竖向连接线：非根节点 && 非最后一个子节点时画到底 */}
+      {!isRoot && !isLast && (
+        <div
+          className="absolute top-0 bottom-0 border-l border-border-strong/40"
+          style={{ left: `${(node.depth - 1) * 20 + 16}px` }}
+        />
+      )}
+
+      {/* 水平连接线：非根节点画一个 └ 形拐角 */}
+      {!isRoot && (
+        <>
+          <div
+            className="absolute border-l border-border-strong/40"
+            style={{ left: `${(node.depth - 1) * 20 + 16}px`, top: 0, height: '20px' }}
+          />
+          <div
+            className="absolute border-t border-border-strong/40"
+            style={{ left: `${(node.depth - 1) * 20 + 16}px`, top: '20px', width: '10px' }}
+          />
+        </>
+      )}
+
+      {/* 节点行 */}
+      <div
+        onClick={() => onSelect(node)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(node) }}
+        className={[
+          'tree-node-hover flex items-center gap-1.5 w-full pr-3 cursor-pointer relative',
+          isRoot ? 'py-2.5' : 'py-[7px]',
+          isSelected ? 'tree-node-active bg-primary-light/80' : 'hover:bg-surface/80',
+        ].join(' ')}
+        style={{ paddingLeft: `${indent}px` }}
+      >
+        {/* 展开/折叠箭头 */}
+        {hasChildren ? (
+          <span
+            onClick={(e) => { e.stopPropagation(); onToggle(node.id) }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onToggle(node.id) } }}
+            className="w-5 h-5 flex items-center justify-center shrink-0 rounded-md hover:bg-border/40 transition-colors cursor-pointer"
+          >
+            <ChevronRight
+              size={13}
+              className={`text-text-muted transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
+            />
+          </span>
+        ) : (
+          <span className="w-5 shrink-0" />
+        )}
+
+        {/* 状态指示 */}
+        <div className="relative shrink-0">
+          <div
+            className={`rounded-full transition-all duration-200 ${isRoot ? 'w-2.5 h-2.5' : 'w-[7px] h-[7px]'} ${
+              isSelected ? 'ring-2 ring-primary/30 ring-offset-1 ring-offset-primary-light/80' : ''
+            }`}
+            style={{ backgroundColor: node.color }}
+          />
+          {isSending && (
+            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-primary rounded-full animate-ping" />
+          )}
+        </div>
+
+        {/* 文字区域 */}
+        <div className="flex-1 min-w-0 ml-0.5">
+          <div className={`truncate leading-tight ${
+            isRoot
+              ? `text-[13px] ${isSelected ? 'font-bold text-primary-dark' : 'font-semibold text-text'}`
+              : `text-[12.5px] ${isSelected ? 'font-semibold text-text' : 'font-medium text-text'}`
+          }`}>
+            {node.label}
+          </div>
+          <div className={`text-[10px] leading-tight mt-px ${isSelected ? 'text-text-secondary' : 'text-text-muted'}`}>
+            {node.turns} {t('common.turns')}
+            {node.status === 'archived' && (
+              <span className="ml-1 text-[9px] px-1 py-px rounded bg-muted text-text-muted">{t('common.archived')}</span>
+            )}
+          </div>
+        </div>
+
+        {/* 子节点数量徽标 */}
+        {hasChildren && !isExpanded && (
+          <span className="text-[9px] font-medium text-text-muted bg-muted/80 px-1.5 py-px rounded-full shrink-0">
+            {flattenTree(node.children).length}
+          </span>
+        )}
+      </div>
+
+      {/* 子节点列表 */}
+      {hasChildren && isExpanded && (
+        <div className="tree-children relative">
+          {/* 子节点区域的竖向延伸线 */}
+          <div
+            className="absolute top-0 border-l border-border-strong/40"
+            style={{
+              left: `${node.depth * 20 + 16}px`,
+              height: 'calc(100% - 20px)',
+            }}
+          />
+          {node.children.map((child, i) => (
+            <SessionTreeItemView
+              key={child.id}
+              node={child}
+              selectedId={selectedId}
+              sendingSessions={sendingSessions}
+              expanded={expanded}
+              onToggle={onToggle}
+              onSelect={onSelect}
+              filter={filter}
+              isLast={i === node.children.length - 1}
+              t={t}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 /** Tool call 详情 */
@@ -371,8 +599,10 @@ export function Conversation() {
   const { t } = useI18n()
   const [searchParams] = useSearchParams()
   const initialSessionId = searchParams.get('session')
-  const [sessions, setSessions] = useState<SessionItem[]>([])
+  const [sessionTree, setSessionTree] = useState<SessionItem[]>([])
   const [selectedSession, setSelectedSession] = useState<SessionItem | null>(null)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [filterText, setFilterText] = useState('')
   const [items, setItems] = useState<ChatItem[]>([])
   const [detail, setDetail] = useState<SessionDetail | null>(null)
   const [activeTab, setActiveTab] = useState<'l3' | 'l2' | 'insights' | 'prompt'>('l3')
@@ -384,38 +614,48 @@ export function Conversation() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const nextIdRef = useRef(100)
 
-  /** 拉取 session 列表 */
+  /** 所有 session 扁平列表（用于计数） */
+  const allSessions = useMemo(() => flattenTree(sessionTree), [sessionTree])
+
+  /** 切换树节点展开/折叠 */
+  const toggleExpanded = useCallback((id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  /** 从 tree API 刷新 session 树 */
   const refreshSessions = useCallback(() => {
-    fetchSessions()
-      .then(({ sessions: list }) => {
-        const all = list.map((s, i) => ({
-          id: s.id,
-          label: s.label,
-          turns: s.turnCount ?? 0,
-          status: s.status,
-          color: i === 0 ? '#C4A882' : s.status === 'archived' ? '#D89575' : '#B8956A',
-        }))
-        setSessions(all)
+    fetchSessionTree()
+      .then((root) => {
+        /* root 就是 main session，作为树的唯一根节点 */
+        const tree = buildDisplayTree(root)
+        setSessionTree(tree)
+        /* 首次加载时默认展开所有分支节点 */
+        setExpanded((prev) => {
+          if (prev.size === 0) return new Set(collectBranchIds(tree))
+          return prev
+        })
         setLoadError(null)
-        return all
+        return tree
       })
       .catch((err: Error) => setLoadError(err.message))
   }, [])
 
   /* 初始加载 */
   useEffect(() => {
-    fetchSessions()
-      .then(({ sessions: list }) => {
-        const all = list.map((s, i) => ({
-          id: s.id,
-          label: s.label,
-          turns: s.turnCount ?? 0,
-          status: s.status,
-          color: i === 0 ? '#C4A882' : s.status === 'archived' ? '#D89575' : '#B8956A',
-        }))
-        setSessions(all)
-        const target = initialSessionId ? all.find((s) => s.id === initialSessionId) : null
-        setSelectedSession(target ?? all[0] ?? null)
+    fetchSessionTree()
+      .then((root) => {
+        const tree = buildDisplayTree(root)
+        setSessionTree(tree)
+        /* 默认展开所有分支节点 */
+        setExpanded(new Set(collectBranchIds(tree)))
+        const flat = flattenTree(tree)
+        const target = initialSessionId ? flat.find((s) => s.id === initialSessionId) : null
+        setSelectedSession(target ?? flat[0] ?? null)
         setLoadError(null)
       })
       .catch((err: Error) => setLoadError(err.message))
@@ -554,38 +794,38 @@ export function Conversation() {
 
   return (
     <div className="flex h-full">
-      {/* 左侧 Session 列表 */}
-      <div className="w-60 bg-card border-r border-border flex flex-col shrink-0">
+      {/* 左侧 Session 树 */}
+      <div className="w-64 bg-card border-r border-border flex flex-col shrink-0">
         <div className="flex items-center justify-between px-4 pt-4 pb-3">
           <span className="text-sm font-semibold text-text">{t('conv.sessions')}</span>
-          <span className="text-xs text-text-muted">{sessions.length}</span>
+          <span className="text-xs text-text-muted">{allSessions.length}</span>
         </div>
         <div className="px-3 pb-2">
           <div className="flex items-center gap-2 px-2.5 h-8 bg-surface rounded-lg border border-border">
             <Search size={14} className="text-text-muted shrink-0" />
-            <input type="text" placeholder={t('conv.filterSessions')} className="flex-1 bg-transparent text-xs outline-none placeholder:text-text-muted" />
+            <input
+              type="text"
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              placeholder={t('conv.filterSessions')}
+              className="flex-1 bg-transparent text-xs outline-none placeholder:text-text-muted"
+            />
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto">
-          {sessions.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setSelectedSession(s)}
-              className={`flex items-center gap-2.5 w-full px-4 py-2.5 text-left transition-colors ${
-                selectedSession?.id === s.id ? 'bg-primary-light' : 'hover:bg-surface'
-              }`}
-            >
-              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-              <div className="flex-1 min-w-0">
-                <div className={`text-[13px] truncate ${selectedSession?.id === s.id ? 'font-semibold text-text' : 'font-medium text-text'}`}>
-                  {s.label}
-                </div>
-                <div className="text-[10px] text-text-secondary">
-                  {s.turns} {t('common.turns')} · {s.status === 'active' ? t('common.active') : t('common.archived')}
-                  {sendingSessions.has(s.id) && <span className="ml-1 text-primary animate-pulse">●</span>}
-                </div>
-              </div>
-            </button>
+        <div className="flex-1 overflow-y-auto py-1">
+          {sessionTree.map((root, i) => (
+            <SessionTreeItemView
+              key={root.id}
+              node={root}
+              selectedId={selectedSession?.id ?? null}
+              sendingSessions={sendingSessions}
+              expanded={expanded}
+              onToggle={toggleExpanded}
+              onSelect={setSelectedSession}
+              filter={filterText}
+              isLast={i === sessionTree.length - 1}
+              t={t}
+            />
           ))}
         </div>
       </div>

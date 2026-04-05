@@ -127,6 +127,47 @@ body {
   animation: toastOut 0.22s ease-in forwards;
 }
 
+/* ─── Session 树展开/折叠动画 ─── */
+@keyframes treeExpand {
+  from { opacity: 0; height: 0; }
+  to { opacity: 1; height: var(--tree-height); }
+}
+
+@keyframes treeCollapse {
+  from { opacity: 1; height: var(--tree-height); }
+  to { opacity: 0; height: 0; }
+}
+
+.tree-children {
+  overflow: hidden;
+  animation: treeExpand 0.2s ease-out forwards;
+}
+
+.tree-children-exit {
+  overflow: hidden;
+  animation: treeCollapse 0.15s ease-in forwards;
+}
+
+/* 树节点选中指示条 */
+.tree-node-active {
+  position: relative;
+}
+.tree-node-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 2.5px;
+  border-radius: 2px;
+  background-color: var(--c-primary);
+}
+
+/* 树节点 hover 背景 */
+.tree-node-hover {
+  transition: background-color 0.15s ease;
+}
+
 /* highlight.js 背景色覆盖 */
 .hljs {
   background: #2a2520 !important;
