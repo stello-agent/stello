@@ -652,21 +652,18 @@ async function bootstrap() {
   // ─── Tool Runtime ───
   // Engine 自动注入 stello_create_session 和 activate_skill 的定义与执行。
   // 这里只需提供应用层自定义工具。
+  // 注意：getToolDefinitions 也被 devtools 用于展示工具列表（直接读 config）。
+
+  const appToolDefs = toolDefs.map((t) => ({
+    name: t.name,
+    description: t.description,
+    parameters: t.inputSchema as Record<string, unknown>,
+  }))
 
   const tools: EngineToolRuntime = {
-    getToolDefinitions: () => [
-      {
-        name: 'save_note',
-        description: '保存重要的调研结论到当前会话的笔记中，供跨区域整合时参考。',
-        parameters: {
-          type: 'object',
-          properties: {
-            note: { type: 'string', description: '要保存的结论或笔记内容' },
-          },
-          required: ['note'],
-        },
-      },
-    ].filter((t) => !disabledTools.has(t.name)),
+    // 包含应用层工具定义。Engine 会自动追加内置 tool（stello_create_session 等）并去重。
+    // devtools 也通过此接口读取工具列表展示。
+    getToolDefinitions: () => appToolDefs.filter((t) => !disabledTools.has(t.name)),
     async executeTool(name, args) {
       if (name === 'save_note') {
         if (!currentToolSessionId) return { success: false, error: 'No active session context' }
