@@ -1,5 +1,7 @@
 // ─── Session 系统类型定义 ───
 
+import type { LLMAdapter, LLMCompleteOptions, ForkContextFn } from '@stello-ai/session'
+
 /** Session 状态 */
 export type SessionStatus = 'active' | 'archived';
 
@@ -94,6 +96,18 @@ export interface CreateSessionOptions {
   metadata?: Record<string, unknown>;
   /** 标签 */
   tags?: string[];
+  /**
+   * Profile 解析后的运行时配置（由 Engine 填充，开发者不需要手动设置）。
+   * prepareChildSpawn 实现者应将这些值传给 session.fork()。
+   */
+  resolved?: {
+    /** 覆盖子 Session 的 LLM 适配器 */
+    llm?: LLMAdapter
+    /** 覆盖子 Session 的工具列表 */
+    tools?: LLMCompleteOptions['tools']
+    /** 自定义上下文转换函数（优先于 context 字段） */
+    contextFn?: ForkContextFn
+  }
 }
 
 /**

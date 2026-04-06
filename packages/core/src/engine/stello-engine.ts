@@ -13,6 +13,7 @@ import type { CreateSessionOptions, TopologyNode } from '../types/session';
 import type { SplitGuard } from '../session/split-guard';
 import { createSkillToolDefinition, executeSkillTool } from '../skill/skill-tool';
 import { CREATE_SESSION_TOOL_NAME, createSessionToolDefinition } from './builtin-tools';
+import { resolveSystemPrompt, type ForkProfile, type ForkProfileRegistry } from './fork-profile';
 import type { SchedulerSession } from './scheduler';
 import {
   TurnRunner,
@@ -66,6 +67,8 @@ export interface StelloEngineOptions {
   splitGuard?: SplitGuard;
   turnRunner?: TurnRunner;
   hooks?: Partial<EngineHooks>;
+  /** Fork profile 注册表（可选） */
+  profiles?: ForkProfileRegistry;
 }
 
 /** turn 的聚合结果 */
@@ -130,6 +133,7 @@ export class StelloEngineImpl implements StelloEngine {
   private readonly splitGuard?: SplitGuard;
   private readonly turnRunner: TurnRunner;
   private readonly hooks: Partial<EngineHooks>;
+  private readonly profiles?: ForkProfileRegistry;
   private readonly handlers = new Map<keyof StelloEventMap, Set<(data: unknown) => void>>();
 
   constructor(options: StelloEngineOptions) {
@@ -142,6 +146,7 @@ export class StelloEngineImpl implements StelloEngine {
     this.tools = options.tools;
     this.splitGuard = options.splitGuard;
     this.hooks = options.hooks ?? {};
+    this.profiles = options.profiles;
     this.turnRunner =
       options.turnRunner ??
       new TurnRunner({
@@ -292,7 +297,8 @@ export class StelloEngineImpl implements StelloEngine {
   getToolDefinitions(): ToolDefinition[] {
     const userDefs = this.tools.getToolDefinitions()
       .filter(d => d.name !== CREATE_SESSION_TOOL_NAME);
-    const builtins: ToolDefinition[] = [createSessionToolDefinition()];
+    const profileNames = this.profiles?.listNames();
+    const builtins: ToolDefinition[] = [createSessionToolDefinition(profileNames)];
     if (this.skills.getAll().length > 0) {
       builtins.push(createSkillToolDefinition(this.skills));
     }
@@ -310,16 +316,47 @@ export class StelloEngineImpl implements StelloEngine {
     return this.tools.executeTool(name, args);
   }
 
-  /** 执行内置 stello_create_session：走 forkSession 完整路径 */
+  /** 执行内置 stello_create_session：走 forkSession 完整路径，支持 profile 解析 */
   private async executeCreateSession(
     args: Record<string, unknown>,
   ): Promise<ToolExecutionResult> {
     try {
+      const profileName = args.profile as string | undefined;
+      let profile: ForkProfile | undefined;
+
+      if (profileName) {
+        profile = this.profiles?.get(profileName);
+        if (!profile) {
+          return {
+            success: false,
+            error: `Fork profile "${profileName}" 未注册`,
+          };
+        }
+      }
+
+      const systemPrompt = resolveSystemPrompt(
+        profile,
+        args.systemPrompt as string | undefined,
+        args.vars as Record<string, string> | undefined,
+      );
+
+      // context 优先级：profile.context > args.context > 默认
+      const argsContext = args.context as 'none' | 'inherit' | undefined;
+      const context = profile?.context ?? argsContext ?? undefined;
+
+      // 构建 resolved（运行时对象，透传给 prepareChildSpawn）
+      const resolved: Record<string, unknown> = {};
+      if (profile?.llm) resolved.llm = profile.llm;
+      if (profile?.tools) resolved.tools = profile.tools;
+      if (profile?.contextFn) resolved.contextFn = profile.contextFn;
+      const hasResolved = Object.keys(resolved).length > 0;
+
       const child = await this.forkSession({
         label: args.label as string,
-        systemPrompt: args.systemPrompt as string | undefined,
+        systemPrompt,
         prompt: args.prompt as string | undefined,
-        context: (args.context as 'none' | 'inherit') ?? undefined,
+        context,
+        ...(hasResolved ? { resolved } : {}),
       });
       return {
         success: true,

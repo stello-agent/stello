@@ -11,6 +11,7 @@ import {
 import type { Scheduler, SchedulerMainSession, SchedulerSession } from '../engine/scheduler';
 import type { TurnRunner } from '../engine/turn-runner';
 import type { SplitGuard } from '../session/split-guard';
+import type { ForkProfileRegistry } from '../engine/fork-profile';
 import type { EngineFactory, OrchestratorEngine } from './session-orchestrator';
 
 /** Session runtime 解析器 */
@@ -34,6 +35,7 @@ export interface DefaultEngineFactoryOptions {
   tools: EngineToolRuntime;
   sessionRuntimeResolver: SessionRuntimeResolver;
   splitGuard?: SplitGuard;
+  profiles?: ForkProfileRegistry;
   mainSession?: SchedulerMainSession | null;
   turnRunner?: TurnRunner;
   scheduler?: Scheduler;
@@ -64,6 +66,7 @@ export class DefaultEngineFactory implements EngineFactory {
       lifecycle: this.options.lifecycle,
       tools: this.options.tools,
       splitGuard: this.options.splitGuard,
+      profiles: this.options.profiles,
       turnRunner: this.options.turnRunner,
       hooks: mergedHooks,
     });

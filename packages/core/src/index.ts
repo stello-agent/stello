@@ -67,6 +67,8 @@ export type {
   SessionCompatibleIntegrateFn,
   SessionCompatibleCompressFn,
 } from './adapters/session-runtime';
+export { ForkProfileRegistryImpl } from './engine/fork-profile';
+export type { ForkProfile, ForkProfileRegistry } from './engine/fork-profile';
 export { TurnRunner } from './engine/turn-runner';
 export type {
   ToolCall,

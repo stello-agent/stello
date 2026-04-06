@@ -35,6 +35,7 @@ import type { SessionTree } from '../types/session';
 import type { MemoryEngine } from '../types/memory';
 import type { ConfirmProtocol, SkillRouter } from '../types/lifecycle';
 import type { EngineLifecycleAdapter, EngineToolRuntime } from '../engine/stello-engine';
+import type { ForkProfileRegistry } from '../engine/fork-profile';
 import type { Scheduler, SchedulerConfig, SchedulerMainSession } from '../engine/scheduler';
 import type { SplitGuard } from '../session/split-guard';
 
@@ -44,6 +45,8 @@ export interface StelloAgentCapabilitiesConfig {
   tools: EngineToolRuntime;
   skills: SkillRouter;
   confirm: ConfirmProtocol;
+  /** Fork profile 注册表（可选） */
+  profiles?: ForkProfileRegistry;
 }
 
 /**
@@ -196,6 +199,7 @@ export class StelloAgent {
       skills: config.capabilities.skills,
       confirm: config.capabilities.confirm,
       sessionRuntimeResolver: resolveRuntimeResolver(config),
+      profiles: config.capabilities.profiles,
       splitGuard: config.orchestration?.splitGuard,
       mainSession: resolveMainSession(config),
       turnRunner: resolveTurnRunner(config),

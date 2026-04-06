@@ -4,6 +4,7 @@ import type { MemoryEngine } from '../../types/memory';
 import type { ConfirmProtocol, SkillRouter } from '../../types/lifecycle';
 import { StelloEngineImpl } from '../stello-engine';
 import { TurnRunner, type ToolCallParser } from '../turn-runner';
+import { ForkProfileRegistryImpl } from '../fork-profile';
 
 describe('StelloEngineImpl', () => {
   const jsonParser: ToolCallParser = {
@@ -522,7 +523,7 @@ describe('StelloEngineImpl', () => {
       const matched = defs.filter(d => d.name === 'stello_create_session');
       expect(matched).toHaveLength(1);
       // 应该是 Engine 内置版（包含 context 参数）
-      expect((matched[0].parameters as Record<string, unknown>).properties).toHaveProperty('context');
+      expect((matched[0]!.parameters as Record<string, unknown>).properties).toHaveProperty('context');
     });
 
     it('用户通过 tools 调用 stello_create_session 时，Engine 拦截而非透传', async () => {
@@ -558,6 +559,155 @@ describe('StelloEngineImpl', () => {
 
       expect(userExecuteTool).not.toHaveBeenCalled();
       expect(prepareChildSpawn).toHaveBeenCalled();
+    });
+
+    it('指定 profile 时，合成 systemPrompt 并透传 resolved', async () => {
+      const mockLlm = {} as never;
+      const mockTools = [{ name: 'search' }] as never;
+      const profileRegistry = new ForkProfileRegistryImpl();
+      profileRegistry.register('research', {
+        systemPrompt: '你是研究助手',
+        systemPromptMode: 'prepend',
+        llm: mockLlm,
+        tools: mockTools,
+        context: 'inherit',
+      });
+
+      const prepareChildSpawn = vi.fn().mockResolvedValue({
+        id: 'c1', parentId: 's1', children: [], refs: [],
+        depth: 1, index: 0, label: '深度研究',
+      });
+
+      const engine = new StelloEngineImpl({
+        session: {
+          id: 's1',
+          meta: { id: 's1', turnCount: 2, status: 'active' as const },
+          turnCount: 2,
+          send: vi.fn(),
+          consolidate: vi.fn(),
+        },
+        sessions,
+        memory,
+        skills,
+        confirm,
+        lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn(), prepareChildSpawn },
+        tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
+        profiles: profileRegistry,
+      });
+
+      await engine.executeTool('stello_create_session', {
+        label: '深度研究',
+        systemPrompt: '当前话题是量子计算',
+        profile: 'research',
+      });
+
+      expect(prepareChildSpawn).toHaveBeenCalledWith(expect.objectContaining({
+        label: '深度研究',
+        systemPrompt: '你是研究助手\n\n当前话题是量子计算',
+        context: 'inherit',
+        resolved: {
+          llm: mockLlm,
+          tools: mockTools,
+        },
+      }));
+    });
+
+    it('指定不存在的 profile 时返回 error', async () => {
+      const profileRegistry = new ForkProfileRegistryImpl();
+
+      const engine = new StelloEngineImpl({
+        session: {
+          id: 's1',
+          meta: { id: 's1', turnCount: 0, status: 'active' as const },
+          turnCount: 0,
+          send: vi.fn(),
+          consolidate: vi.fn(),
+        },
+        sessions,
+        memory,
+        skills,
+        confirm,
+        lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn(), prepareChildSpawn: vi.fn() },
+        tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
+        profiles: profileRegistry,
+      });
+
+      const result = await engine.executeTool('stello_create_session', {
+        label: 'test',
+        profile: 'nonexistent',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('nonexistent');
+    });
+
+    it('preset 模式忽略 LLM systemPrompt', async () => {
+      const profileRegistry = new ForkProfileRegistryImpl();
+      profileRegistry.register('strict', {
+        systemPrompt: '固定角色',
+        systemPromptMode: 'preset',
+      });
+
+      const prepareChildSpawn = vi.fn().mockResolvedValue({
+        id: 'c1', parentId: 's1', children: [], refs: [],
+        depth: 1, index: 0, label: 'test',
+      });
+
+      const engine = new StelloEngineImpl({
+        session: {
+          id: 's1',
+          meta: { id: 's1', turnCount: 0, status: 'active' as const },
+          turnCount: 0,
+          send: vi.fn(),
+          consolidate: vi.fn(),
+        },
+        sessions,
+        memory,
+        skills,
+        confirm,
+        lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn(), prepareChildSpawn },
+        tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
+        profiles: profileRegistry,
+      });
+
+      await engine.executeTool('stello_create_session', {
+        label: 'test',
+        systemPrompt: '这个应该被忽略',
+        profile: 'strict',
+      });
+
+      expect(prepareChildSpawn).toHaveBeenCalledWith(
+        expect.objectContaining({ systemPrompt: '固定角色' }),
+      );
+    });
+
+    it('getToolDefinitions 中 profile 列表动态注入', () => {
+      const profileRegistry = new ForkProfileRegistryImpl();
+      profileRegistry.register('research', { systemPrompt: '研究' });
+      profileRegistry.register('lightweight', { systemPrompt: '轻量' });
+
+      const engine = new StelloEngineImpl({
+        session: {
+          id: 's1',
+          meta: { id: 's1', turnCount: 0, status: 'active' as const },
+          turnCount: 0,
+          send: vi.fn(),
+          consolidate: vi.fn(),
+        },
+        sessions,
+        memory,
+        skills,
+        confirm,
+        lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn(), prepareChildSpawn: vi.fn() },
+        tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
+        profiles: profileRegistry,
+      });
+
+      const defs = engine.getToolDefinitions();
+      const createTool = defs.find(d => d.name === 'stello_create_session')!;
+      const props = (createTool.parameters as Record<string, unknown>).properties as Record<string, unknown>;
+      const profileDef = props.profile as Record<string, unknown>;
+      expect(profileDef.enum).toEqual(['research', 'lightweight']);
     });
   });
 
