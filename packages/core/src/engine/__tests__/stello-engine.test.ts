@@ -370,6 +370,197 @@ describe('StelloEngineImpl', () => {
     expect(child.id).toBe('child-1');
   });
 
+  describe('stello_create_session 内置拦截', () => {
+    it('executeTool 拦截 stello_create_session，走 forkSession 完整路径', async () => {
+      const childNode = {
+        id: 'child-1',
+        parentId: 's1',
+        children: [],
+        refs: [],
+        depth: 1,
+        index: 0,
+        label: 'UI',
+      };
+      const prepareChildSpawn = vi.fn().mockResolvedValue(childNode);
+
+      const engine = new StelloEngineImpl({
+        session: {
+          id: 's1',
+          meta: { id: 's1', turnCount: 2, status: 'active' as const },
+          turnCount: 2,
+          send: vi.fn(),
+          consolidate: vi.fn(),
+        },
+        sessions,
+        memory,
+        skills,
+        confirm,
+        lifecycle: {
+          bootstrap: vi.fn(),
+          afterTurn: vi.fn(),
+          prepareChildSpawn,
+        },
+        tools: {
+          getToolDefinitions: vi.fn().mockReturnValue([]),
+          executeTool: vi.fn(),
+        },
+      });
+
+      const result = await engine.executeTool('stello_create_session', {
+        label: 'UI',
+        systemPrompt: 'you are a UI expert',
+        prompt: 'hello',
+        context: 'inherit',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual({ sessionId: 'child-1', label: 'UI' });
+      expect(prepareChildSpawn).toHaveBeenCalledWith({
+        parentId: 's1',
+        label: 'UI',
+        systemPrompt: 'you are a UI expert',
+        prompt: 'hello',
+        context: 'inherit',
+      });
+    });
+
+    it('forkSession 失败时 executeTool 返回 error', async () => {
+      const splitGuard = {
+        checkCanSplit: vi.fn().mockResolvedValue({ canSplit: false, reason: '不允许拆分' }),
+        recordSplit: vi.fn(),
+      };
+
+      const engine = new StelloEngineImpl({
+        session: {
+          id: 's1',
+          meta: { id: 's1', turnCount: 0, status: 'active' as const },
+          turnCount: 0,
+          send: vi.fn(),
+          consolidate: vi.fn(),
+        },
+        sessions,
+        memory,
+        skills,
+        confirm,
+        lifecycle: {
+          bootstrap: vi.fn(),
+          afterTurn: vi.fn(),
+          prepareChildSpawn: vi.fn(),
+        },
+        tools: {
+          getToolDefinitions: vi.fn().mockReturnValue([]),
+          executeTool: vi.fn(),
+        },
+        splitGuard: splitGuard as never,
+      });
+
+      const result = await engine.executeTool('stello_create_session', { label: 'x' });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('不允许拆分');
+    });
+
+    it('getToolDefinitions 自动包含 stello_create_session', () => {
+      const engine = new StelloEngineImpl({
+        session: {
+          id: 's1',
+          meta: { id: 's1', turnCount: 0, status: 'active' as const },
+          turnCount: 0,
+          send: vi.fn(),
+          consolidate: vi.fn(),
+        },
+        sessions,
+        memory,
+        skills,
+        confirm,
+        lifecycle: {
+          bootstrap: vi.fn(),
+          afterTurn: vi.fn(),
+          prepareChildSpawn: vi.fn(),
+        },
+        tools: {
+          getToolDefinitions: vi.fn().mockReturnValue([]),
+          executeTool: vi.fn(),
+        },
+      });
+
+      const defs = engine.getToolDefinitions();
+      expect(defs.some(d => d.name === 'stello_create_session')).toBe(true);
+    });
+
+    it('用户注册了同名 tool 时去重，Engine 内置版优先', () => {
+      const userTool = {
+        name: 'stello_create_session',
+        description: 'user version',
+        parameters: {},
+      };
+
+      const engine = new StelloEngineImpl({
+        session: {
+          id: 's1',
+          meta: { id: 's1', turnCount: 0, status: 'active' as const },
+          turnCount: 0,
+          send: vi.fn(),
+          consolidate: vi.fn(),
+        },
+        sessions,
+        memory,
+        skills,
+        confirm,
+        lifecycle: {
+          bootstrap: vi.fn(),
+          afterTurn: vi.fn(),
+          prepareChildSpawn: vi.fn(),
+        },
+        tools: {
+          getToolDefinitions: vi.fn().mockReturnValue([userTool]),
+          executeTool: vi.fn(),
+        },
+      });
+
+      const defs = engine.getToolDefinitions();
+      const matched = defs.filter(d => d.name === 'stello_create_session');
+      expect(matched).toHaveLength(1);
+      // 应该是 Engine 内置版（包含 context 参数）
+      expect((matched[0].parameters as Record<string, unknown>).properties).toHaveProperty('context');
+    });
+
+    it('用户通过 tools 调用 stello_create_session 时，Engine 拦截而非透传', async () => {
+      const userExecuteTool = vi.fn();
+      const prepareChildSpawn = vi.fn().mockResolvedValue({
+        id: 'c1', parentId: 's1', children: [], refs: [], depth: 1, index: 0, label: 'test',
+      });
+
+      const engine = new StelloEngineImpl({
+        session: {
+          id: 's1',
+          meta: { id: 's1', turnCount: 0, status: 'active' as const },
+          turnCount: 0,
+          send: vi.fn(),
+          consolidate: vi.fn(),
+        },
+        sessions,
+        memory,
+        skills,
+        confirm,
+        lifecycle: {
+          bootstrap: vi.fn(),
+          afterTurn: vi.fn(),
+          prepareChildSpawn,
+        },
+        tools: {
+          getToolDefinitions: vi.fn().mockReturnValue([]),
+          executeTool: userExecuteTool,
+        },
+      });
+
+      await engine.executeTool('stello_create_session', { label: 'test' });
+
+      expect(userExecuteTool).not.toHaveBeenCalled();
+      expect(prepareChildSpawn).toHaveBeenCalled();
+    });
+  });
+
   it('splitGuard 拒绝时不会创建子 session', async () => {
     const prepareChildSpawn = vi.fn();
     const splitGuard = {

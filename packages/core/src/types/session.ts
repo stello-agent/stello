@@ -84,6 +84,12 @@ export interface CreateSessionOptions {
   label: string;
   /** 作用域标签 */
   scope?: string;
+  /** 系统提示词；不提供则由 prepareChildSpawn 实现决定（通常继承父 Session） */
+  systemPrompt?: string;
+  /** 子 Session 的第一条 assistant 开场消息 */
+  prompt?: string;
+  /** 上下文继承策略：'none'(默认) 空 L3；'inherit' 拷贝父 L3 */
+  context?: 'none' | 'inherit';
   /** 自定义元数据 */
   metadata?: Record<string, unknown>;
   /** 标签 */

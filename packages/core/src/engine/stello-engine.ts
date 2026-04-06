@@ -12,6 +12,7 @@ import type { StelloEngine, StelloEventMap } from '../types/engine';
 import type { CreateSessionOptions, TopologyNode } from '../types/session';
 import type { SplitGuard } from '../session/split-guard';
 import { createSkillToolDefinition, executeSkillTool } from '../skill/skill-tool';
+import { CREATE_SESSION_TOOL_NAME, createSessionToolDefinition } from './builtin-tools';
 import type { SchedulerSession } from './scheduler';
 import {
   TurnRunner,
@@ -287,21 +288,49 @@ export class StelloEngineImpl implements StelloEngine {
     return child;
   }
 
-  /** 导出 tool 定义，包含内置 skill tool（当有 skill 注册时） */
+  /** 导出 tool 定义，包含内置 tool（stello_create_session + skill tool），过滤用户同名注册 */
   getToolDefinitions(): ToolDefinition[] {
-    const defs = this.tools.getToolDefinitions();
+    const userDefs = this.tools.getToolDefinitions()
+      .filter(d => d.name !== CREATE_SESSION_TOOL_NAME);
+    const builtins: ToolDefinition[] = [createSessionToolDefinition()];
     if (this.skills.getAll().length > 0) {
-      defs.push(createSkillToolDefinition(this.skills));
+      builtins.push(createSkillToolDefinition(this.skills));
     }
-    return defs;
+    return [...builtins, ...userDefs];
   }
 
-  /** 执行 tool call，内置 skill tool 由 engine 直接处理 */
+  /** 执行 tool call，内置 tool 由 engine 直接处理 */
   async executeTool(name: string, args: Record<string, unknown>): Promise<ToolExecutionResult> {
     if (name === 'activate_skill') {
       return executeSkillTool(this.skills, args as { name: string });
     }
+    if (name === CREATE_SESSION_TOOL_NAME) {
+      return this.executeCreateSession(args);
+    }
     return this.tools.executeTool(name, args);
+  }
+
+  /** 执行内置 stello_create_session：走 forkSession 完整路径 */
+  private async executeCreateSession(
+    args: Record<string, unknown>,
+  ): Promise<ToolExecutionResult> {
+    try {
+      const child = await this.forkSession({
+        label: args.label as string,
+        systemPrompt: args.systemPrompt as string | undefined,
+        prompt: args.prompt as string | undefined,
+        context: (args.context as 'none' | 'inherit') ?? undefined,
+      });
+      return {
+        success: true,
+        data: { sessionId: child.id, label: child.label },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   on<K extends keyof StelloEventMap>(event: K, handler: (data: StelloEventMap[K]) => void): void {
