@@ -5,7 +5,6 @@ import {
   StelloEngineImpl,
   type EngineHooks,
   type EngineLifecycleAdapter,
-  type EngineRuntimeSession,
   type EngineToolRuntime,
 } from '../engine/stello-engine';
 import type { Scheduler, SchedulerMainSession, SchedulerSession } from '../engine/scheduler';

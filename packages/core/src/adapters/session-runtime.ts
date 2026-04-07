@@ -1,3 +1,4 @@
+import type { ForkContextFn } from '@stello-ai/session';
 import type { SchedulerMainSession } from '../engine/scheduler';
 import type { EngineRuntimeSession } from '../engine/stello-engine';
 import type { ToolCallParser } from '../engine/turn-runner';
@@ -49,7 +50,7 @@ export interface SessionCompatibleForkOptions {
   id?: string;
   label: string;
   systemPrompt?: string;
-  context?: 'none' | 'inherit' | ((parentRecords: Array<{ role: string; content: string; timestamp?: string }>) => Array<{ role: string; content: string; timestamp?: string }> | Promise<Array<{ role: string; content: string; timestamp?: string }>>);
+  context?: 'none' | 'inherit' | ForkContextFn;
   prompt?: string;
   llm?: unknown;
   tools?: unknown;

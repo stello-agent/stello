@@ -1,7 +1,7 @@
 // ─── 生命周期钩子 + Skill + 确认协议 + Agent Tools 类型定义 ───
 
 import type { SessionMeta, TopologyNode } from './session';
-import type { AssembledContext, TurnRecord } from './memory';
+import type { AssembledContext } from './memory';
 
 // ─── 生命周期钩子 ───
 

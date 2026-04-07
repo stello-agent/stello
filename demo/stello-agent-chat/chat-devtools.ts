@@ -17,7 +17,6 @@ import {
   type SessionMeta,
   type Skill,
   type SkillRouter,
-  type TopologyNode,
   type SessionTree,
   type StelloAgentConfig,
   type SessionCompatibleForkOptions,
@@ -32,7 +31,7 @@ import {
   createOpenAICompatibleAdapter,
 } from '../../packages/session/src/adapters/openai-compatible'
 import { loadMainSession } from '../../packages/session/src/create-main-session'
-import { createSession, loadSession } from '../../packages/session/src/create-session'
+import { loadSession } from '../../packages/session/src/create-session'
 import { InMemoryStorageAdapter } from '../../packages/session/src/mocks/in-memory-storage'
 import type { MainSession } from '../../packages/session/src/types/main-session-api.ts'
 import type { Session } from '../../packages/session/src/types/session-api.ts'
@@ -810,12 +809,6 @@ async function requireSession(sessions: SessionTreeImpl, sessionId: string): Pro
   return session
 }
 
-/** 读取拓扑节点，供需要 parentId 的场景使用 */
-async function requireNode(sessions: SessionTreeImpl, sessionId: string): Promise<TopologyNode> {
-  const session = await sessions.getNode(sessionId)
-  if (!session) throw new Error(`Session node not found: ${sessionId}`)
-  return session
-}
 
 async function main() {
   type DemoApp = Awaited<ReturnType<typeof bootstrap>>
