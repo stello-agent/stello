@@ -6,8 +6,8 @@ import type { EngineStreamResult } from '../engine/stello-engine';
 import {
   DefaultEngineFactory,
   type EngineHookProvider,
-  type SessionRuntimeResolver,
 } from '../orchestrator/default-engine-factory';
+import type { SessionRuntimeResolver, SessionRuntimeCreateOptions } from '../types/engine';
 import {
   DefaultEngineRuntimeManager,
   type EngineRuntimeManager,
@@ -36,7 +36,6 @@ import type { MemoryEngine } from '../types/memory';
 import type { ConfirmProtocol, SkillRouter } from '../types/lifecycle';
 import type { EngineLifecycleAdapter, EngineToolRuntime } from '../engine/stello-engine';
 import type { ForkProfileRegistry } from '../engine/fork-profile';
-import type { SessionRuntimeCreateOptions } from '../orchestrator/default-engine-factory';
 import type { Scheduler, SchedulerConfig, SchedulerMainSession } from '../engine/scheduler';
 import type { SplitGuard } from '../session/split-guard';
 

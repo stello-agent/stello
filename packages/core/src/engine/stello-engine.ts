@@ -10,7 +10,7 @@ import type {
 } from '../types/lifecycle';
 import type { StelloEngine, StelloEventMap } from '../types/engine';
 import type { CreateSessionOptions, TopologyNode } from '../types/session';
-import type { SessionRuntimeResolver } from '../orchestrator/default-engine-factory';
+import type { SessionRuntimeResolver } from '../types/engine';
 import type { SplitGuard } from '../session/split-guard';
 import { createSkillToolDefinition, executeSkillTool } from '../skill/skill-tool';
 import { CREATE_SESSION_TOOL_NAME, createSessionToolDefinition } from './builtin-tools';

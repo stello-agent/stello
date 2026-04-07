@@ -39,6 +39,8 @@ export type {
   StelloError,
   StelloEventMap,
   StelloEngine,
+  SessionRuntimeCreateOptions,
+  SessionRuntimeResolver,
 } from './types';
 
 // 导出实现
@@ -121,8 +123,6 @@ export type {
 } from './orchestrator/engine-runtime-manager';
 export { DefaultEngineFactory } from './orchestrator/default-engine-factory';
 export type {
-  SessionRuntimeResolver,
-  SessionRuntimeCreateOptions,
   EngineHookProvider,
   DefaultEngineFactoryOptions,
 } from './orchestrator/default-engine-factory';

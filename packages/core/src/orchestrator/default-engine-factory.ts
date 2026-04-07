@@ -13,31 +13,7 @@ import type { TurnRunner } from '../engine/turn-runner';
 import type { SplitGuard } from '../session/split-guard';
 import type { ForkProfileRegistry } from '../engine/fork-profile';
 import type { EngineFactory, OrchestratorEngine } from './session-orchestrator';
-import type { LLMAdapter, LLMCompleteOptions, ForkContextFn } from '@stello-ai/session';
-
-/** Session 创建参数（Engine fork 时传给 resolver.create） */
-export interface SessionRuntimeCreateOptions {
-  label: string
-  systemPrompt?: string
-  prompt?: string
-  context?: 'none' | 'inherit'
-  metadata?: Record<string, unknown>
-  tags?: string[]
-  /** Profile 解析后的运行时配置 */
-  resolved?: {
-    llm?: LLMAdapter
-    tools?: LLMCompleteOptions['tools']
-    contextFn?: ForkContextFn
-  }
-}
-
-/** Session runtime 解析器 */
-export interface SessionRuntimeResolver {
-  /** 根据 sessionId 解析出对应 runtime session */
-  resolve(sessionId: string): Promise<EngineRuntimeSession>;
-  /** 创建新 session runtime。提供后 Engine 接管 fork 编排，不再需要 prepareChildSpawn。 */
-  create?(sessionId: string, options: SessionRuntimeCreateOptions): Promise<EngineRuntimeSession>;
-}
+import type { SessionRuntimeResolver } from '../types/engine';
 
 /** hooks 提供方式 */
 export type EngineHookProvider =
