@@ -359,7 +359,7 @@ function buildSession(
     },
 
     async fork(forkOptions: ForkOptions): Promise<Session> {
-      const childId = randomUUID()
+      const childId = forkOptions.id ?? randomUUID()
       const now = new Date().toISOString()
 
       const childMeta: SessionMeta = {

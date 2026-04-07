@@ -93,6 +93,19 @@ describe('updateMeta() + archive() + fork()', () => {
       expect(stored).not.toBeNull()
       expect(stored?.label).toBe('Child')
     })
+
+    it('fork 使用指定的 id', async () => {
+      const { session } = await makeSession({ label: 'Parent' })
+      const child = await session.fork({ id: 'custom-id-123', label: '子会话' })
+      expect(child.meta.id).toBe('custom-id-123')
+    })
+
+    it('fork 不指定 id 时自动生成', async () => {
+      const { session } = await makeSession({ label: 'Parent' })
+      const child = await session.fork({ label: '子会话' })
+      expect(child.meta.id).toBeDefined()
+      expect(child.meta.id).not.toBe('')
+    })
   })
 
   describe('fork() system prompt', () => {

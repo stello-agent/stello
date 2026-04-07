@@ -32,6 +32,8 @@ export type ForkContextFn = (parentRecords: Message[]) => Message[] | Promise<Me
 
 /** fork 操作的选项 */
 export interface ForkOptions {
+  /** 指定子 Session ID（用于与外部拓扑节点对齐）。不提供则自动生成。 */
+  id?: string
   label: string
   /** 系统提示词；不提供则继承父 Session */
   systemPrompt?: string
