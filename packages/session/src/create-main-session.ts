@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import type { MainSession } from './types/main-session-api.js'
-import type { MessageQueryOptions } from './types/session-api.js'
+import type { Session, MessageQueryOptions } from './types/session-api.js'
 import { SessionArchivedError } from './types/session-api.js'
-import type { SessionMeta, SessionMetaUpdate } from './types/session.js'
+import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './types/session.js'
 import type { Message } from './types/llm.js'
 import type {
   IntegrateFn, IntegrateResult, CreateMainSessionOptions, LoadMainSessionOptions,
   SendResult, StreamResult,
 } from './types/functions.js'
+import { createSession } from './create-session.js'
 import { assembleMainSessionContext, createBuiltinCompressFn, type CompressionCache } from './context-utils.js'
 
 interface ToolResultEnvelope {
@@ -357,6 +358,44 @@ function buildMainSession(
       }
       await storage.putSession(updatedMeta)
       currentMeta = updatedMeta
+    },
+
+    async fork(forkOptions: ForkOptions): Promise<Session> {
+      const childId = forkOptions.id ?? randomUUID()
+      const now = new Date().toISOString()
+
+      // 创建子 Session（标准 Session，非 MainSession）
+      const child = await createSession({
+        id: childId,
+        storage,
+        llm: forkOptions.llm ?? options.llm!,
+        label: forkOptions.label,
+        systemPrompt: forkOptions.systemPrompt ?? await storage.getSystemPrompt(currentMeta.id) ?? undefined,
+        tools: forkOptions.tools ?? options.tools,
+        tags: forkOptions.tags,
+        metadata: forkOptions.metadata,
+      })
+
+      // 上下文策略：决定子 Session 继承多少父 L3
+      const ctx = forkOptions.context ?? 'none'
+      if (ctx !== 'none') {
+        const parentRecords = await storage.listRecords(currentMeta.id)
+        const records = ctx === 'inherit' ? parentRecords : await ctx(parentRecords)
+        for (const record of records) {
+          await storage.appendRecord(childId, record)
+        }
+      }
+
+      // 初始 prompt：写入子 Session 的第一条 assistant 开场消息
+      if (forkOptions.prompt) {
+        await storage.appendRecord(childId, {
+          role: 'assistant',
+          content: forkOptions.prompt,
+          timestamp: now,
+        })
+      }
+
+      return child
     },
 
     async archive(): Promise<void> {

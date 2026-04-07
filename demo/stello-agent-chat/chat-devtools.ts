@@ -348,7 +348,12 @@ function wrapStandardSession(
 }
 
 /** 把 MainSession 适配成 core 兼容接口。 */
-function wrapMainSession(coreSessionId: string, session: MainSession) {
+function wrapMainSession(
+  coreSessionId: string,
+  session: MainSession,
+  memoryEngine?: MemoryEngine,
+  sessionMap?: Map<string, WrappedSession | WrappedMainSession>,
+) {
   return {
     get meta() {
       return { id: coreSessionId, status: session.meta.status } as const
@@ -363,6 +368,15 @@ function wrapMainSession(coreSessionId: string, session: MainSession) {
     async consolidate() {
       // MainSession 没有 L2 consolidation，调度到 root 时直接跳过。
     },
+    ...(sessionMap
+      ? {
+          async fork(options: SessionCompatibleForkOptions) {
+            const child = await session.fork(options as Parameters<MainSession['fork']>[0])
+            sessionMap!.set(child.meta.id, { session: child })
+            return wrapStandardSession(child.meta.id, child, memoryEngine, sessionMap!)
+          },
+        }
+      : {}),
   }
 }
 
@@ -619,7 +633,7 @@ async function bootstrap() {
         const entry = sessionMap.get(sessionId)
         if (entry) {
           if ('main' in entry && entry.main) {
-            return wrapMainSession(sessionId, entry.main)
+            return wrapMainSession(sessionId, entry.main, memory, sessionMap)
           }
           return wrapStandardSession(sessionId, entry.session, memory, sessionMap)
         }
