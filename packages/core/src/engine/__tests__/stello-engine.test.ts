@@ -422,6 +422,7 @@ describe('StelloEngineImpl', () => {
         systemPrompt: 'you are a UI expert',
         prompt: 'hello',
         context: 'inherit',
+        metadata: { sourceSessionId: 's1' },
       });
     });
 

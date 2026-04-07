@@ -166,7 +166,7 @@ export class StelloEngineImpl implements StelloEngine {
     this.fireHook('onRoundStart', { sessionId: this.session.id, input });
     let turn: TurnRunnerResult;
     try {
-      turn = await this.turnRunner.run(this.session, input, this.tools, {
+      turn = await this.turnRunner.run(this.session, input, this, {
         ...options,
         onToolCall: (toolCall) => {
           this.fireCallback(options?.onToolCall, toolCall);
@@ -197,7 +197,7 @@ export class StelloEngineImpl implements StelloEngine {
 
   /** 流式处理一轮编排：先输出增量文本，完成后再返回完整 turn */
   stream(input: string, options?: TurnRunnerOptions): EngineStreamResult {
-    const source: TurnRunnerStreamResult = this.turnRunner.runStream(this.session, input, this.tools, {
+    const source: TurnRunnerStreamResult = this.turnRunner.runStream(this.session, input, this, {
       ...options,
       onToolCall: (toolCall) => {
         this.fireCallback(options?.onToolCall, toolCall);
@@ -356,6 +356,7 @@ export class StelloEngineImpl implements StelloEngine {
         systemPrompt,
         prompt: args.prompt as string | undefined,
         context,
+        metadata: { sourceSessionId: this.session.id },
         ...(hasResolved ? { resolved } : {}),
       });
       return {
