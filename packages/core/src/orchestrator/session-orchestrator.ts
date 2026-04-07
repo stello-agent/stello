@@ -1,6 +1,6 @@
-import type { CreateSessionOptions, SessionMeta, TopologyNode, SessionTree } from '../types/session';
+import type { SessionMeta, TopologyNode, SessionTree } from '../types/session';
 import type { BootstrapResult } from '../types/lifecycle';
-import type { StelloEngine } from '../types/engine';
+import type { StelloEngine, EngineForkOptions } from '../types/engine';
 import type { EngineTurnResult } from '../engine/stello-engine';
 import type { EngineStreamResult } from '../engine/stello-engine';
 import type { TurnRunnerOptions } from '../engine/turn-runner';
@@ -15,7 +15,7 @@ export interface OrchestratorEngine extends StelloEngine {
   /** 归档当前绑定 session */
   archiveSession(): Promise<{ sessionId: string }>;
   /** 从当前绑定 session 发起 fork */
-  forkSession(options: Omit<CreateSessionOptions, 'parentId'>): Promise<TopologyNode>;
+  forkSession(options: EngineForkOptions): Promise<TopologyNode>;
 }
 
 /** Engine 工厂 */
@@ -146,21 +146,26 @@ export class SessionOrchestrator {
   /** 从指定 session 发起 fork */
   async forkSession(
     sessionId: string,
-    options: Omit<CreateSessionOptions, 'parentId'>,
+    options: EngineForkOptions,
   ): Promise<TopologyNode> {
     await this.requireSession(sessionId);
     const node = await this.sessions.getNode(sessionId);
     if (!node) throw new Error(`拓扑节点不存在: ${sessionId}`);
-    const effectiveParentId = await this.strategy.resolveForkParent(node, this.sessions);
 
-    return this.runSerial(effectiveParentId, async () => {
-      return this.withRuntime(effectiveParentId, (engine) => engine.forkSession({
-        ...options,
-        metadata: {
-          ...(options.metadata ?? {}),
-          sourceSessionId: sessionId,
-        },
-      }));
+    const topologyParentId = await this.strategy.resolveForkParent(node, this.sessions);
+
+    // fork 在 source session 上执行（继承 source 的 context/systemPrompt）
+    return this.runSerial(sessionId, async () => {
+      return this.withRuntime(sessionId, (engine) =>
+        engine.forkSession({
+          ...options,
+          topologyParentId,
+          metadata: {
+            ...(options.metadata ?? {}),
+            sourceSessionId: sessionId,
+          },
+        }),
+      );
     });
   }
 

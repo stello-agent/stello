@@ -36,6 +36,6 @@ export type {
   StelloError,
   StelloEventMap,
   StelloEngine,
-  SessionRuntimeCreateOptions,
+  EngineForkOptions,
   SessionRuntimeResolver,
 } from './types/engine';

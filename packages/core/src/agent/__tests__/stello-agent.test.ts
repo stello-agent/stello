@@ -133,13 +133,10 @@ describe('StelloAgent', () => {
       label: 'UI',
     };
 
-    const rootRuntime = {
-      id: 'root',
-      meta: { id: 'root', turnCount: 1, status: 'active' as const },
-      turnCount: 1,
-      send: vi.fn(),
-      consolidate: vi.fn(),
-    };
+    const sessionFork = vi.fn().mockResolvedValue({
+      id: 'child-2', meta: { id: 'child-2', turnCount: 0, status: 'active' },
+      turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+    });
 
     const childRuntime = {
       id: 'child-1',
@@ -147,12 +144,9 @@ describe('StelloAgent', () => {
       turnCount: 1,
       send: vi.fn(),
       consolidate: vi.fn(),
+      fork: sessionFork,
     };
 
-    const resolverCreate = vi.fn().mockResolvedValue({
-      id: 'child-2', meta: { id: 'child-2', turnCount: 0, status: 'active' },
-      turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
-    });
     const createChild = vi.fn().mockResolvedValue({
       id: 'child-2', parentId: 'root', children: [], refs: [], depth: 1, index: 1, label: 'UI 2',
     });
@@ -189,11 +183,9 @@ describe('StelloAgent', () => {
       runtime: {
         resolver: {
           resolve: vi.fn().mockImplementation(async (id: string) => {
-            if (id === 'root') return rootRuntime;
             if (id === 'child-1') return childRuntime;
             throw new Error(`unexpected session: ${id}`);
           }),
-          create: resolverCreate,
         },
       },
       orchestration: {
@@ -211,7 +203,8 @@ describe('StelloAgent', () => {
       scope: 'ui',
       parentId: 'root',
     }));
-    expect(resolverCreate).toHaveBeenCalledWith('child-2', expect.objectContaining({
+    expect(sessionFork).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'child-2',
       label: 'UI 2',
     }));
     expect(result.parentId).toBe('root');

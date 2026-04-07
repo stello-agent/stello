@@ -1,4 +1,3 @@
-import type { CreateSessionOptions } from '../types/session';
 import type { BootstrapResult } from '../types/lifecycle';
 import { TurnRunner, type ToolCallParser, type TurnRunnerOptions } from '../engine/turn-runner';
 import type { EngineTurnResult } from '../engine/stello-engine';
@@ -7,7 +6,7 @@ import {
   DefaultEngineFactory,
   type EngineHookProvider,
 } from '../orchestrator/default-engine-factory';
-import type { SessionRuntimeResolver, SessionRuntimeCreateOptions } from '../types/engine';
+import type { SessionRuntimeResolver, EngineForkOptions } from '../types/engine';
 import {
   DefaultEngineRuntimeManager,
   type EngineRuntimeManager,
@@ -58,8 +57,6 @@ export interface StelloAgentCapabilitiesConfig {
 export interface StelloAgentSessionConfig {
   /** 按 sessionId 解析真实 Session */
   sessionResolver?: (sessionId: string) => Promise<SessionCompatible>;
-  /** 创建新 session 的工厂。提供后 Engine 接管 fork 编排。 */
-  sessionCreator?: (sessionId: string, options: SessionRuntimeCreateOptions) => Promise<SessionCompatible>;
   /** 解析 MainSession（可选，仅在需要 integration 时提供） */
   mainSessionResolver?: () => Promise<MainSessionCompatible | null>;
   /** Session L3 → L2 的提炼函数 */
@@ -125,14 +122,6 @@ function resolveRuntimeResolver(config: StelloAgentConfig): SessionRuntimeResolv
         const session = await config.session!.sessionResolver!(sessionId);
         return adaptSessionToEngineRuntime(session, adaptOptions);
       },
-      ...(config.session.sessionCreator
-        ? {
-            create: async (sessionId: string, options: SessionRuntimeCreateOptions) => {
-              const session = await config.session!.sessionCreator!(sessionId, options);
-              return adaptSessionToEngineRuntime(session, adaptOptions);
-            },
-          }
-        : {}),
     };
   }
 
@@ -259,7 +248,7 @@ export class StelloAgent {
   /** 从指定 session 发起 fork */
   forkSession(
     sessionId: string,
-    options: Omit<CreateSessionOptions, 'parentId'>,
+    options: EngineForkOptions,
   ) {
     return this.orchestrator.forkSession(sessionId, options);
   }

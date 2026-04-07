@@ -17,7 +17,7 @@ import type {
 } from './lifecycle';
 import type { EngineRuntimeSession, EngineStreamResult, EngineTurnResult } from '../engine/stello-engine';
 import type { TurnRunnerOptions } from '../engine/turn-runner';
-import type { CreateSessionOptions } from './session';
+import type { ForkContextFn, LLMAdapter, LLMCompleteOptions } from '@stello-ai/session';
 
 // ─── 策略配置 ───
 
@@ -102,15 +102,28 @@ export interface StelloEngine {
   off<K extends keyof StelloEventMap>(event: K, handler: (data: StelloEventMap[K]) => void): void;
 }
 
-// ─── Session Runtime 解析器 ───
+// ─── Engine Fork 选项 ───
 
-/** Session 创建参数（Engine fork 时传给 resolver.create），从 CreateSessionOptions 派生 */
-export type SessionRuntimeCreateOptions = Omit<CreateSessionOptions, 'parentId'>
+/** Engine fork 操作的选项：topology 字段 + session 字段 */
+export interface EngineForkOptions {
+  label: string
+  scope?: string
+  systemPrompt?: string
+  prompt?: string
+  /** 上下文策略：'none' | 'inherit' | ForkContextFn */
+  context?: 'none' | 'inherit' | ForkContextFn
+  llm?: LLMAdapter
+  tools?: LLMCompleteOptions['tools']
+  tags?: string[]
+  metadata?: Record<string, unknown>
+  /** 显式指定拓扑父节点 ID（不传则用当前 session.id） */
+  topologyParentId?: string
+}
+
+// ─── Session Runtime 解析器 ───
 
 /** Session runtime 解析器 */
 export interface SessionRuntimeResolver {
   /** 根据 sessionId 解析出对应 runtime session */
   resolve(sessionId: string): Promise<EngineRuntimeSession>
-  /** 创建新 session runtime。提供后 Engine 接管 fork 编排。 */
-  create?(sessionId: string, options: SessionRuntimeCreateOptions): Promise<EngineRuntimeSession>
 }

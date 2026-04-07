@@ -62,7 +62,6 @@ export class DefaultEngineFactory implements EngineFactory {
       tools: this.options.tools,
       splitGuard: this.options.splitGuard,
       profiles: this.options.profiles,
-      resolver: this.options.sessionRuntimeResolver,
       turnRunner: this.options.turnRunner,
       hooks: mergedHooks,
     });
