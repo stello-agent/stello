@@ -698,11 +698,13 @@ export function Conversation() {
   /* 切换 session 时拉取 detail（L2/scope）+ 历史 records */
   useEffect(() => {
     if (!selectedSession) return
+    let cancelled = false
     setItems([])
     setDetail(null)
     setSessionCapabilities(null)
     fetchSessionDetail(selectedSession.id)
       .then((d) => {
+        if (cancelled) return
         setDetail(d)
         const records = d?.records ?? []
         if (records.length > 0) {
@@ -710,13 +712,19 @@ export function Conversation() {
         }
       })
       .catch(() => {
+        if (cancelled) return
         setDetail(null)
       })
     fetchSessionCapabilities(selectedSession.id)
-      .then(setSessionCapabilities)
+      .then((caps) => {
+        if (cancelled) return
+        setSessionCapabilities(caps)
+      })
       .catch(() => {
+        if (cancelled) return
         setSessionCapabilities(null)
       })
+    return () => { cancelled = true }
   }, [selectedSession?.id])
 
   /* 消息列表自动滚到底部 */

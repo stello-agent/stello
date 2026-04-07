@@ -24,7 +24,7 @@ async function withSessionEngine<T>(
   sessionId: string,
   run: (engine: Awaited<ReturnType<StelloAgent['attachSession']>>) => Promise<T>,
 ): Promise<T> {
-  const holderId = `devtools:capabilities:${sessionId}:${Date.now()}`
+  const holderId = `devtools:capabilities:${sessionId}:${crypto.randomUUID()}`
   const engine = await agent.attachSession(sessionId, holderId)
   try {
     return await run(engine)
