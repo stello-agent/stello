@@ -44,6 +44,16 @@ function createMockAgent() {
         config.runtime.recyclePolicy.idleTtlMs = patch.runtime.idleTtlMs
       }
     }),
+    attachSession: vi.fn().mockResolvedValue({
+      getToolDefinitions: () => [
+        { name: 'stello_create_session', description: 'Create session', parameters: {} },
+        { name: 'activate_skill', description: '## Available Skills\n- **research**', parameters: {} },
+      ],
+      skills: {
+        getAll: () => [{ name: 'research', description: 'Research skill' }],
+      },
+    }),
+    detachSession: vi.fn().mockResolvedValue(undefined),
   }
 }
 
@@ -254,6 +264,23 @@ describe('devtools REST routes', () => {
     const body = await res.json() as { scope: string | null }
     expect(body.scope).toBe('live insight')
     expect(sessionAccess.getScope).toHaveBeenCalledWith('sess-1')
+  })
+
+  it('GET /sessions/:id/capabilities 返回 session 级 tools / skills', async () => {
+    const agent = createMockAgent()
+    const app = new Hono()
+    app.route('/api', createRoutes(agent as never))
+
+    const res = await app.request('/api/sessions/sess-1/capabilities')
+    expect(res.status).toBe(200)
+    const body = await res.json() as {
+      tools: Array<{ name: string }>
+      skills: Array<{ name: string }>
+    }
+    expect(body.tools.map((tool) => tool.name)).toEqual(['stello_create_session', 'activate_skill'])
+    expect(body.skills.map((skill) => skill.name)).toEqual(['research'])
+    expect(agent.attachSession).toHaveBeenCalledWith('sess-1', expect.stringContaining('devtools:capabilities:sess-1:'))
+    expect(agent.detachSession).toHaveBeenCalledTimes(1)
   })
 
   it('PATCH /prompts 会通过 stateStore 持久化当前 DevTools 状态', async () => {

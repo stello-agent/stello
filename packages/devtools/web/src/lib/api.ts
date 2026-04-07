@@ -84,6 +84,11 @@ export interface AgentConfig {
   hooks: string[]
 }
 
+export interface SessionCapabilities {
+  tools: Array<{ name: string; description: string; parameters?: Record<string, unknown> }>
+  skills: Array<{ name: string; description: string }>
+}
+
 /** Turn 结果 */
 export interface TurnResult {
   turn: {
@@ -129,6 +134,11 @@ export function fetchSessions() {
 /** 获取单个 session 元数据 */
 export function fetchSession(id: string) {
   return request<SessionMeta>(`/sessions/${id}`)
+}
+
+/** 获取 session 实时 capabilities（按该 session 的 engine 过滤） */
+export function fetchSessionCapabilities(id: string) {
+  return request<SessionCapabilities>(`/sessions/${id}/capabilities`)
 }
 
 /** 获取 session 详细数据 */

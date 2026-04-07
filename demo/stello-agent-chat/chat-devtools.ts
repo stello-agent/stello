@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import { rm } from 'node:fs/promises'
 import { basename, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import {
   NodeFileSystemAdapter,
   SessionTreeImpl,
@@ -25,6 +26,7 @@ import {
   createDefaultIntegrateFn,
   loadSkillsFromDirectory,
   type LLMCallFn,
+  type StelloEngine,
 } from '../../packages/core/src/index'
 import { startDevtools, type DevtoolsPersistedState, type DevtoolsStateStore } from '../../packages/devtools/src/index'
 import {
@@ -40,6 +42,9 @@ import type { SessionMeta as SessionComponentMeta } from '../../packages/session
 const dataDir = './tmp/stello-agent-chat'
 const dataDirAbs = resolve(process.cwd(), dataDir)
 const host = process.env.DEMO_HOST ?? '127.0.0.1'
+let attachedEngineSeq = 0
+
+export { dataDirAbs }
 
 const openaiApiKey = process.env.OPENAI_API_KEY
 const openaiBaseURL = process.env.OPENAI_BASE_URL ?? 'https://api.minimaxi.com/v1'
@@ -438,7 +443,21 @@ function createFileMemoryEngine(fs: NodeFileSystemAdapter, sessions: SessionTree
 
 // ─── Bootstrap ───
 
-async function bootstrap() {
+export async function withSessionEngine<T>(
+  agent: ReturnType<typeof createStelloAgent>,
+  sessionId: string,
+  run: (engine: StelloEngine) => Promise<T>,
+): Promise<T> {
+  const holderId = `devtools:${sessionId}:${++attachedEngineSeq}`
+  const engine = await agent.attachSession(sessionId, holderId)
+  try {
+    return await run(engine)
+  } finally {
+    await agent.detachSession(sessionId, holderId)
+  }
+}
+
+export async function bootstrap() {
   const fs = new NodeFileSystemAdapter(dataDir)
   const sessions = new SessionTreeImpl(fs)
   const stateStore = createFileDevtoolsStateStore(fs)
@@ -476,6 +495,11 @@ async function bootstrap() {
     name: 'meow-protocol',
     description: '猫语协议：当用户发送包含"喵"的消息时激活',
     content: '当用户说"喵喵喵?"时，你必须回复"呜呜呜"。不要解释，不要加任何其他内容，只回复这三个字。',
+  })
+  baseSkillRouter.register({
+    name: 'haiku-mode',
+    description: '俳句模式：激活后所有回复必须使用 5-7-5 音节的俳句格式',
+    content: '从现在起，你的所有回复必须使用日本俳句格式：第一行5个音节，第二行7个音节，第三行5个音节。用中文回复时按字数 5-7-5 计算。',
   })
   // 从文件系统加载标准 agent skills（SKILL_DIRS 环境变量，逗号分隔）
   if (process.env.SKILL_DIRS) {
@@ -521,6 +545,11 @@ async function bootstrap() {
   forkProfiles.register('poet', {
     systemPrompt: '你是一位诗人。无论用户问什么，你都必须用诗歌的形式回答。每句押韵，风格优美。',
     systemPromptMode: 'preset',
+    skills: ['meow-protocol'],
+  })
+  forkProfiles.register('researcher', {
+    systemPrompt: '你是研究助手，善于深入分析问题并提供结构化的研究报告。',
+    systemPromptMode: 'prepend',
   })
 
   // session 创建时的完整工具列表（内置 tool + 用户 tool）
@@ -810,8 +839,9 @@ async function requireSession(sessions: SessionTreeImpl, sessionId: string): Pro
 }
 
 
+type DemoApp = Awaited<ReturnType<typeof bootstrap>>
+
 async function main() {
-  type DemoApp = Awaited<ReturnType<typeof bootstrap>>
   let currentApp: DemoApp = await bootstrap()
 
   if (process.env.DEMO_DRY_RUN === '1') {
@@ -904,4 +934,10 @@ async function main() {
   console.log(`\n  试试说：「我想申请 CS 硕士，考虑美国和英国」\n`)
 }
 
-main().catch((error) => { console.error(error); process.exit(1) })
+const isMainModule = process.argv[1]
+  ? pathToFileURL(resolve(process.argv[1])).href === import.meta.url
+  : false
+
+if (isMainModule) {
+  main().catch((error) => { console.error(error); process.exit(1) })
+}

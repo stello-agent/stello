@@ -13,5 +13,5 @@
     "jsx": "react-jsx",
     "strict": true
   },
-  "include": ["chat-devtools.ts", "e2e-test.ts"]
+  "include": ["chat-devtools.ts", "e2e-test.ts", "verify-per-session-skills.ts"]
 }

@@ -19,6 +19,20 @@ async function orderSessionsWithMainFirst(agent: StelloAgent) {
   return indexed.map(({ session }) => session)
 }
 
+async function withSessionEngine<T>(
+  agent: StelloAgent,
+  sessionId: string,
+  run: (engine: Awaited<ReturnType<StelloAgent['attachSession']>>) => Promise<T>,
+): Promise<T> {
+  const holderId = `devtools:capabilities:${sessionId}:${Date.now()}`
+  const engine = await agent.attachSession(sessionId, holderId)
+  try {
+    return await run(engine)
+  } finally {
+    await agent.detachSession(sessionId, holderId)
+  }
+}
+
 /** 全局错误处理 */
 function withErrorHandler(app: Hono): void {
   app.onError((err, c) => {
@@ -192,6 +206,22 @@ export function createRoutes(
     const node = await agent.sessions.getNode(id)
     if (!node) return c.json({ error: 'Node not found' }, 404)
     return c.json(node)
+  })
+
+  /** 获取单个 session 的实时 tools / skills（按该 session 的 engine 过滤后） */
+  app.get('/sessions/:id/capabilities', async (c) => {
+    const id = c.req.param('id')
+    const meta = await agent.sessions.get(id)
+    if (!meta) return c.json({ error: 'Session not found' }, 404)
+
+    const capabilities = await withSessionEngine(agent, id, async (engine) => ({
+      tools: engine.getToolDefinitions(),
+      skills: engine.skills.getAll().map((skill) => ({
+        name: skill.name,
+        description: skill.description,
+      })),
+    }))
+    return c.json(capabilities)
   })
 
   /** 获取 session 详细数据（L3/L2/insight-scope） */

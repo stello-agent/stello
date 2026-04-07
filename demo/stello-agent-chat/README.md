@@ -53,6 +53,7 @@ pnpm demo:chat
 - 查看 session 列表，主 session 固定置顶
 - 查看 session 树和 inspector 详情
 - 发送消息并实时看到流式响应和工具调用
+- 右上角按当前 session 展示实际可用的 tools / skills
 - 手动触发 consolidation / integration
 - 查看和编辑 system prompt / insights scope
 - 通过设置页调整 live runtime 项
@@ -105,6 +106,37 @@ pnpm demo:chat
 - 工具内部通过 `session.fork()` 派生子 session
 - 前端把 tool 调用过程渲染成单独组件
 - integration 会基于已有 L2 生成定向 insights，并写回子 session
+
+## Per-Session Skills 验证
+
+当前 demo 额外内置了两条 skills 和两个 profile，用来验证 `ForkProfile.skills` 白名单：
+
+- 全局 skills：
+  - `meow-protocol`
+  - `haiku-mode`
+- profiles：
+  - `poet`
+    - `skills: ['meow-protocol']`
+  - `researcher`
+    - 不限制 skills，继承全局 skills
+
+在 DevTools 中切到不同 session 时，右上角 `Skills` / `Tools` badge 会显示该 session engine 实际可见的能力，而不是全局静态列表。
+
+如果你想不依赖真实 LLM，直接验证 session 级 skills 过滤是否生效，可以运行：
+
+```bash
+cd demo/stello-agent-chat
+OPENAI_API_KEY=fake node --import tsx verify-per-session-skills.ts
+```
+
+预期输出：
+
+```text
+Per-session skills verification passed.
+  main: meow-protocol, haiku-mode
+  poet: meow-protocol
+  researcher: meow-protocol, haiku-mode
+```
 
 ## 实现方式
 

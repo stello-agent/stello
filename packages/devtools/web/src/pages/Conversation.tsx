@@ -21,11 +21,13 @@ import {
 import {
   fetchSessionTree,
   fetchConfig,
+  fetchSessionCapabilities,
   fetchSessionDetail,
   enterSession,
   consolidateSession,
   sendTurn,
   type AgentConfig,
+  type SessionCapabilities,
   type SessionDetail,
   type SessionTreeNode,
   type TurnRecord,
@@ -505,7 +507,7 @@ function parseThinkContent(text: string): { think: string | null; content: strin
 function MarkdownMessage({ text, streaming }: { text: string; streaming?: boolean }) {
   const { t } = useI18n()
   const { think, content } = useMemo(() => parseThinkContent(text), [text])
-  const displayText = content || (streaming ? '' : text)
+  const displayText = content
   const showReasoning = Boolean(think)
   const reasoningLabel = streaming ? t('conv.thinking') : t('conv.thinkingDone')
 
@@ -605,6 +607,7 @@ export function Conversation() {
   const [filterText, setFilterText] = useState('')
   const [items, setItems] = useState<ChatItem[]>([])
   const [detail, setDetail] = useState<SessionDetail | null>(null)
+  const [sessionCapabilities, setSessionCapabilities] = useState<SessionCapabilities | null>(null)
   const [activeTab, setActiveTab] = useState<'l3' | 'l2' | 'insights' | 'prompt'>('l3')
   const [inputValue, setInputValue] = useState('')
   const [sendingSessions, setSendingSessions] = useState<Set<string>>(new Set())
@@ -697,6 +700,7 @@ export function Conversation() {
     if (!selectedSession) return
     setItems([])
     setDetail(null)
+    setSessionCapabilities(null)
     fetchSessionDetail(selectedSession.id)
       .then((d) => {
         setDetail(d)
@@ -707,6 +711,11 @@ export function Conversation() {
       })
       .catch(() => {
         setDetail(null)
+      })
+    fetchSessionCapabilities(selectedSession.id)
+      .then(setSessionCapabilities)
+      .catch(() => {
+        setSessionCapabilities(null)
       })
   }, [selectedSession?.id])
 
@@ -847,13 +856,13 @@ export function Conversation() {
               icon={Zap}
               iconClass="text-[#D89575]"
               label={t('conv.skills')}
-              items={(config?.capabilities.skills ?? []).map((s) => ({ name: s.name, description: s.description }))}
+              items={(sessionCapabilities?.skills ?? config?.capabilities.skills ?? []).map((s) => ({ name: s.name, description: s.description }))}
             />
             <CapabilityPopover
               icon={Wrench}
               iconClass="text-text-secondary"
               label={t('conv.tools')}
-              items={config?.capabilities.tools ?? []}
+              items={sessionCapabilities?.tools ?? config?.capabilities.tools ?? []}
             />
           </div>
         </div>
