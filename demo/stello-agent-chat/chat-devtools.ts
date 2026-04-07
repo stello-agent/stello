@@ -5,12 +5,13 @@ import {
   NodeFileSystemAdapter,
   SessionTreeImpl,
   SkillRouterImpl,
+  ToolRegistryImpl,
+  buildSessionToolList,
   Scheduler,
   createStelloAgent,
   type ConfirmProtocol,
   type CoreSchema,
   type EngineLifecycleAdapter,
-  type EngineToolRuntime,
   type MemoryEngine,
   type SessionMeta,
   type Skill,
@@ -21,8 +22,6 @@ import {
   type TurnRecord,
   createDefaultConsolidateFn,
   createDefaultIntegrateFn,
-  createSkillToolDefinition,
-  executeSkillTool,
   loadSkillsFromDirectory,
   type LLMCallFn,
 } from '../../packages/core/src/index'
@@ -30,7 +29,6 @@ import { startDevtools, type DevtoolsPersistedState, type DevtoolsStateStore } f
 import {
   createOpenAICompatibleAdapter,
 } from '../../packages/session/src/adapters/openai-compatible'
-import { createSessionTool } from '../../packages/session/src/tools/create-session-tool'
 import { loadMainSession } from '../../packages/session/src/create-main-session'
 import { loadSession } from '../../packages/session/src/create-session'
 import { InMemoryStorageAdapter } from '../../packages/session/src/mocks/in-memory-storage'
@@ -515,40 +513,29 @@ async function bootstrap() {
 
   // ─── Tools ───
 
-  const toolDefs = [
-    {
-      name: 'stello_create_session',
-      description: '从当前会话派生一个新的子会话，用于承接新的地区或更细的专题。',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          label: { type: 'string', description: '子会话显示名称，如"美国选校"、"英国选校"' },
-          systemPrompt: { type: 'string', description: '子会话系统提示词；不提供则继承父会话系统提示词' },
-          prompt: { type: 'string', description: '子会话的第一条用户消息，用于立即进入工作状态' },
-        },
-        required: ['label'],
+  const toolRegistry = new ToolRegistryImpl()
+  toolRegistry.register({
+    name: 'save_note',
+    description: '保存重要的调研结论到当前会话的笔记中，供跨区域整合时参考。',
+    parameters: {
+      type: 'object',
+      properties: {
+        note: { type: 'string', description: '要保存的结论或笔记内容' },
       },
+      required: ['note'],
     },
-    {
-      name: 'save_note',
-      description: '保存重要的调研结论到当前会话的笔记中，供跨区域整合时参考。',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          note: { type: 'string', description: '要保存的结论或笔记内容' },
-        },
-        required: ['note'],
-      },
+    execute: async (args) => {
+      if (!currentToolSessionId) return { success: false, error: 'No active session context' }
+      const existingScope = await memory.readScope(currentToolSessionId).catch(() => null)
+      const note = String(args.note ?? '')
+      const updated = existingScope ? `${existingScope}\n\n---\n${note}` : note
+      await memory.writeScope(currentToolSessionId, updated)
+      return { success: true, data: { saved: true, sessionId: currentToolSessionId } }
     },
-  ] as const
+  })
 
-  // 将 skill tool 转换为 demo toolDef 格式，加入 session 的 tool 列表
-  const skillToolDef = createSkillToolDefinition(skillRouter)
-  const skillToolEntry = {
-    name: skillToolDef.name,
-    description: skillToolDef.description,
-    inputSchema: skillToolDef.parameters,
-  }
+  // session 创建时的完整工具列表（内置 tool + 用户 tool）
+  const sessionTools = buildSessionToolList(toolRegistry, skillRouter)
 
   const memory = createFileMemoryEngine(fs, sessions)
 
@@ -572,7 +559,7 @@ async function bootstrap() {
     rootLabel,
     MAIN_SYSTEM_PROMPT,
     currentLlm,
-    [...toolDefs, skillToolEntry],
+    sessionTools,
   )
   await hydrateRuntimeState(sessionStorage, memory, rootId)
   sessionMap.set(rootId, { main: mainSession })
@@ -588,7 +575,7 @@ async function bootstrap() {
       meta.label,
       makeRegionPrompt(meta.scope ?? meta.label, meta.label),
       currentLlm,
-      [...toolDefs, skillToolEntry],
+      sessionTools,
     )
     await hydrateRuntimeState(sessionStorage, memory, meta.id)
     sessionMap.set(meta.id, { session: childSession })
@@ -636,93 +623,18 @@ async function bootstrap() {
         sessions,
         sessionStorage,
         currentLlm,
-        [...toolDefs, skillToolEntry],
+        sessionTools,
         sessionMap,
         memory,
         {
           parentId: options.parentId,
           label: options.label,
           scope: options.scope,
+          systemPrompt: options.systemPrompt,
+          prompt: options.prompt,
           metadata: options.metadata,
         },
       )
-    },
-  }
-
-  // ─── Tool Runtime ───
-
-  const allToolDefs = [
-    ...toolDefs.map((t) => ({
-      name: t.name,
-      description: t.description,
-      parameters: t.inputSchema as Record<string, unknown>,
-    })),
-    skillToolDef,
-  ]
-
-  const tools: EngineToolRuntime = {
-    getToolDefinitions: () => allToolDefs.filter((t) => !disabledTools.has(t.name)),
-    async executeTool(name, args) {
-      if (name === 'activate_skill') {
-        return executeSkillTool(skillRouter, args as { name: string })
-      }
-      if (name === 'stello_create_session') {
-        if (!currentToolSessionId) return { success: false, error: 'No active session context' }
-        const source = await requireNode(sessions, currentToolSessionId)
-        const effectiveParentId = source.parentId === null ? source.id : (await sessions.getRoot()).id
-        const parentEntry = sessionMap.get(currentToolSessionId)
-        if (!parentEntry) return { success: false, error: `Unknown session: ${currentToolSessionId}` }
-        const parentSession = 'main' in parentEntry && parentEntry.main ? parentEntry.main : parentEntry.session
-        const createTool = createSessionTool(() => ({
-          fork: async (forkOptions) => {
-            const child = await createDemoChildSession(
-              fs,
-              sessions,
-              sessionStorage,
-              currentLlm,
-              [...toolDefs, skillToolEntry],
-              sessionMap,
-              memory,
-              {
-                parentId: effectiveParentId,
-                label: forkOptions.label,
-                systemPrompt: forkOptions.systemPrompt ?? await parentSession.systemPrompt() ?? undefined,
-                prompt: forkOptions.prompt,
-                metadata: { sourceSessionId: currentToolSessionId },
-              },
-            )
-            const childEntry = sessionMap.get(child.id)
-            if (!childEntry || !('session' in childEntry) || !childEntry.session) {
-              throw new Error(`Failed to load child session: ${child.id}`)
-            }
-            return childEntry.session
-          },
-        } as Session))
-        const result = await createTool.execute({
-          label: String(args.label ?? '新会话'),
-          ...(args.systemPrompt ? { systemPrompt: String(args.systemPrompt) } : {}),
-          ...(args.prompt ? { prompt: String(args.prompt) } : {}),
-        })
-        const output = result.output as { sessionId: string; label: string }
-        const child = await requireNode(sessions, output.sessionId)
-        return {
-          success: true,
-          data: {
-            sessionId: output.sessionId,
-            label: output.label,
-            parentId: child.parentId,
-          },
-        }
-      }
-      if (name === 'save_note') {
-        if (!currentToolSessionId) return { success: false, error: 'No active session context' }
-        const existingScope = await memory.readScope(currentToolSessionId).catch(() => null)
-        const note = String(args.note ?? '')
-        const updated = existingScope ? `${existingScope}\n\n---\n${note}` : note
-        await memory.writeScope(currentToolSessionId, updated)
-        return { success: true, data: { saved: true, sessionId: currentToolSessionId } }
-      }
-      return { success: false, error: `Unknown tool: ${name}` }
     },
   }
 
@@ -784,7 +696,7 @@ async function bootstrap() {
     },
     capabilities: {
       lifecycle,
-      tools,
+      tools: toolRegistry,
       skills: skillRouter,
       confirm,
     },
@@ -882,7 +794,7 @@ async function bootstrap() {
       },
     },
     tools: {
-      getTools: () => allToolDefs.map((t) => ({ ...t, enabled: !disabledTools.has(t.name) })),
+      getTools: () => toolRegistry.getToolDefinitions().map((t) => ({ ...t, enabled: !disabledTools.has(t.name) })),
       setEnabled: (name: string, enabled: boolean) => { if (enabled) disabledTools.delete(name); else disabledTools.add(name) },
     },
     skills: {

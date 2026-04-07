@@ -69,6 +69,8 @@ export type {
 } from './adapters/session-runtime';
 export { ForkProfileRegistryImpl } from './engine/fork-profile';
 export type { ForkProfile, ForkProfileRegistry } from './engine/fork-profile';
+export { ToolRegistryImpl, buildSessionToolList } from './tool/tool-registry';
+export type { ToolRegistry, ToolRegistryEntry } from './tool/tool-registry';
 export { TurnRunner } from './engine/turn-runner';
 export type {
   ToolCall,
