@@ -19,7 +19,7 @@ import {
   type TopologyNode,
   type SessionTree,
   type StelloAgentConfig,
-  type SessionRuntimeCreateOptions,
+  type SessionCompatibleForkOptions,
   type TurnRecord,
   createDefaultConsolidateFn,
   createDefaultIntegrateFn,
@@ -300,7 +300,12 @@ async function hydrateRuntimeState(
 }
 
 /** 把普通 Session 适配成 core 兼容接口。 */
-function wrapStandardSession(coreSessionId: string, session: Session, memoryEngine?: MemoryEngine) {
+function wrapStandardSession(
+  coreSessionId: string,
+  session: Session,
+  memoryEngine: MemoryEngine | undefined,
+  sessionMap: Map<string, WrappedSession | WrappedMainSession>,
+) {
   return {
     get meta() {
       return { id: coreSessionId, status: session.meta.status } as const
@@ -333,6 +338,11 @@ function wrapStandardSession(coreSessionId: string, session: Session, memoryEngi
         const l2 = await session.memory()
         if (l2) await memoryEngine.writeMemory(coreSessionId, l2)
       }
+    },
+    async fork(options: SessionCompatibleForkOptions) {
+      const child = await session.fork(options as Parameters<Session['fork']>[0])
+      sessionMap.set(child.meta.id, { session: child })
+      return wrapStandardSession(child.meta.id, child, memoryEngine, sessionMap)
     },
   }
 }
@@ -607,41 +617,21 @@ async function bootstrap() {
     session: {
       sessionResolver: async (sessionId) => {
         const entry = sessionMap.get(sessionId)
-        if (!entry) throw new Error(`Unknown session: ${sessionId}`)
-        if ('main' in entry && entry.main) {
-          return wrapMainSession(sessionId, entry.main)
-        }
-        return wrapStandardSession(sessionId, entry.session, memory)
-      },
-      sessionCreator: async (sessionId: string, options: SessionRuntimeCreateOptions) => {
-        // 检查持久化的 systemPrompt（用户在 devtools 中编辑过）
-        const persistedPrompt = await readPersistedSystemPrompt(fs, sessionId)
-        const effectivePrompt = persistedPrompt
-          ?? options.systemPrompt
-          ?? makeRegionPrompt(options.label, options.label)
-
-        const session = await createSession({
-          id: sessionId,
-          storage: sessionStorage,
-          llm: options.resolved?.llm ?? currentLlm,
-          label: options.label,
-          systemPrompt: effectivePrompt,
-          tools: options.resolved?.tools ?? [...sessionTools],
-        })
-
-        // prompt 写入 storage + memory（文件层持久化）
-        if (options.prompt) {
-          const record = {
-            role: 'assistant' as const,
-            content: options.prompt,
-            timestamp: new Date().toISOString(),
+        if (entry) {
+          if ('main' in entry && entry.main) {
+            return wrapMainSession(sessionId, entry.main)
           }
-          await sessionStorage.appendRecord(sessionId, record)
-          await memory.appendRecord(sessionId, record)
+          return wrapStandardSession(sessionId, entry.session, memory, sessionMap)
         }
-
+        // fork 创建的 session 可能不在 map 中（重启后），从 storage 加载
+        const session = await loadSession(sessionId, {
+          storage: sessionStorage,
+          llm: currentLlm,
+          tools: [...sessionTools],
+        })
+        if (!session) throw new Error(`Session not found: ${sessionId}`)
         sessionMap.set(sessionId, { session })
-        return wrapStandardSession(sessionId, session, memory)
+        return wrapStandardSession(sessionId, session, memory, sessionMap)
       },
       mainSessionResolver: async () => ({
         async integrate(fn: Parameters<typeof mainSession.integrate>[0]) {
