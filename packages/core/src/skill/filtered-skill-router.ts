@@ -14,7 +14,7 @@ export class FilteredSkillRouter implements SkillRouter {
   ) {}
 
   /** 只读视图，不允许注册 */
-  register(): void {
+  register(_skill: Skill): void {
     throw new Error('Cannot register skills on a filtered view')
   }
 
