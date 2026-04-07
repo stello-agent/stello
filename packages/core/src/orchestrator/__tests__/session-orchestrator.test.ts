@@ -95,7 +95,7 @@ describe('SessionOrchestrator', () => {
     expect(result.sessionId).toBe('s1');
   });
 
-  it('forkSession 会在指定父 session 上发起 fork', async () => {
+  it('forkSession 会在 source session 上发起 fork', async () => {
     const sessions = {
       get: vi.fn().mockResolvedValue(sessionMeta),
       getNode: vi.fn().mockResolvedValue(sessionNode),
@@ -111,15 +111,20 @@ describe('SessionOrchestrator', () => {
     const orchestrator = new SessionOrchestrator(sessions, runtimeManager as never);
     const result = await orchestrator.forkSession('s1', { label: 'UI', scope: 'ui' });
 
+    expect(runtimeManager.acquire).toHaveBeenCalledWith(
+      's1',
+      expect.stringContaining('orchestrator:s1:'),
+    );
     expect(engine.forkSession).toHaveBeenCalledWith({
       label: 'UI',
       scope: 'ui',
+      topologyParentId: 's1',
       metadata: { sourceSessionId: 's1' },
     });
     expect(result.id).toBe('child-1');
   });
 
-  it('MainSession 平铺策略下，子节点继续 fork 会挂回主节点', async () => {
+  it('MainSession 平铺策略下，子节点继续 fork 会挂回主节点（但 fork 在 source 执行）', async () => {
     const rootMeta = { ...sessionMeta, id: 'root' };
     const childMeta = { ...sessionMeta, id: 'child-1' };
     const childNode = { id: 'child-1', parentId: 'root', children: [], refs: [], depth: 1, index: 0, label: 'child-1' };
@@ -132,11 +137,11 @@ describe('SessionOrchestrator', () => {
       getNode: vi.fn().mockResolvedValue(childNode),
       getRoot: vi.fn().mockResolvedValue(rootMeta),
     } as unknown as SessionTree;
-    const rootEngine = {
+    const childEngine = {
       forkSession: vi.fn().mockResolvedValue({ id: 'child-2', parentId: 'root', label: 'UI 2' }),
     };
     const runtimeManager = {
-      acquire: vi.fn().mockResolvedValue(rootEngine),
+      acquire: vi.fn().mockResolvedValue(childEngine),
       release: vi.fn().mockResolvedValue(undefined),
     };
 
@@ -148,13 +153,16 @@ describe('SessionOrchestrator', () => {
     const result = await orchestrator.forkSession('child-1', { label: 'UI 2', scope: 'ui' });
 
     expect(sessions.getRoot).toHaveBeenCalledTimes(1);
+    // fork 在 source session (child-1) 上执行
     expect(runtimeManager.acquire).toHaveBeenCalledWith(
-      'root',
-      expect.stringContaining('orchestrator:root:'),
+      'child-1',
+      expect.stringContaining('orchestrator:child-1:'),
     );
-    expect(rootEngine.forkSession).toHaveBeenCalledWith({
+    // topologyParentId 指向 root（平铺策略）
+    expect(childEngine.forkSession).toHaveBeenCalledWith({
       label: 'UI 2',
       scope: 'ui',
+      topologyParentId: 'root',
       metadata: { sourceSessionId: 'child-1' },
     });
     expect(result.parentId).toBe('root');
@@ -272,7 +280,7 @@ describe('SessionOrchestrator', () => {
     await Promise.all([first, second]);
   });
 
-  it('平铺策略下，多个子节点同时 fork 到主节点时也会按主节点串行', async () => {
+  it('平铺策略下，不同 source 的 fork 并行执行（fork 在 source session 上运行）', async () => {
     const rootMeta = { ...sessionMeta, id: 'root' };
     const childAMeta = { ...sessionMeta, id: 'child-a' };
     const childBMeta = { ...sessionMeta, id: 'child-b' };
@@ -298,17 +306,19 @@ describe('SessionOrchestrator', () => {
     const firstGate = new Promise<void>((resolve) => {
       releaseFirst = resolve;
     });
-    let markFirstStarted!: () => void;
-    const firstStarted = new Promise<void>((resolve) => {
-      markFirstStarted = resolve;
+    let markBothStarted!: () => void;
+    let startedCount = 0;
+    const bothStarted = new Promise<void>((resolve) => {
+      markBothStarted = resolve;
     });
 
     const runtimeManager = {
       acquire: vi.fn().mockResolvedValue({
         forkSession: vi.fn().mockImplementation(async (options: { label: string }) => {
           order.push(`start:${options.label}`);
+          startedCount++;
+          if (startedCount >= 2) markBothStarted();
           if (options.label === 'A') {
-            markFirstStarted();
             await firstGate;
           }
           order.push(`end:${options.label}`);
@@ -332,12 +342,15 @@ describe('SessionOrchestrator', () => {
     const first = orchestrator.forkSession('child-a', { label: 'A' });
     const second = orchestrator.forkSession('child-b', { label: 'B' });
 
-    await firstStarted;
-    expect(order).toEqual(['start:A']);
+    // 两个 fork 来自不同 source，应并行启动
+    await bothStarted;
+    expect(order).toContain('start:A');
+    expect(order).toContain('start:B');
 
     releaseFirst();
     await Promise.all([first, second]);
 
-    expect(order).toEqual(['start:A', 'end:A', 'start:B', 'end:B']);
+    // B 先完成（没有 gate），A 后完成
+    expect(order).toEqual(['start:A', 'start:B', 'end:B', 'end:A']);
   });
 });

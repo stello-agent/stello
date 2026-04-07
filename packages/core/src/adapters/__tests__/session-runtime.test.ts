@@ -65,6 +65,44 @@ describe('session-runtime adapters', () => {
     expect(session.consolidate).toHaveBeenCalledWith(consolidateFn);
   });
 
+  it('adapter 暴露 fork 方法并适配返回值', async () => {
+    const childSession = {
+      meta: { id: 'child-1', status: 'active' as const },
+      send: vi.fn().mockResolvedValue({ content: 'hi', toolCalls: [] }),
+      messages: vi.fn().mockResolvedValue([]),
+      consolidate: vi.fn(),
+    };
+    const parentSession = {
+      meta: { id: 'p1', status: 'active' as const },
+      send: vi.fn(),
+      messages: vi.fn().mockResolvedValue([]),
+      consolidate: vi.fn(),
+      fork: vi.fn().mockResolvedValue(childSession),
+    };
+
+    const runtime = await adaptSessionToEngineRuntime(parentSession, {
+      consolidateFn: vi.fn(),
+    });
+
+    expect(runtime.fork).toBeDefined();
+    const child = await runtime.fork!({ id: 'child-1', label: '子' });
+    expect(child.id).toBe('child-1');
+    expect(parentSession.fork).toHaveBeenCalledWith({ id: 'child-1', label: '子' });
+  });
+
+  it('session 无 fork 方法时 adapter 不暴露 fork', async () => {
+    const session = {
+      meta: { id: 'p1', status: 'active' as const },
+      send: vi.fn(),
+      messages: vi.fn().mockResolvedValue([]),
+      consolidate: vi.fn(),
+    };
+    const runtime = await adaptSessionToEngineRuntime(session, {
+      consolidateFn: vi.fn(),
+    });
+    expect(runtime.fork).toBeUndefined();
+  });
+
   it('可以把真实 MainSession 适配成 SchedulerMainSession', async () => {
     const mainSession = {
       integrate: vi.fn().mockResolvedValue({

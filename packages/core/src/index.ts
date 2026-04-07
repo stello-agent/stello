@@ -38,7 +38,7 @@ export type {
   StelloError,
   StelloEventMap,
   StelloEngine,
-  SessionRuntimeCreateOptions,
+  EngineForkOptions,
   SessionRuntimeResolver,
 } from './types';
 
@@ -67,6 +67,7 @@ export type {
   SessionCompatibleConsolidateFn,
   SessionCompatibleIntegrateFn,
   SessionCompatibleCompressFn,
+  SessionCompatibleForkOptions,
 } from './adapters/session-runtime';
 export { ForkProfileRegistryImpl } from './engine/fork-profile';
 export type { ForkProfile, ForkProfileRegistry } from './engine/fork-profile';

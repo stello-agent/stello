@@ -20,13 +20,23 @@ Engine 不感知树结构，不知道其他 Session 的存在，**也不知道 S
 
 ## Engine 做什么 / 不做什么
 
-**做**：tool call 循环、hooks fire-and-forget、生命周期边界（enter/leave/archive/fork）、error 事件 emit
+**做**：tool call 循环、hooks fire-and-forget、生命周期边界（enter/leave/archive/fork）、fork 编排（拓扑 + session 创建）、内置 tool 拦截（stello_create_session / activate_skill）、error 事件 emit
 
 **不做**：调度判断（由 Scheduler 通过 Factory 注入闭包）、持有 Scheduler 或 MainSession、Session 切换检测（Orchestrator）、多 Session 管理
 
 ---
 
 ## 核心设计决策
+
+### Engine 接管 Fork 编排
+
+Engine 负责 fork 的完整编排：创建拓扑节点（topology-first，生成 ID）→ 调用 `session.fork({ id, ... })` 创建 session 实例 → 触发事件。session.fork() 天然处理 systemPrompt 继承、context 继承（含 contextFn）、prompt 写入、LLM/tools 覆盖。Orchestrator 分离"拓扑父节点"（策略决定）与"fork 来源 session"（继承内容来源）。
+
+内置 tool（stello_create_session、activate_skill）由 Engine 在 executeTool 中拦截，不透传给用户工具运行时。LLM 调用 stello_create_session 时，Engine 先解析 ForkProfile（如有），合成 systemPrompt，profile 的 contextFn/llm/tools 直接映射到 fork 选项，再走 forkSession 完整路径。
+
+### 工具注册与内置工具
+
+Engine 管理两类工具：内置工具（自动注入，Engine 拦截执行）和用户工具（通过 ToolRegistry 注册，Engine 透传执行）。getToolDefinitions 合并两者，内置 tool 优先。
 
 ### Engine 与 Scheduler 解耦
 

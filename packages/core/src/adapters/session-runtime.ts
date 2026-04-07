@@ -1,3 +1,4 @@
+import type { ForkContextFn } from '@stello-ai/session';
 import type { SchedulerMainSession } from '../engine/scheduler';
 import type { EngineRuntimeSession } from '../engine/stello-engine';
 import type { ToolCallParser } from '../engine/turn-runner';
@@ -44,6 +45,19 @@ export type SessionCompatibleIntegrateFn = (
   insights: Array<{ sessionId: string; content: string }>;
 }>;
 
+/** 结构兼容 @stello-ai/session 的 ForkOptions */
+export interface SessionCompatibleForkOptions {
+  id?: string;
+  label: string;
+  systemPrompt?: string;
+  context?: 'none' | 'inherit' | ForkContextFn;
+  prompt?: string;
+  llm?: unknown;
+  tools?: unknown;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+}
+
 /** 结构兼容 @stello-ai/session 的 Session */
 export interface SessionCompatible {
   meta: {
@@ -56,6 +70,8 @@ export interface SessionCompatible {
   ): AsyncIterable<string> & { result: Promise<SessionCompatibleSendResult> };
   messages(): Promise<Array<{ role: string; content: string; timestamp?: string }>>;
   consolidate(fn: SessionCompatibleConsolidateFn): Promise<void>;
+  /** fork 子 session，返回结构兼容的子 session */
+  fork?(options: SessionCompatibleForkOptions): Promise<SessionCompatible>;
 }
 
 /** 结构兼容 @stello-ai/session 的 MainSession */
@@ -171,6 +187,14 @@ export async function adaptSessionToEngineRuntime(
     async consolidate(): Promise<void> {
       await session.consolidate(options.consolidateFn);
     },
+    ...(session.fork
+      ? {
+          async fork(forkOptions: SessionCompatibleForkOptions): Promise<EngineRuntimeSession> {
+            const child = await session.fork!(forkOptions);
+            return adaptSessionToEngineRuntime(child, options);
+          },
+        }
+      : {}),
   };
 }
 

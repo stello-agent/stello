@@ -1,7 +1,7 @@
-import type { SessionMeta, SessionMetaUpdate } from './session.js'
+import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './session.js'
 import type { Message, LLMAdapter } from './llm.js'
 import type { SendResult, StreamResult, IntegrateFn, IntegrateResult } from './functions.js'
-import type { MessageQueryOptions } from './session-api.js'
+import type { MessageQueryOptions, Session } from './session-api.js'
 
 /**
  * MainSession — 全局意识层对话单元
@@ -10,7 +10,6 @@ import type { MessageQueryOptions } from './session-api.js'
  * - 上下文使用 synthesis（integration 产出），而非 insights
  * - 没有 L2，没有 consolidate — 取而代之的是 integrate()
  * - 不接收 insights，而是通过 integrate 主动推送给子 Session
- * - 不 fork — 子 Session 由编排层通过 createSession() 创建
  */
 export interface MainSession {
   /** 同步读取元数据（role 始终为 'main'） */
@@ -45,6 +44,9 @@ export interface MainSession {
 
   /** 归档 */
   archive(): Promise<void>
+
+  /** 派生子 Session，返回标准 Session。上下文继承策略同 Session.fork() */
+  fork(options: ForkOptions): Promise<Session>
 
   /** 动态替换 LLM adapter（热更新，立即对后续 send/stream 生效） */
   setLLM(adapter: LLMAdapter): void

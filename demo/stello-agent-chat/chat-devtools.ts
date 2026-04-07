@@ -6,6 +6,7 @@ import {
   SessionTreeImpl,
   SkillRouterImpl,
   ToolRegistryImpl,
+  ForkProfileRegistryImpl,
   buildSessionToolList,
   Scheduler,
   createStelloAgent,
@@ -16,10 +17,9 @@ import {
   type SessionMeta,
   type Skill,
   type SkillRouter,
-  type TopologyNode,
   type SessionTree,
   type StelloAgentConfig,
-  type SessionRuntimeCreateOptions,
+  type SessionCompatibleForkOptions,
   type TurnRecord,
   createDefaultConsolidateFn,
   createDefaultIntegrateFn,
@@ -31,7 +31,7 @@ import {
   createOpenAICompatibleAdapter,
 } from '../../packages/session/src/adapters/openai-compatible'
 import { loadMainSession } from '../../packages/session/src/create-main-session'
-import { createSession, loadSession } from '../../packages/session/src/create-session'
+import { loadSession } from '../../packages/session/src/create-session'
 import { InMemoryStorageAdapter } from '../../packages/session/src/mocks/in-memory-storage'
 import type { MainSession } from '../../packages/session/src/types/main-session-api.ts'
 import type { Session } from '../../packages/session/src/types/session-api.ts'
@@ -300,7 +300,12 @@ async function hydrateRuntimeState(
 }
 
 /** 把普通 Session 适配成 core 兼容接口。 */
-function wrapStandardSession(coreSessionId: string, session: Session, memoryEngine?: MemoryEngine) {
+function wrapStandardSession(
+  coreSessionId: string,
+  session: Session,
+  memoryEngine: MemoryEngine | undefined,
+  sessionMap: Map<string, WrappedSession | WrappedMainSession>,
+) {
   return {
     get meta() {
       return { id: coreSessionId, status: session.meta.status } as const
@@ -334,11 +339,21 @@ function wrapStandardSession(coreSessionId: string, session: Session, memoryEngi
         if (l2) await memoryEngine.writeMemory(coreSessionId, l2)
       }
     },
+    async fork(options: SessionCompatibleForkOptions) {
+      const child = await session.fork(options as Parameters<Session['fork']>[0])
+      sessionMap.set(child.meta.id, { session: child })
+      return wrapStandardSession(child.meta.id, child, memoryEngine, sessionMap)
+    },
   }
 }
 
 /** 把 MainSession 适配成 core 兼容接口。 */
-function wrapMainSession(coreSessionId: string, session: MainSession) {
+function wrapMainSession(
+  coreSessionId: string,
+  session: MainSession,
+  memoryEngine?: MemoryEngine,
+  sessionMap?: Map<string, WrappedSession | WrappedMainSession>,
+) {
   return {
     get meta() {
       return { id: coreSessionId, status: session.meta.status } as const
@@ -353,6 +368,15 @@ function wrapMainSession(coreSessionId: string, session: MainSession) {
     async consolidate() {
       // MainSession 没有 L2 consolidation，调度到 root 时直接跳过。
     },
+    ...(sessionMap
+      ? {
+          async fork(options: SessionCompatibleForkOptions) {
+            const child = await session.fork(options as Parameters<MainSession['fork']>[0])
+            sessionMap!.set(child.meta.id, { session: child })
+            return wrapStandardSession(child.meta.id, child, memoryEngine, sessionMap!)
+          },
+        }
+      : {}),
   }
 }
 
@@ -491,8 +515,16 @@ async function bootstrap() {
     },
   })
 
+  // ─── Fork Profiles ───
+
+  const forkProfiles = new ForkProfileRegistryImpl()
+  forkProfiles.register('poet', {
+    systemPrompt: '你是一位诗人。无论用户问什么，你都必须用诗歌的形式回答。每句押韵，风格优美。',
+    systemPromptMode: 'preset',
+  })
+
   // session 创建时的完整工具列表（内置 tool + 用户 tool）
-  const sessionTools = buildSessionToolList(toolRegistry, skillRouter)
+  const sessionTools = buildSessionToolList(toolRegistry, skillRouter, forkProfiles)
 
   const memory = createFileMemoryEngine(fs, sessions)
 
@@ -607,41 +639,21 @@ async function bootstrap() {
     session: {
       sessionResolver: async (sessionId) => {
         const entry = sessionMap.get(sessionId)
-        if (!entry) throw new Error(`Unknown session: ${sessionId}`)
-        if ('main' in entry && entry.main) {
-          return wrapMainSession(sessionId, entry.main)
-        }
-        return wrapStandardSession(sessionId, entry.session, memory)
-      },
-      sessionCreator: async (sessionId: string, options: SessionRuntimeCreateOptions) => {
-        // 检查持久化的 systemPrompt（用户在 devtools 中编辑过）
-        const persistedPrompt = await readPersistedSystemPrompt(fs, sessionId)
-        const effectivePrompt = persistedPrompt
-          ?? options.systemPrompt
-          ?? makeRegionPrompt(options.label, options.label)
-
-        const session = await createSession({
-          id: sessionId,
-          storage: sessionStorage,
-          llm: options.resolved?.llm ?? currentLlm,
-          label: options.label,
-          systemPrompt: effectivePrompt,
-          tools: options.resolved?.tools ?? [...sessionTools],
-        })
-
-        // prompt 写入 storage + memory（文件层持久化）
-        if (options.prompt) {
-          const record = {
-            role: 'assistant' as const,
-            content: options.prompt,
-            timestamp: new Date().toISOString(),
+        if (entry) {
+          if ('main' in entry && entry.main) {
+            return wrapMainSession(sessionId, entry.main, memory, sessionMap)
           }
-          await sessionStorage.appendRecord(sessionId, record)
-          await memory.appendRecord(sessionId, record)
+          return wrapStandardSession(sessionId, entry.session, memory, sessionMap)
         }
-
+        // fork 创建的 session 可能不在 map 中（重启后），从 storage 加载
+        const session = await loadSession(sessionId, {
+          storage: sessionStorage,
+          llm: currentLlm,
+          tools: [...sessionTools],
+        })
+        if (!session) throw new Error(`Session not found: ${sessionId}`)
         sessionMap.set(sessionId, { session })
-        return wrapStandardSession(sessionId, session, memory)
+        return wrapStandardSession(sessionId, session, memory, sessionMap)
       },
       mainSessionResolver: async () => ({
         async integrate(fn: Parameters<typeof mainSession.integrate>[0]) {
@@ -670,6 +682,7 @@ async function bootstrap() {
       tools: toolRegistry,
       skills: skillRouter,
       confirm,
+      profiles: forkProfiles,
     },
     orchestration: {
       scheduler,
@@ -796,12 +809,6 @@ async function requireSession(sessions: SessionTreeImpl, sessionId: string): Pro
   return session
 }
 
-/** 读取拓扑节点，供需要 parentId 的场景使用 */
-async function requireNode(sessions: SessionTreeImpl, sessionId: string): Promise<TopologyNode> {
-  const session = await sessions.getNode(sessionId)
-  if (!session) throw new Error(`Session node not found: ${sessionId}`)
-  return session
-}
 
 async function main() {
   type DemoApp = Awaited<ReturnType<typeof bootstrap>>

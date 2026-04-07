@@ -5,7 +5,6 @@ import {
   StelloEngineImpl,
   type EngineHooks,
   type EngineLifecycleAdapter,
-  type EngineRuntimeSession,
   type EngineToolRuntime,
 } from '../engine/stello-engine';
 import type { Scheduler, SchedulerMainSession, SchedulerSession } from '../engine/scheduler';
@@ -62,7 +61,6 @@ export class DefaultEngineFactory implements EngineFactory {
       tools: this.options.tools,
       splitGuard: this.options.splitGuard,
       profiles: this.options.profiles,
-      resolver: this.options.sessionRuntimeResolver,
       turnRunner: this.options.turnRunner,
       hooks: mergedHooks,
     });

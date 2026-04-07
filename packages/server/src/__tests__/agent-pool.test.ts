@@ -22,7 +22,6 @@ function createPoolOptions(overrides?: Partial<AgentPoolOptions>): AgentPoolOpti
             },
           }),
           afterTurn: async () => ({ coreUpdated: false, memoryUpdated: false, recordAppended: false }),
-          prepareChildSpawn: async (opts) => ({ ...opts, id: 'mock', parentId: null, children: [], refs: [], index: 0, depth: 0, label: opts.label }),
         },
         tools: {
           getToolDefinitions: () => [],
