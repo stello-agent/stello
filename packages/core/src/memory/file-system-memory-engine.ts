@@ -28,18 +28,19 @@ export class FileSystemMemoryEngine implements MemoryEngine {
     await this.fs.mkdir(`sessions/${id}`);
   }
 
-  /** 读取 L1 核心档案，支持点路径导航 */
+  /** 读取 L1 核心档案，支持点路径导航；路径不存在时返回 null */
   async readCore(path?: string): Promise<unknown> {
     const raw = await this.fs.readJSON<Record<string, unknown>>('core.json');
     if (raw === null) return null;
     if (!path) return raw;
-    // 按点路径逐层访问
-    return path.split('.').reduce<unknown>((obj, key) => {
+    // 按点路径逐层访问，找不到时返回 null
+    const result = path.split('.').reduce<unknown>((obj, key) => {
       if (obj !== null && typeof obj === 'object') {
         return (obj as Record<string, unknown>)[key];
       }
       return undefined;
     }, raw);
+    return result === undefined ? null : result;
   }
 
   /** 写入 L1 核心档案的某个字段，支持点路径嵌套写入 */
@@ -107,17 +108,25 @@ export class FileSystemMemoryEngine implements MemoryEngine {
     await this.fs.writeFile(this.sessionPath(sessionId, 'records.jsonl'), content ? content + '\n' : '');
   }
 
-  /** 读取某 Session 的所有 L3 对话记录 */
+  /** 读取某 Session 的所有 L3 对话记录，跳过损坏的行 */
   async readRecords(sessionId: string): Promise<TurnRecord[]> {
     const lines = await this.fs.readLines(this.sessionPath(sessionId, 'records.jsonl'));
-    return lines.filter((l) => l.trim().length > 0).map((l) => JSON.parse(l) as TurnRecord);
+    const records: TurnRecord[] = [];
+    for (const line of lines) {
+      if (line.trim().length === 0) continue;
+      try {
+        records.push(JSON.parse(line) as TurnRecord);
+      } catch {
+        console.warn(`[FileSystemMemoryEngine] Skipping corrupt JSONL line in session ${sessionId}: ${line}`);
+      }
+    }
+    return records;
   }
 
   /** 按祖先链组装上下文（从父到根收集 memory） */
   async assembleContext(sessionId: string): Promise<AssembledContext> {
-    // 读取 L1 核心档案
-    const rawCore = await this.fs.readJSON<Record<string, unknown>>('core.json');
-    const core: Record<string, unknown> = rawCore ?? {};
+    // 读取 L1 核心档案，复用 readCore() 避免重复路径
+    const core: Record<string, unknown> = (await this.readCore() as Record<string, unknown>) ?? {};
 
     // 获取祖先节点（从直接父到根），收集各自的 memory
     const ancestors = await this.sessions.getAncestors(sessionId);

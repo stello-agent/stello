@@ -25,12 +25,14 @@ describe('FileSystemMemoryEngine', () => {
   let dir: string;
   let engine: FileSystemMemoryEngine;
   let sessions: SessionTreeImpl;
+  let adapter: NodeFileSystemAdapter;
 
   beforeEach(async () => {
     const ctx = await makeEngine();
     dir = ctx.dir;
     engine = ctx.engine;
     sessions = ctx.sessions;
+    adapter = ctx.fs;
   });
 
   afterEach(async () => {
@@ -61,7 +63,7 @@ describe('FileSystemMemoryEngine', () => {
     it('readCore(path) returns null for missing key', async () => {
       await engine.writeCore('a', 1);
       const result = await engine.readCore('nonexistent');
-      expect(result).toBeUndefined();
+      expect(result).toBeNull();
     });
 
     it('writeCore supports nested dot-path (a.b)', async () => {
@@ -164,7 +166,7 @@ describe('FileSystemMemoryEngine', () => {
         makeRecord('user', 'new1'),
         makeRecord('assistant', 'new2'),
       ];
-      await engine.replaceRecords!(node.id, newRecords);
+      await engine.replaceRecords(node.id, newRecords);
       const records = await engine.readRecords(node.id);
       expect(records).toHaveLength(2);
       expect(records[0]!.content).toBe('new1');
@@ -174,7 +176,7 @@ describe('FileSystemMemoryEngine', () => {
     it('replaceRecords with empty array clears records', async () => {
       const node = await sessions.createRoot('Root');
       await engine.appendRecord(node.id, makeRecord('user', 'data'));
-      await engine.replaceRecords!(node.id, []);
+      await engine.replaceRecords(node.id, []);
       const records = await engine.readRecords(node.id);
       expect(records).toEqual([]);
     });
@@ -190,6 +192,17 @@ describe('FileSystemMemoryEngine', () => {
       await engine.appendRecord(node.id, record);
       const records = await engine.readRecords(node.id);
       expect(records[0]!.metadata).toEqual({ toolId: 'search', exitCode: 0 });
+    });
+
+    it('readRecords skips corrupt lines', async () => {
+      const node = await (sessions as SessionTreeImpl).createRoot('test')
+      const good: TurnRecord = { role: 'user', content: 'hi', timestamp: '2026-01-01T00:00:00Z' }
+      await engine.appendRecord(node.id, good)
+      // Manually inject a corrupt line
+      await adapter.appendLine(`sessions/${node.id}/records.jsonl`, 'not-valid-json{')
+      const records = await engine.readRecords(node.id)
+      expect(records).toHaveLength(1)
+      expect(records[0]!.content).toBe('hi')
     });
   });
 
