@@ -45,6 +45,7 @@ export type {
 // 导出实现
 export { NodeFileSystemAdapter } from './fs';
 export { SessionTreeImpl } from './session';
+export { FileSystemMemoryEngine } from './memory/file-system-memory-engine';
 export { SplitGuard } from './session/split-guard';
 export type { SplitCheckResult } from './session/split-guard';
 export { SkillRouterImpl } from './skill/skill-router';
