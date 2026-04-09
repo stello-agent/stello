@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SessionTree } from '../../types/session';
+import { Scheduler } from '../../engine/scheduler';
 import { MainSessionFlatStrategy, SessionOrchestrator } from '../session-orchestrator';
 
 describe('SessionOrchestrator', () => {
@@ -352,5 +353,141 @@ describe('SessionOrchestrator', () => {
 
     // B 先完成（没有 gate），A 后完成
     expect(order).toEqual(['start:A', 'start:B', 'end:B', 'end:A']);
+  });
+
+  describe('onSwitch 调度', () => {
+    const s1Meta = {
+      id: 's1', label: 'S1', scope: null, status: 'active' as const,
+      turnCount: 3, metadata: {}, tags: [],
+      createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+      lastActiveAt: '2026-01-01T00:00:00Z',
+    };
+    const s2Meta = { ...s1Meta, id: 's2', label: 'S2' };
+
+    /** 构建带 scheduler 的 orchestrator */
+    function createWithScheduler(opts: {
+      scheduler: Scheduler;
+      mainSession?: { integrate: () => Promise<void> } | null;
+    }) {
+      const sessions = {
+        get: vi.fn().mockImplementation(async (id: string) => {
+          if (id === 's1') return s1Meta;
+          if (id === 's2') return s2Meta;
+          return null;
+        }),
+      } as unknown as SessionTree;
+
+      const consolidateSpy = vi.fn().mockResolvedValue(undefined);
+      const makeEngine = (sid: string) => ({
+        enterSession: vi.fn().mockResolvedValue({ context: {}, session: sid === 's1' ? s1Meta : s2Meta }),
+        leaveSession: vi.fn().mockResolvedValue({ sessionId: sid }),
+        schedulerSession: {
+          id: sid,
+          turnCount: sid === 's1' ? s1Meta.turnCount : s2Meta.turnCount,
+          consolidate: consolidateSpy,
+        },
+      });
+
+      const engines = new Map<string, ReturnType<typeof makeEngine>>();
+      const runtimeManager = {
+        acquire: vi.fn().mockImplementation(async (sessionId: string) => {
+          if (!engines.has(sessionId)) engines.set(sessionId, makeEngine(sessionId));
+          return engines.get(sessionId)!;
+        }),
+        release: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const orchestrator = new SessionOrchestrator(
+        sessions,
+        runtimeManager as never,
+        undefined,
+        { scheduler: opts.scheduler, mainSession: opts.mainSession ?? null },
+      );
+
+      return { orchestrator, consolidateSpy, engines, runtimeManager };
+    }
+
+    it('从 s1 切换到 s2 时对 s1 触发 onSwitch consolidate', async () => {
+      const scheduler = new Scheduler({
+        consolidation: { trigger: 'onSwitch' },
+      });
+      const { orchestrator, consolidateSpy } = createWithScheduler({ scheduler });
+
+      await orchestrator.enterSession('s1');
+      expect(consolidateSpy).not.toHaveBeenCalled();
+
+      await orchestrator.enterSession('s2');
+      // fire-and-forget，等一个 tick 让 Promise 结算
+      await new Promise((r) => setTimeout(r, 10));
+      expect(consolidateSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('重复进入同一 session 不触发 onSwitch', async () => {
+      const scheduler = new Scheduler({
+        consolidation: { trigger: 'onSwitch' },
+      });
+      const { orchestrator, consolidateSpy } = createWithScheduler({ scheduler });
+
+      await orchestrator.enterSession('s1');
+      await orchestrator.enterSession('s1');
+      await new Promise((r) => setTimeout(r, 10));
+      expect(consolidateSpy).not.toHaveBeenCalled();
+    });
+
+    it('leaveSession 后再 enter 另一个 session 不触发 onSwitch', async () => {
+      const scheduler = new Scheduler({
+        consolidation: { trigger: 'onSwitch' },
+      });
+      const { orchestrator, consolidateSpy } = createWithScheduler({ scheduler });
+
+      await orchestrator.enterSession('s1');
+      await orchestrator.leaveSession('s1');
+      await orchestrator.enterSession('s2');
+      await new Promise((r) => setTimeout(r, 10));
+      // s1 已经 leave，不算 switch
+      expect(consolidateSpy).not.toHaveBeenCalled();
+    });
+
+    it('onSwitch 触发 consolidate + afterConsolidate 触发 integrate', async () => {
+      const integrateSpy = vi.fn().mockResolvedValue(undefined);
+      const scheduler = new Scheduler({
+        consolidation: { trigger: 'onSwitch' },
+        integration: { trigger: 'afterConsolidate' },
+      });
+      const { orchestrator, consolidateSpy } = createWithScheduler({
+        scheduler,
+        mainSession: { integrate: integrateSpy },
+      });
+
+      await orchestrator.enterSession('s1');
+      await orchestrator.enterSession('s2');
+      await new Promise((r) => setTimeout(r, 10));
+      expect(consolidateSpy).toHaveBeenCalledTimes(1);
+      expect(integrateSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('没有 scheduler 时切换不触发任何调度', async () => {
+      const sessions = {
+        get: vi.fn().mockImplementation(async (id: string) => {
+          if (id === 's1') return s1Meta;
+          if (id === 's2') return s2Meta;
+          return null;
+        }),
+      } as unknown as SessionTree;
+      const engine = {
+        enterSession: vi.fn().mockResolvedValue({ context: {}, session: s1Meta }),
+        leaveSession: vi.fn().mockResolvedValue({ sessionId: 's1' }),
+      };
+      const runtimeManager = {
+        acquire: vi.fn().mockResolvedValue(engine),
+        release: vi.fn().mockResolvedValue(undefined),
+      };
+
+      // 不传 scheduling 参数
+      const orchestrator = new SessionOrchestrator(sessions, runtimeManager as never);
+      await orchestrator.enterSession('s1');
+      await orchestrator.enterSession('s2');
+      // 不报错即可
+    });
   });
 });

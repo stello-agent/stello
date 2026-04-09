@@ -113,6 +113,7 @@ export type {
   OrchestratorEngine,
   EngineFactory,
   OrchestrationStrategy,
+  OrchestratorSchedulingOptions,
 } from './orchestrator/session-orchestrator';
 export { MainSessionFlatStrategy } from './orchestrator/session-orchestrator';
 export { HierarchicalOkrStrategy } from './orchestrator/session-orchestrator';

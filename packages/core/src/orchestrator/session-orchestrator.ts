@@ -4,6 +4,7 @@ import type { StelloEngine, EngineForkOptions } from '../types/engine';
 import type { EngineTurnResult } from '../engine/stello-engine';
 import type { EngineStreamResult } from '../engine/stello-engine';
 import type { TurnRunnerOptions } from '../engine/turn-runner';
+import type { Scheduler, SchedulerMainSession, SchedulerSession } from '../engine/scheduler';
 import type { EngineRuntimeManager } from './engine-runtime-manager';
 
 /** Orchestrator 对 Engine 的最小依赖 */
@@ -16,6 +17,8 @@ export interface OrchestratorEngine extends StelloEngine {
   archiveSession(): Promise<{ sessionId: string }>;
   /** 从当前绑定 session 发起 fork */
   forkSession(options: EngineForkOptions): Promise<TopologyNode>;
+  /** 暴露 Scheduler 契约，供 Orchestrator 做跨 session 调度 */
+  readonly schedulerSession: SchedulerSession;
 }
 
 /** Engine 工厂 */
@@ -65,31 +68,49 @@ export class HierarchicalOkrStrategy implements OrchestrationStrategy {
   }
 }
 
+/** Orchestrator 的调度配置 */
+export interface OrchestratorSchedulingOptions {
+  scheduler: Scheduler;
+  mainSession?: SchedulerMainSession | null;
+}
+
 /**
  * SessionOrchestrator
  *
- * 无状态的多 Session 协调器。
- * 它不自己管理连接态，只负责：
+ * 多 Session 协调器。
+ * 负责：
  * - 校验 session 是否存在
  * - 为指定 sessionId 获取 engine
  * - 把 enter/turn/leave/fork/archive 分发给对应 engine
+ * - 追踪活跃 session，在切换时触发跨 session 调度（onSwitch）
  */
 export class SessionOrchestrator {
   private readonly sessionQueues = new Map<string, Promise<unknown>>();
   private readonly strategy: OrchestrationStrategy;
+  private readonly scheduling?: OrchestratorSchedulingOptions;
   private holderSequence = 0;
+  /** 当前活跃的 sessionId，用于检测 session 切换 */
+  private lastActiveSessionId: string | null = null;
 
   constructor(
     private readonly sessions: SessionTree,
     private readonly runtimeManager: EngineRuntimeManager,
     strategy?: OrchestrationStrategy,
+    scheduling?: OrchestratorSchedulingOptions,
   ) {
     this.strategy = strategy ?? new MainSessionFlatStrategy();
+    this.scheduling = scheduling;
   }
 
-  /** 进入指定 session */
+  /** 进入指定 session，检测切换并触发跨 session 调度 */
   async enterSession(sessionId: string): Promise<BootstrapResult> {
     return this.runSerial(sessionId, async () => {
+      const oldSessionId = this.lastActiveSessionId;
+      if (oldSessionId && oldSessionId !== sessionId && this.scheduling) {
+        // fire-and-forget：对离开的 session 触发 onSwitch 调度
+        this.triggerSwitchScheduling(oldSessionId).catch(() => {});
+      }
+      this.lastActiveSessionId = sessionId;
       await this.requireSession(sessionId);
       return this.withRuntime(sessionId, (engine) => engine.enterSession());
     });
@@ -135,9 +156,12 @@ export class SessionOrchestrator {
     })
   }
 
-  /** 离开指定 session */
+  /** 离开指定 session，清除活跃追踪 */
   async leaveSession(sessionId: string): Promise<{ sessionId: string }> {
     return this.runSerial(sessionId, async () => {
+      if (this.lastActiveSessionId === sessionId) {
+        this.lastActiveSessionId = null;
+      }
       await this.requireSession(sessionId);
       return this.withRuntime(sessionId, (engine) => engine.leaveSession());
     });
@@ -174,6 +198,16 @@ export class SessionOrchestrator {
     return this.runSerial(sessionId, async () => {
       await this.requireSession(sessionId);
       return this.withRuntime(sessionId, (engine) => engine.archiveSession());
+    });
+  }
+
+  /** 对离开的 session 触发 onSwitch 调度（consolidate + 可选 integrate） */
+  private async triggerSwitchScheduling(sessionId: string): Promise<void> {
+    await this.withRuntime(sessionId, async (engine) => {
+      await this.scheduling!.scheduler.onSessionSwitch(
+        engine.schedulerSession,
+        this.scheduling!.mainSession,
+      );
     });
   }
 
