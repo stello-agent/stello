@@ -161,6 +161,11 @@ export class StelloEngineImpl implements StelloEngine {
     return this.session.id;
   }
 
+  /** 暴露 Scheduler 契约，供 Orchestrator 做跨 session 调度 */
+  get schedulerSession(): SchedulerSession {
+    return this.session;
+  }
+
   /** 处理一轮编排：当前 session send + tool loop + 调度 */
   async turn(input: string, options?: TurnRunnerOptions): Promise<EngineTurnResult> {
     this.fireHook('onMessageReceived', { sessionId: this.session.id, input });

@@ -210,10 +210,15 @@ export class StelloAgent {
       engineFactory,
       config.runtime?.recyclePolicy,
     );
+    const scheduler = config.orchestration?.scheduler;
+    const scheduling = scheduler
+      ? { scheduler, mainSession: resolveMainSession(config) }
+      : undefined;
     this.orchestrator = new SessionOrchestrator(
       config.sessions,
       this.runtimeManager,
       config.orchestration?.strategy ?? new MainSessionFlatStrategy(),
+      scheduling,
     );
   }
 
