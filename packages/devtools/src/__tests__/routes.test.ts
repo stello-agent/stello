@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { Hono } from 'hono'
 import { createRoutes } from '../server/routes.js'
+import { DEVTOOLS_MULTIMODAL_MARKER } from '../server/multimodal-input.js'
 
 /** 构建 mock agent（对齐真实 StelloAgent 接口） */
 function createMockAgent() {
@@ -105,6 +106,35 @@ describe('devtools REST routes', () => {
     expect(agent.turn).toHaveBeenCalledWith(
       'sess-1',
       'hello',
+      expect.objectContaining({
+        onToolCall: expect.any(Function),
+        onToolResult: expect.any(Function),
+      }),
+    )
+  })
+
+  it('POST /sessions/:id/turn 支持多模态输入', async () => {
+    const agent = createMockAgent()
+    const app = new Hono()
+    app.route('/api', createRoutes(agent as never))
+
+    const res = await app.request('/api/sessions/sess-1/turn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: {
+          parts: [
+            { type: 'text', text: '请分析这张图' },
+            { type: 'image_url', imageUrl: 'data:image/png;base64,AAA', mimeType: 'image/png', name: 'demo.png' },
+          ],
+        },
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(agent.turn).toHaveBeenCalledWith(
+      'sess-1',
+      expect.stringContaining(DEVTOOLS_MULTIMODAL_MARKER),
       expect.objectContaining({
         onToolCall: expect.any(Function),
         onToolResult: expect.any(Function),

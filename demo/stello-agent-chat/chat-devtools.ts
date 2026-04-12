@@ -14,7 +14,10 @@ import {
   type ConfirmProtocol,
   type CoreSchema,
   type EngineLifecycleAdapter,
+  type LLMAdapter,
+  type LLMChunk,
   type MemoryEngine,
+  type Message,
   type SessionMeta,
   type Skill,
   type SkillRouter,
@@ -26,6 +29,7 @@ import {
   createDefaultIntegrateFn,
   loadSkillsFromDirectory,
   type LLMCallFn,
+  type LLMResult,
   type StelloEngine,
 } from '../../packages/core/src/index'
 import { startDevtools, type DevtoolsPersistedState, type DevtoolsStateStore } from '../../packages/devtools/src/index'
@@ -44,19 +48,45 @@ const dataDirAbs = resolve(process.cwd(), dataDir)
 const host = process.env.DEMO_HOST ?? '127.0.0.1'
 let attachedEngineSeq = 0
 
+/** 适配小上下文模型的默认窗口。 */
+const DEFAULT_MAX_CONTEXT_TOKENS = 1800
+
+/** 适配小上下文模型的默认 completion 上限。 */
+const DEFAULT_MAX_COMPLETION_TOKENS = 256
+
 export { dataDirAbs }
 
 const openaiApiKey = process.env.OPENAI_API_KEY
 const openaiBaseURL = process.env.OPENAI_BASE_URL ?? 'https://api.minimaxi.com/v1'
 const openaiModel = process.env.OPENAI_MODEL ?? 'MiniMax-M2.7'
-const openaiMaxContextTokens = Number(process.env.OPENAI_MAX_CONTEXT_TOKENS ?? 1_000_000)
+const openaiMaxContextTokens = Number(process.env.OPENAI_MAX_CONTEXT_TOKENS ?? DEFAULT_MAX_CONTEXT_TOKENS)
 
-if (!openaiApiKey) {
-  console.error('Missing OPENAI_API_KEY')
-  console.error('  export OPENAI_BASE_URL=https://api.minimaxi.com/v1')
-  console.error('  export OPENAI_API_KEY=your_key')
-  console.error('  export OPENAI_MODEL=MiniMax-M2.7')
-  process.exit(1)
+const useFallbackLlm = !openaiApiKey
+
+/** 创建无 API key 时使用的本地 mock LLM。 */
+function createFallbackLlm(): LLMAdapter {
+  return {
+    maxContextTokens: openaiMaxContextTokens,
+    async complete(messages: Message[]): Promise<LLMResult> {
+      const lastUser = [...messages].reverse().find((message) => message.role === 'user')
+      const content = lastUser?.content?.trim() || 'Hello from the Stello demo mock LLM.'
+      return {
+        content: `[mock] ${content}`,
+        toolCalls: [],
+      }
+    },
+    async *stream(messages: Message[]): AsyncIterable<LLMChunk> {
+      const result = await this.complete(messages)
+      if (result.content) {
+        yield { delta: result.content }
+      }
+    },
+  }
+}
+
+if (useFallbackLlm) {
+  console.warn('OPENAI_API_KEY not set, using local mock LLM for demo:chat')
+  console.warn('Set OPENAI_API_KEY to run the full model-backed demo.')
 }
 
 // ─── 留学选校提示词 ───
@@ -461,18 +491,20 @@ export async function bootstrap() {
   const fs = new NodeFileSystemAdapter(dataDir)
   const sessions = new SessionTreeImpl(fs)
   const stateStore = createFileDevtoolsStateStore(fs)
-  let currentLlm = createOpenAICompatibleAdapter({
-    apiKey: openaiApiKey!,
-    baseURL: openaiBaseURL,
-    model: openaiModel,
-    maxContextTokens: openaiMaxContextTokens,
-  })
+  let currentLlm: LLMAdapter = useFallbackLlm
+    ? createFallbackLlm()
+    : createOpenAICompatibleAdapter({
+        apiKey: openaiApiKey!,
+        baseURL: openaiBaseURL,
+        model: openaiModel,
+        maxContextTokens: openaiMaxContextTokens,
+      })
   let currentLlmConfig = {
     model: openaiModel,
     baseURL: openaiBaseURL,
-    apiKey: openaiApiKey!,
+    apiKey: openaiApiKey ?? 'mock-demo-key',
     temperature: 0.7,
-    maxTokens: 2048,
+    maxTokens: DEFAULT_MAX_COMPLETION_TOKENS,
     maxContextTokens: openaiMaxContextTokens,
   }
 
@@ -785,19 +817,22 @@ export async function bootstrap() {
     llm: {
       getConfig: () => ({ ...currentLlmConfig }),
       setConfig: (cfg: { model: string; baseURL: string; apiKey?: string; temperature?: number; maxTokens?: number; maxContextTokens?: number }) => {
+        const nextMaxContextTokens = cfg.maxContextTokens ?? currentLlmConfig.maxContextTokens
+        const requestedMaxTokens = cfg.maxTokens ?? currentLlmConfig.maxTokens
+        const safeMaxTokens = Math.min(requestedMaxTokens, DEFAULT_MAX_COMPLETION_TOKENS)
         const newLlm = createOpenAICompatibleAdapter({
           apiKey: cfg.apiKey ?? currentLlmConfig.apiKey,
           baseURL: cfg.baseURL,
           model: cfg.model,
-          maxContextTokens: cfg.maxContextTokens ?? currentLlmConfig.maxContextTokens,
+          maxContextTokens: nextMaxContextTokens,
         })
         currentLlmConfig = {
           model: cfg.model,
           baseURL: cfg.baseURL,
           apiKey: cfg.apiKey ?? currentLlmConfig.apiKey,
           temperature: cfg.temperature ?? currentLlmConfig.temperature,
-          maxTokens: cfg.maxTokens ?? currentLlmConfig.maxTokens,
-          maxContextTokens: cfg.maxContextTokens ?? currentLlmConfig.maxContextTokens,
+          maxTokens: safeMaxTokens,
+          maxContextTokens: nextMaxContextTokens,
         }
         currentLlm = newLlm
         for (const entry of Array.from(sessionMap.values())) {
@@ -836,6 +871,32 @@ async function requireSession(sessions: SessionTreeImpl, sessionId: string): Pro
   const session = await sessions.get(sessionId)
   if (!session) throw new Error(`Session not found: ${sessionId}`)
   return session
+}
+
+/** 判断错误是否为端口占用。 */
+function isPortInUseError(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && (error as { code?: string }).code === 'EADDRINUSE'
+}
+
+/** 启动 DevTools 时自动回退到可用端口。 */
+async function startDevtoolsWithFallbackPort(
+  agent: Parameters<typeof startDevtools>[0],
+  options: Omit<Parameters<typeof startDevtools>[1], 'port'>,
+  preferredPort: number,
+): Promise<Awaited<ReturnType<typeof startDevtools>>> {
+  const maxAttempts = preferredPort === 0 ? 1 : 10
+  for (let offset = 0; offset < maxAttempts; offset += 1) {
+    const port = preferredPort === 0 ? 0 : preferredPort + offset
+    try {
+      return await startDevtools(agent, { ...options, port })
+    } catch (error) {
+      if (!isPortInUseError(error) || preferredPort === 0 || offset === maxAttempts - 1) {
+        throw error
+      }
+      console.warn(`DevTools port ${port} is in use, trying ${port + 1}...`)
+    }
+  }
+  throw new Error('Unable to find a free DevTools port')
 }
 
 
@@ -913,8 +974,8 @@ async function main() {
     },
   }
 
-  const devtoolsPort = Number(process.env.DEVTOOLS_PORT ?? 4800)
-  const dt = await startDevtools(agentProxy as never, {
+  const devtoolsPort = Number(process.env.DEVTOOLS_PORT ?? 0)
+  const dt = await startDevtoolsWithFallbackPort(agentProxy as never, {
     port: devtoolsPort,
     open: false,
     llm: llmProxy,
@@ -925,7 +986,7 @@ async function main() {
     integration: integrationProxy,
     reset: resetProxy,
     stateStore: stateStoreProxy,
-  })
+  }, devtoolsPort)
 
   console.log(`\nStello 留学选校顾问 Demo`)
   console.log(`  Model:    ${openaiModel}`)

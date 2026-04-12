@@ -9,6 +9,7 @@ import {
   Zap,
   Wrench,
   Terminal,
+  ImagePlus,
   ArrowUp,
   ArrowDownRight,
   Loader2,
@@ -17,6 +18,7 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  X,
 } from 'lucide-react'
 import {
   fetchSessionTree,
@@ -30,9 +32,11 @@ import {
   type SessionCapabilities,
   type SessionDetail,
   type SessionTreeNode,
+  type TurnInput,
   type TurnRecord,
 } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
+import { useToast } from '@/lib/toast'
 
 /** 可点击的 Tool/Skill badge，展开显示详情列表 */
 function CapabilityPopover({
@@ -172,6 +176,83 @@ function collectBranchIds(items: SessionItem[]): string[] {
     }
   }
   return ids
+}
+
+/** 与服务端一致的 DevTools 多模态标记。 */
+const DEVTOOLS_MULTIMODAL_MARKER = '[stello-devtools:multimodal/v1]'
+
+/** 对话中的图片附件。 */
+interface ChatImageAttachment {
+  id: string
+  name: string
+  imageUrl: string
+  mimeType?: string
+}
+
+/** 用户待发送的图片附件。 */
+interface PendingImageAttachment {
+  id: string
+  name: string
+  imageUrl: string
+  mimeType: string
+  size: number
+}
+
+interface ParsedMultimodalInput {
+  text: string
+  images: ChatImageAttachment[]
+}
+
+/** 解析服务端保存的多模态输入字符串。 */
+function parseMultimodalInput(content: string): ParsedMultimodalInput | null {
+  if (!content.startsWith(DEVTOOLS_MULTIMODAL_MARKER)) return null
+  const payloadText = content.slice(DEVTOOLS_MULTIMODAL_MARKER.length).trim()
+  if (!payloadText) return null
+  try {
+    const payload = JSON.parse(payloadText) as {
+      parts?: Array<{ type?: string; text?: string; imageUrl?: string; mimeType?: string; name?: string }>
+    }
+    if (!Array.isArray(payload.parts)) return null
+    const textParts: string[] = []
+    const images: ChatImageAttachment[] = []
+    for (const [index, part] of payload.parts.entries()) {
+      if (part.type === 'text' && typeof part.text === 'string' && part.text.trim().length > 0) {
+        textParts.push(part.text.trim())
+      }
+      if (part.type === 'image' && typeof part.imageUrl === 'string' && part.imageUrl.trim().length > 0) {
+        images.push({
+          id: `img-${index}`,
+          name: typeof part.name === 'string' && part.name.trim().length > 0 ? part.name : `image-${index + 1}`,
+          imageUrl: part.imageUrl,
+          mimeType: typeof part.mimeType === 'string' ? part.mimeType : undefined,
+        })
+      }
+    }
+    return {
+      text: textParts.join('\n\n'),
+      images,
+    }
+  } catch {
+    return null
+  }
+}
+
+/** 将文本和图片附件打包为 turn 输入。 */
+function buildTurnInput(text: string, images: PendingImageAttachment[]): TurnInput {
+  if (images.length === 0) return text
+  const parts: NonNullable<Exclude<TurnInput, string>['parts']> = []
+  if (text.trim().length > 0) {
+    parts.push({ type: 'text', text: text.trim() })
+  }
+  for (const image of images) {
+    parts.push({
+      type: 'image_url',
+      imageUrl: image.imageUrl,
+      mimeType: image.mimeType,
+      name: image.name,
+    })
+  }
+  return { parts }
 }
 
 /** 递归树节点组件 */
@@ -358,6 +439,7 @@ interface ChatTextItem {
   id: string
   kind: 'user' | 'assistant'
   content: string
+  images?: ChatImageAttachment[]
   streaming?: boolean
   turnStats?: TurnStats
 }
@@ -402,6 +484,15 @@ function parseToolRecordContent(content: string): {
 
 /** 生成 L3 侧边栏里更可读的 record 摘要。 */
 function summarizeRecord(record: TurnRecord): string {
+  if (record.role === 'user') {
+    const parsedInput = parseMultimodalInput(record.content)
+    if (!parsedInput) return record.content
+    const summaryText = parsedInput.text || '[image only]'
+    return parsedInput.images.length > 0
+      ? `${summaryText} (+${parsedInput.images.length} image${parsedInput.images.length > 1 ? 's' : ''})`
+      : summaryText
+  }
+
   if (record.role === 'tool') {
     const parsed = parseToolRecordContent(record.content)
     if (!parsed) return record.content
@@ -428,10 +519,12 @@ function buildHistoryItems(records: TurnRecord[]): ChatItem[] {
 
   for (const [index, record] of records.entries()) {
     if (record.role === 'user') {
+      const parsedInput = parseMultimodalInput(record.content ?? '')
       items.push({
         id: `hist-${index}`,
         kind: 'user',
-        content: record.content ?? '',
+        content: parsedInput?.text ?? record.content ?? '',
+        images: parsedInput?.images,
       })
       continue
     }
@@ -599,6 +692,7 @@ function RoleBadge({ role }: { role: 'user' | 'asst' | 'tool' }) {
 /** Conversation 对话栏页面 */
 export function Conversation() {
   const { t } = useI18n()
+  const { showToast } = useToast()
   const [searchParams] = useSearchParams()
   const initialSessionId = searchParams.get('session')
   const [sessionTree, setSessionTree] = useState<SessionItem[]>([])
@@ -610,11 +704,13 @@ export function Conversation() {
   const [sessionCapabilities, setSessionCapabilities] = useState<SessionCapabilities | null>(null)
   const [activeTab, setActiveTab] = useState<'l3' | 'l2' | 'insights' | 'prompt'>('l3')
   const [inputValue, setInputValue] = useState('')
+  const [inputImages, setInputImages] = useState<PendingImageAttachment[]>([])
   const [sendingSessions, setSendingSessions] = useState<Set<string>>(new Set())
   const [consolidating, setConsolidating] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [config, setConfig] = useState<AgentConfig | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
   const nextIdRef = useRef(100)
 
   /** 所有 session 扁平列表（用于计数） */
@@ -732,15 +828,105 @@ export function Conversation() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [selectedSession, items])
 
+  const MAX_IMAGE_ATTACHMENTS = 4
+  const MAX_IMAGE_SIZE_BYTES = 16 * 1024 * 1024
+  const MAX_IMAGE_DIMENSION = 1024
+  const IMAGE_JPEG_QUALITY = 0.82
+
+  /** 读取图片并压缩为较小的 Data URL。 */
+  const compressImageToDataUrl = useCallback(async (file: File): Promise<{ imageUrl: string; mimeType: string }> => {
+    const objectUrl = URL.createObjectURL(file)
+    return new Promise((resolve, reject) => {
+      const image = new Image()
+      image.onload = () => {
+        try {
+          const scale = Math.min(1, MAX_IMAGE_DIMENSION / Math.max(image.width, image.height))
+          const width = Math.max(1, Math.round(image.width * scale))
+          const height = Math.max(1, Math.round(image.height * scale))
+          const canvas = document.createElement('canvas')
+          canvas.width = width
+          canvas.height = height
+          const context = canvas.getContext('2d')
+          if (!context) {
+            reject(new Error('无法压缩图片'))
+            return
+          }
+          context.fillStyle = '#ffffff'
+          context.fillRect(0, 0, width, height)
+          context.drawImage(image, 0, 0, width, height)
+          const imageUrl = canvas.toDataURL('image/jpeg', IMAGE_JPEG_QUALITY)
+          resolve({ imageUrl, mimeType: 'image/jpeg' })
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error('无法压缩图片'))
+        } finally {
+          URL.revokeObjectURL(objectUrl)
+        }
+      }
+      image.onerror = () => {
+        URL.revokeObjectURL(objectUrl)
+        reject(new Error('读取图片失败'))
+      }
+      image.src = objectUrl
+    })
+  }, [MAX_IMAGE_DIMENSION, IMAGE_JPEG_QUALITY])
+
+  /** 选择图片附件。 */
+  const handlePickImages = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    if (files.length === 0) return
+
+    const remainSlots = MAX_IMAGE_ATTACHMENTS - inputImages.length
+    if (remainSlots <= 0) return
+    const acceptedFiles = files
+      .filter((file) => file.type.startsWith('image/'))
+      .filter((file) => file.size <= MAX_IMAGE_SIZE_BYTES)
+      .slice(0, remainSlots)
+
+    if (acceptedFiles.length === 0) return
+
+    const encoded = await Promise.all(acceptedFiles.map(async (file) => {
+      const compressed = await compressImageToDataUrl(file)
+      return {
+        id: crypto.randomUUID(),
+        name: file.name,
+        imageUrl: compressed.imageUrl,
+        mimeType: compressed.mimeType,
+        size: file.size,
+      }
+    }))
+    setInputImages((prev) => [...prev, ...encoded])
+    if (files.length > acceptedFiles.length) {
+      showToast('error', 'Some images were too large to upload')
+    }
+  }, [MAX_IMAGE_ATTACHMENTS, MAX_IMAGE_SIZE_BYTES, compressImageToDataUrl, inputImages.length, showToast])
+
+  /** 移除已选择的图片附件。 */
+  const removeInputImage = useCallback((imageId: string) => {
+    setInputImages((prev) => prev.filter((image) => image.id !== imageId))
+  }, [])
+
   /** 发送消息——统一走非流式 turn，发送期间显示加载占位。 */
   const handleSend = async () => {
     const text = inputValue.trim()
-    if (!text || !selectedSession || sendingSessions.has(selectedSession.id)) return
+    if ((!text && inputImages.length === 0) || !selectedSession || sendingSessions.has(selectedSession.id)) return
 
     const sendingSessionId = selectedSession.id
-    const userMsg: ChatTextItem = { id: String(nextIdRef.current++), kind: 'user', content: text }
+    const userMsg: ChatTextItem = {
+      id: String(nextIdRef.current++),
+      kind: 'user',
+      content: text,
+      images: inputImages.map((image) => ({
+        id: image.id,
+        name: image.name,
+        imageUrl: image.imageUrl,
+        mimeType: image.mimeType,
+      })),
+    }
+    const inputPayload = buildTurnInput(text, inputImages)
     setItems((prev) => [...prev, userMsg])
     setInputValue('')
+    setInputImages([])
     setSendingSessions((prev) => new Set(prev).add(sendingSessionId))
 
     const botId = String(nextIdRef.current++)
@@ -750,7 +936,7 @@ export function Conversation() {
     try {
       /* enter session */
       await enterSession(selectedSession.id).catch(() => {})
-      const result = await sendTurn(selectedSession.id, text)
+      const result = await sendTurn(selectedSession.id, inputPayload)
       const turn = result?.turn
       const content = turn?.finalContent ?? turn?.rawResponse ?? JSON.stringify(result)
       const turnStats: TurnStats | undefined = turn ? {
@@ -886,7 +1072,23 @@ export function Conversation() {
               {item.kind === 'user' ? (
                 <div className="flex justify-end">
                   <div className="bg-primary text-white rounded-xl rounded-br-sm px-3.5 py-2.5 max-w-md transition-shadow hover:shadow-lg">
-                    <p className="text-[13px] leading-relaxed">{item.content}</p>
+                    {item.content && <p className="text-[13px] leading-relaxed">{item.content}</p>}
+                    {(item.images?.length ?? 0) > 0 && (
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        {item.images!.map((image) => (
+                          <a
+                            key={image.id}
+                            href={image.imageUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="block rounded-md overflow-hidden border border-white/20"
+                            title={image.name}
+                          >
+                            <img src={image.imageUrl} alt={image.name} className="w-full h-24 object-cover" />
+                          </a>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : item.kind === 'tool' ? (
@@ -911,29 +1113,70 @@ export function Conversation() {
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="flex items-center gap-2.5 h-14 px-5 border-t border-border bg-card shrink-0">
-          <div className="flex items-center gap-2 flex-1 h-9 px-3 bg-surface rounded-[10px] border border-border transition-all duration-200 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10">
-            <Terminal size={14} className="text-text-muted shrink-0" />
+        <div className="px-5 py-2 border-t border-border bg-card shrink-0 space-y-2">
+          {inputImages.length > 0 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {inputImages.map((image) => (
+                <div key={image.id} className="relative w-14 h-14 rounded-lg overflow-hidden border border-border/60 shrink-0 bg-surface">
+                  <img src={image.imageUrl} alt={image.name} className="w-full h-full object-cover" />
+                  <button
+                    onClick={() => removeInputImage(image.id)}
+                    className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 text-white flex items-center justify-center"
+                    title={t('conv.removeImage')}
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center gap-2.5 h-10">
+            <button
+              onClick={() => imageInputRef.current?.click()}
+              disabled={inputImages.length >= MAX_IMAGE_ATTACHMENTS}
+              className={`w-9 h-9 rounded-lg border flex items-center justify-center transition-colors ${
+                inputImages.length >= MAX_IMAGE_ATTACHMENTS
+                  ? 'border-border text-text-muted/50 bg-surface cursor-not-allowed'
+                  : 'border-border text-text-secondary bg-surface hover:border-primary/40 hover:text-primary'
+              }`}
+              title={t('conv.addImage')}
+            >
+              <ImagePlus size={15} />
+            </button>
             <input
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); handleSend() } }}
-              placeholder={t('conv.sendPlaceholder')}
-              className="flex-1 bg-transparent text-xs outline-none placeholder:text-text-muted"
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handlePickImages}
+              className="hidden"
             />
+
+            <div className="flex items-center gap-2 flex-1 h-9 px-3 bg-surface rounded-[10px] border border-border transition-all duration-200 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10">
+              <Terminal size={14} className="text-text-muted shrink-0" />
+              <input
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); handleSend() } }}
+                placeholder={t('conv.sendPlaceholder')}
+                className="flex-1 bg-transparent text-xs outline-none placeholder:text-text-muted"
+              />
+            </div>
+
+            <button
+              onClick={handleSend}
+              disabled={(!inputValue.trim() && inputImages.length === 0) || !!(selectedSession && sendingSessions.has(selectedSession.id))}
+              className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-200 ${
+                (inputValue.trim() || inputImages.length > 0) && !(selectedSession && sendingSessions.has(selectedSession.id))
+                  ? 'bg-primary hover:bg-primary/90 scale-100 shadow-md'
+                  : 'bg-primary/40 scale-95'
+              }`}
+            >
+              {selectedSession && sendingSessions.has(selectedSession.id) ? <Loader2 size={16} className="text-white animate-spin" /> : <ArrowUp size={16} className="text-white" />}
+            </button>
           </div>
-          <button
-            onClick={handleSend}
-            disabled={!inputValue.trim() || !!(selectedSession && sendingSessions.has(selectedSession.id))}
-            className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-200 ${
-              inputValue.trim() && !(selectedSession && sendingSessions.has(selectedSession.id))
-                ? 'bg-primary hover:bg-primary/90 scale-100 shadow-md'
-                : 'bg-primary/40 scale-95'
-            }`}
-          >
-            {selectedSession && sendingSessions.has(selectedSession.id) ? <Loader2 size={16} className="text-white animate-spin" /> : <ArrowUp size={16} className="text-white" />}
-          </button>
         </div>
       </div>
 

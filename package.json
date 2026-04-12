@@ -7,8 +7,8 @@
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
     "smoke": "tsx scripts/smoke-test.ts",
-    "demo:agent": "tsx demo/stello-agent-basic/demo.ts",
-    "demo:chat": "tsx demo/stello-agent-chat/chat-devtools.ts",
+    "demo:agent": "pnpm --filter @stello-ai/session build && pnpm --filter @stello-ai/core build && tsx demo/stello-agent-basic/demo.ts",
+    "demo:chat": "pnpm --filter @stello-ai/session build && pnpm --filter @stello-ai/core build && tsx demo/stello-agent-chat/chat-devtools.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "release": "pnpm build && pnpm -r publish --no-git-checks --access public"

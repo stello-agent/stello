@@ -1,13 +1,15 @@
 import type { Server as HttpServer } from 'node:http'
 import { WebSocketServer, WebSocket } from 'ws'
 import type { StelloAgent } from '@stello-ai/core'
+import type { DevtoolsTurnInput } from './multimodal-input.js'
+import { normalizeTurnInput } from './multimodal-input.js'
 
 /** WS 客户端消息 */
 type WsClientMessage =
   | { type: 'session.enter'; sessionId: string }
   | { type: 'session.leave' }
-  | { type: 'session.message'; input: string }
-  | { type: 'session.stream'; input: string }
+  | { type: 'session.message'; input: DevtoolsTurnInput }
+  | { type: 'session.stream'; input: DevtoolsTurnInput }
   | { type: 'session.fork'; options: { label: string; scope?: string } }
 
 /** 发送 JSON 消息到客户端 */
@@ -81,7 +83,8 @@ function handleConnection(ws: WebSocket, agent: StelloAgent): void {
             sendError(ws, 'Not in a session', 'NOT_ENTERED')
             break
           }
-          const result = await agent.turn(currentSessionId, msg.input)
+          const input = normalizeTurnInput(msg.input)
+          const result = await agent.turn(currentSessionId, input)
           send(ws, { type: 'turn.complete', result })
           break
         }
@@ -90,7 +93,8 @@ function handleConnection(ws: WebSocket, agent: StelloAgent): void {
             sendError(ws, 'Not in a session', 'NOT_ENTERED')
             break
           }
-          const stream = await agent.stream(currentSessionId, msg.input)
+          const input = normalizeTurnInput(msg.input)
+          const stream = await agent.stream(currentSessionId, input)
           for await (const chunk of stream) {
             send(ws, { type: 'stream.delta', chunk })
           }
