@@ -42,15 +42,14 @@ function parseToolResultEnvelope(content: string): ToolResultEnvelope | null {
   }
 }
 
-/** 把 tool 执行结果序列化成可回放的 tool message 内容。 */
+/** 把 tool 执行结果序列化为 tool message content，对齐 OpenAI/Anthropic 标准（只含结果数据）。 */
 function serializeToolResultContent(result: ToolResultEnvelope['toolResults'][number]): string {
-  return JSON.stringify({
-    toolName: result.toolName,
-    args: result.args,
-    success: result.success,
-    data: result.data,
-    error: result.error,
-  })
+  if (!result.success) {
+    return result.error ?? 'Unknown error'
+  }
+  if (typeof result.data === 'string') return result.data
+  if (result.data == null) return ''
+  return JSON.stringify(result.data)
 }
 
 /** 为 MainSession 的 toolResults continuation 组装固定上下文与历史。 */
