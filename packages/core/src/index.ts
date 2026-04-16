@@ -1,5 +1,5 @@
 /** Stello SDK 版本号 */
-export const VERSION = '0.1.1';
+export const VERSION = '0.3.0';
 
 // 导出所有类型定义
 export type {

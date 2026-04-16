@@ -1,5 +1,26 @@
 # @stello-ai/core
 
+## 0.3.0
+
+### Minor Changes
+
+- feat(core): ToolRegistry 工具注册表 — 内置 tool 与用户 tool 统一走 ToolRegistryEntry + CompositeToolRuntime
+- feat(core): ForkProfile 系统 — 预注册 fork 配置模板，支持 systemPrompt 三种合成策略、prompt 字段、skills 白名单
+- feat(core): fork 支持 per-session consolidateFn/compressFn 继承链
+- feat(core): Skills 系统 — Skill 重定义为 prompt 片段，skill-tool 自动注册，FilteredSkillRouter 白名单过滤
+- feat(core): Engine 内置 stello_create_session tool，统一 fork 链路
+- feat(core): FileSystemMemoryEngine
+- refactor(core): Engine.forkSession() 使用 session.fork()，移除 resolver.create
+
+### Patch Changes
+
+- fix(core): Orchestrator 层接入 Scheduler.onSessionSwitch 调度
+- fix(core): normalize readCore missing key to null，guard corrupt JSONL lines
+- fix(core): TurnRunner 通过 Engine 执行 tool call
+- chore: 补全 session re-export（SessionArchivedError、ForkOptions、ToolAnnotations 等）
+- Updated dependencies
+  - @stello-ai/session@0.3.0
+
 ## 0.2.2
 
 ### Patch Changes

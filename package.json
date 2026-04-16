@@ -3,15 +3,15 @@
   "private": true,
   "packageManager": "pnpm@9.15.4",
   "scripts": {
-    "build": "pnpm -r run build",
-    "test": "pnpm -r run test",
-    "typecheck": "pnpm -r run typecheck",
+    "build": "pnpm --filter @stello-ai/session --filter @stello-ai/core run build",
+    "test": "pnpm --filter @stello-ai/session --filter @stello-ai/core run test",
+    "typecheck": "pnpm --filter @stello-ai/session --filter @stello-ai/core run typecheck",
     "smoke": "tsx scripts/smoke-test.ts",
     "demo:agent": "tsx demo/stello-agent-basic/demo.ts",
     "demo:chat": "tsx demo/stello-agent-chat/chat-devtools.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "release": "pnpm build && pnpm -r publish --no-git-checks --access public"
+    "release": "pnpm build && pnpm --filter @stello-ai/session --filter @stello-ai/core publish --no-git-checks --access public"
   },
   "devDependencies": {
     "dotenv": "^17.4.0",

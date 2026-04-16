@@ -1,5 +1,18 @@
 # @stello-ai/session
 
+## 0.3.0
+
+### Minor Changes
+
+- feat(session): MainSession 增加 fork() 方法，返回标准 Session
+- feat(session): ForkOptions 支持外部指定 id
+- refactor(session): 解耦 context 压缩与 consolidateFn — CompressFn 独立注入
+
+### Patch Changes
+
+- fix(session): fork 继承上下文时裁掉不完整的 tool call 组
+- fix: tools 协议对齐，Anthropic adapter 修复
+
 ## 0.2.3
 
 ### Patch Changes
