@@ -5,7 +5,7 @@ import { SessionArchivedError } from './types/session-api.js'
 import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './types/session.js'
 import type { Message } from './types/llm.js'
 import type {
-  IntegrateFn, IntegrateResult, CreateMainSessionOptions, LoadMainSessionOptions,
+  IntegrateResult, CreateMainSessionOptions, LoadMainSessionOptions,
   SendResult, StreamResult,
 } from './types/functions.js'
 import { createSession } from './create-session.js'
@@ -307,9 +307,12 @@ function buildMainSession(
       return storage.getMemory(currentMeta.id)
     },
 
-    async integrate(fn: IntegrateFn): Promise<IntegrateResult> {
+    async integrate(): Promise<IntegrateResult> {
       if (currentMeta.status === 'archived') {
         throw new SessionArchivedError(currentMeta.id)
+      }
+      if (!options.integrateFn) {
+        throw new Error('No integrateFn configured for this main session')
       }
 
       // 1. 扁平收集所有子 Session 的 L2
@@ -320,7 +323,7 @@ function buildMainSession(
       const currentSynthesis = await storage.getMemory(currentMeta.id)
 
       // 3. 调用 IntegrateFn
-      const result = await fn(childSummaries, currentSynthesis)
+      const result = await options.integrateFn(childSummaries, currentSynthesis)
       const filteredInsights = result.insights.filter(({ sessionId }) => validChildSessionIds.has(sessionId))
 
       // 4. 在事务中一起保存 synthesis 和有效 insights，避免部分写入。
@@ -373,6 +376,8 @@ function buildMainSession(
         tools: forkOptions.tools ?? options.tools,
         tags: forkOptions.tags,
         metadata: forkOptions.metadata,
+        consolidateFn: forkOptions.consolidateFn,
+        compressFn: forkOptions.compressFn,
       })
 
       // 上下文策略：决定子 Session 继承多少父 L3

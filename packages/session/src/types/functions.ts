@@ -88,6 +88,8 @@ export interface CreateMainSessionOptions {
   tools?: LLMCompleteOptions['tools']
   /** 上下文压缩函数（超阈值时调用） */
   compressFn?: CompressFn
+  /** 所有子 L2 → synthesis + insights，创建时绑定，供 integrate() 调用 */
+  integrateFn?: IntegrateFn
 
 }
 
@@ -103,6 +105,8 @@ export interface LoadMainSessionOptions {
   tools?: LLMCompleteOptions['tools']
   /** 上下文压缩函数（超阈值时调用） */
   compressFn?: CompressFn
+  /** 所有子 L2 → synthesis + insights，加载时绑定，供 integrate() 调用 */
+  integrateFn?: IntegrateFn
 
 }
 

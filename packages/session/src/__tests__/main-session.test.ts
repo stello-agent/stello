@@ -19,16 +19,16 @@ function makeMockLLM(response: Partial<LLMResult> = {}): LLMAdapter {
 }
 
 /** 快速创建测试用 MainSession */
-async function makeMainSession(options?: { llm?: LLMAdapter }) {
+async function makeMainSession(options?: { llm?: LLMAdapter; integrateFn?: IntegrateFn }) {
   const storage = new InMemoryStorageAdapter()
-  const main = await createMainSession({ storage, label: 'Test Main', llm: options?.llm })
+  const main = await createMainSession({ storage, label: 'Test Main', llm: options?.llm, integrateFn: options?.integrateFn })
   return { main, storage }
 }
 
 /** 创建 MainSession + 带 L2 的子 Session */
-async function makeWithChildren() {
+async function makeWithChildren(integrateFn?: IntegrateFn) {
   const storage = new InMemoryStorageAdapter()
-  const main = await createMainSession({ storage })
+  const main = await createMainSession({ storage, integrateFn })
 
   const child1 = await createSession({
     storage, label: '选校',
@@ -77,13 +77,13 @@ describe('MainSession synthesis()', () => {
   })
 
   it('integrate 后 synthesis 可读', async () => {
-    const { main } = await makeWithChildren()
-
     const fn: IntegrateFn = async (children) => ({
       synthesis: `共 ${children.length} 个子任务`,
       insights: [],
     })
-    await main.integrate(fn)
+    const { main } = await makeWithChildren(fn)
+
+    await main.integrate()
 
     expect(await main.synthesis()).toBe('共 2 个子任务')
   })
@@ -91,13 +91,13 @@ describe('MainSession synthesis()', () => {
 
 describe('MainSession integrate()', () => {
   it('IntegrateFn 接收所有子 Session 的 L2', async () => {
-    const { main } = await makeWithChildren()
-
     const fn = vi.fn<IntegrateFn>(async () => ({
       synthesis: 'ok',
       insights: [],
     }))
-    await main.integrate(fn)
+    const { main } = await makeWithChildren(fn)
+
+    await main.integrate()
 
     expect(fn).toHaveBeenCalledTimes(1)
     const children = fn.mock.calls[0]![0]
@@ -107,35 +107,38 @@ describe('MainSession integrate()', () => {
   })
 
   it('IntegrateFn 接收当前 synthesis', async () => {
-    const { main } = await makeWithChildren()
+    // 先做一次 integrate，用第一个 fn
+    let callCount = 0
+    const fn = vi.fn<IntegrateFn>(async (_children, current) => {
+      callCount++
+      if (callCount === 1) {
+        return { synthesis: 'first synthesis', insights: [] }
+      }
+      return { synthesis: `updated from: ${current}`, insights: [] }
+    })
+    const { main } = await makeWithChildren(fn)
 
-    // 先做一次 integrate
-    await main.integrate(async () => ({
-      synthesis: 'first synthesis',
-      insights: [],
-    }))
-
+    // 第一次 integrate
+    await main.integrate()
     // 第二次应收到 first synthesis
-    const fn = vi.fn<IntegrateFn>(async (_children, current) => ({
-      synthesis: `updated from: ${current}`,
-      insights: [],
-    }))
-    await main.integrate(fn)
+    await main.integrate()
 
-    expect(fn.mock.calls[0]![1]).toBe('first synthesis')
+    expect(fn.mock.calls[1]![1]).toBe('first synthesis')
     expect(await main.synthesis()).toBe('updated from: first synthesis')
   })
 
   it('insights 推送到子 Session', async () => {
-    const { main, storage, child1, child2 } = await makeWithChildren()
+    const { main, storage, child1, child2 } = await makeWithChildren(
+      async () => ({
+        synthesis: 'overview',
+        insights: [
+          { sessionId: child1.meta.id, content: '加快进度' },
+          { sessionId: child2.meta.id, content: 'DDL 临近' },
+        ],
+      })
+    )
 
-    await main.integrate(async () => ({
-      synthesis: 'overview',
-      insights: [
-        { sessionId: child1.meta.id, content: '加快进度' },
-        { sessionId: child2.meta.id, content: 'DDL 临近' },
-      ],
-    }))
+    await main.integrate()
 
     // 验证 insights 已写入子 Session
     const insight1 = await storage.getInsight(child1.meta.id)
@@ -145,15 +148,17 @@ describe('MainSession integrate()', () => {
   })
 
   it('忽略返回给不存在 sessionId 的 insights', async () => {
-    const { main, storage, child1 } = await makeWithChildren()
+    const { main, storage, child1 } = await makeWithChildren(
+      async () => ({
+        synthesis: 'overview',
+        insights: [
+          { sessionId: child1.meta.id, content: '保留这条' },
+          { sessionId: 'fake-session-id', content: '丢弃这条' },
+        ],
+      })
+    )
 
-    const result = await main.integrate(async () => ({
-      synthesis: 'overview',
-      insights: [
-        { sessionId: child1.meta.id, content: '保留这条' },
-        { sessionId: 'fake-session-id', content: '丢弃这条' },
-      ],
-    }))
+    const result = await main.integrate()
 
     expect(result.insights).toEqual([
       { sessionId: child1.meta.id, content: '保留这条' },
@@ -163,23 +168,27 @@ describe('MainSession integrate()', () => {
   })
 
   it('无子 Session 时 IntegrateFn 接收空数组', async () => {
-    const { main } = await makeMainSession()
-
     const fn = vi.fn<IntegrateFn>(async () => ({
       synthesis: 'empty',
       insights: [],
     }))
-    await main.integrate(fn)
+    const { main } = await makeMainSession({ integrateFn: fn })
+
+    await main.integrate()
 
     expect(fn.mock.calls[0]![0]).toEqual([])
   })
 
   it('archived 后 integrate 抛错', async () => {
-    const { main } = await makeMainSession()
+    const fn: IntegrateFn = async () => ({ synthesis: '', insights: [] })
+    const { main } = await makeMainSession({ integrateFn: fn })
     await main.archive()
-    await expect(main.integrate(async () => ({
-      synthesis: '', insights: [],
-    }))).rejects.toThrow(SessionArchivedError)
+    await expect(main.integrate()).rejects.toThrow(SessionArchivedError)
+  })
+
+  it('未配置 integrateFn 时 integrate() 抛错', async () => {
+    const { main } = await makeMainSession()
+    await expect(main.integrate()).rejects.toThrow('No integrateFn configured for this main session')
   })
 })
 

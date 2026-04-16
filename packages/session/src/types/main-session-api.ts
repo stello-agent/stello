@@ -1,6 +1,6 @@
 import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './session.js'
 import type { Message, LLMAdapter } from './llm.js'
-import type { SendResult, StreamResult, IntegrateFn, IntegrateResult } from './functions.js'
+import type { SendResult, StreamResult, IntegrateResult } from './functions.js'
 import type { MessageQueryOptions, Session } from './session-api.js'
 
 /**
@@ -34,7 +34,7 @@ export interface MainSession {
   synthesis(): Promise<string | null>
 
   /** 执行 integration cycle：收集子 L2 → IntegrateFn → 保存 synthesis + 推送 insights */
-  integrate(fn: IntegrateFn): Promise<IntegrateResult>
+  integrate(): Promise<IntegrateResult>
 
   /** 裁剪旧 L3，保留最近 keepRecent 条。通常在 integrate() 后调用 */
   trimRecords(keepRecent: number): Promise<void>
