@@ -275,6 +275,11 @@ export class StelloEngineImpl implements StelloEngine {
     return { sessionId: this.session.id };
   }
 
+  /** 显式触发当前 session 的 consolidation */
+  async consolidate(): Promise<void> {
+    await this.session.consolidate();
+  }
+
   /** 归档一个 session，并触发 onArchive 调度 */
   async archiveSession(): Promise<{ sessionId: string }> {
     await this.sessions.archive(this.session.id);

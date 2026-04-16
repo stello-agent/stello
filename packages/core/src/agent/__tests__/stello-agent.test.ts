@@ -287,6 +287,37 @@ describe('StelloAgent', () => {
     });
   });
 
+  it('consolidateSession 调用指定 session 的 consolidate', async () => {
+    const runtimeSession = {
+      id: 'root',
+      meta: { id: 'root', turnCount: 0, status: 'active' as const },
+      turnCount: 0,
+      send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
+      consolidate: vi.fn().mockResolvedValue(undefined),
+    };
+    const agent = createStelloAgent(baseConfig({ runtimeSession }));
+    await agent.consolidateSession('root');
+    expect(runtimeSession.consolidate).toHaveBeenCalledTimes(1);
+  });
+
+  it('integrate 调用 mainSession.integrate', async () => {
+    const integrateFn = vi.fn().mockResolvedValue({ synthesis: 's', insights: [] });
+    const mainSession = { integrate: integrateFn };
+    const agent = createStelloAgent({
+      ...baseConfig(),
+      session: {
+        mainSessionResolver: vi.fn().mockResolvedValue(mainSession),
+      },
+    });
+    await agent.integrate();
+    expect(integrateFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('integrate 未配置 mainSessionResolver 时抛错', async () => {
+    const agent = createStelloAgent(baseConfig());
+    await expect(agent.integrate()).rejects.toThrow('No mainSessionResolver configured');
+  });
+
   it('支持通过 session.sessionResolver 正式接入 Session 配置', async () => {
     const session = {
       meta: {

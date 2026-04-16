@@ -16,6 +16,8 @@ export interface OrchestratorEngine extends StelloEngine {
   archiveSession(): Promise<{ sessionId: string }>;
   /** 从当前绑定 session 发起 fork */
   forkSession(options: EngineForkOptions): Promise<TopologyNode>;
+  /** 显式触发当前绑定 session 的 consolidation */
+  consolidate(): Promise<void>;
 }
 
 /** Engine 工厂 */
@@ -175,6 +177,12 @@ export class SessionOrchestrator {
       await this.requireSession(sessionId);
       return this.withRuntime(sessionId, (engine) => engine.archiveSession());
     });
+  }
+
+  /** 对指定 session 执行 consolidation */
+  async consolidateSession(sessionId: string): Promise<void> {
+    await this.requireSession(sessionId);
+    return this.withRuntime(sessionId, (engine) => engine.consolidate());
   }
 
   /** 只负责校验 session 是否存在，不负责管理 engine 生命周期 */

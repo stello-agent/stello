@@ -48,7 +48,7 @@ export interface StelloAgentCapabilitiesConfig {
  * Session 组件接入配置。
  *
  * 这部分配置用于把 @stello-ai/session 的真实 Session / MainSession
- * 正式接入到 core 的 Engine / Scheduler 体系里。
+ * 正式接入到 core 的 Engine 体系里。
  */
 export interface StelloAgentSessionConfig {
   /** 按 sessionId 解析真实 Session */
@@ -77,6 +77,8 @@ export interface StelloAgentOrchestrationConfig {
   splitGuard?: SplitGuard;
   turnRunner?: TurnRunner;
   hooks?: EngineHookProvider;
+  /** 每 N 轮自动触发 consolidation（0 或不传则禁用） */
+  consolidateEveryNTurns?: number;
 }
 
 /**
@@ -172,6 +174,7 @@ export class StelloAgent {
       splitGuard: config.orchestration?.splitGuard,
       turnRunner: resolveTurnRunner(config),
       hooks: config.orchestration?.hooks,
+      consolidateEveryNTurns: config.orchestration?.consolidateEveryNTurns,
     });
     this.runtimeManager = new DefaultEngineRuntimeManager(
       engineFactory,
@@ -243,6 +246,24 @@ export class StelloAgent {
   /** 当前某个 session 的 engine 引用计数 */
   getEngineRefCount(sessionId: string): number {
     return this.runtimeManager.getRefCount(sessionId);
+  }
+
+  /** 对指定 session 执行 consolidation */
+  consolidateSession(sessionId: string): Promise<void> {
+    return this.orchestrator.consolidateSession(sessionId);
+  }
+
+  /** 对 main session 执行 integration */
+  async integrate(): Promise<unknown> {
+    const mainSessionResolver = this.config.session?.mainSessionResolver;
+    if (!mainSessionResolver) {
+      throw new Error('No mainSessionResolver configured');
+    }
+    const mainSession = await mainSessionResolver();
+    if (!mainSession) {
+      throw new Error('MainSession not found');
+    }
+    return mainSession.integrate();
   }
 
   /** 热更新运行时配置（仅支持值类型字段） */
