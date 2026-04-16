@@ -56,6 +56,10 @@ export interface SessionCompatibleForkOptions {
   tools?: unknown;
   tags?: string[];
   metadata?: Record<string, unknown>;
+  /** 子 session 的 L3→L2 提炼函数（不传则继承父 session 的） */
+  consolidateFn?: SessionCompatibleConsolidateFn;
+  /** 子 session 的上下文压缩函数（不传则继承父 session 的） */
+  compressFn?: SessionCompatibleCompressFn;
 }
 
 /** 结构兼容 @stello-ai/session 的 Session */
@@ -83,6 +87,8 @@ export interface MainSessionCompatible {
 export interface SessionRuntimeAdapterOptions {
   /** 把 session 的 L3 收敛成 L2 的函数 */
   consolidateFn: SessionCompatibleConsolidateFn;
+  /** 上下文压缩函数（可选） */
+  compressFn?: SessionCompatibleCompressFn;
   /** 自定义 send() 结果序列化方式，默认转成 JSON 字符串 */
   serializeResult?: (result: SessionCompatibleSendResult) => string;
 }
@@ -191,7 +197,13 @@ export async function adaptSessionToEngineRuntime(
       ? {
           async fork(forkOptions: SessionCompatibleForkOptions): Promise<EngineRuntimeSession> {
             const child = await session.fork!(forkOptions);
-            return adaptSessionToEngineRuntime(child, options);
+            // fork 时覆盖 consolidateFn/compressFn，未指定则继承父的
+            const childOptions: SessionRuntimeAdapterOptions = {
+              ...options,
+              ...(forkOptions.consolidateFn ? { consolidateFn: forkOptions.consolidateFn } : {}),
+              ...(forkOptions.compressFn ? { compressFn: forkOptions.compressFn } : {}),
+            };
+            return adaptSessionToEngineRuntime(child, childOptions);
           },
         }
       : {}),

@@ -115,6 +115,7 @@ function resolveRuntimeResolver(config: StelloAgentConfig): SessionRuntimeResolv
   if (config.session?.sessionResolver && config.session.consolidateFn) {
     const adaptOptions = {
       consolidateFn: config.session!.consolidateFn!,
+      compressFn: config.session!.compressFn,
       serializeResult: config.session!.serializeSendResult ?? serializeSessionSendResult,
     };
     return {

@@ -317,6 +317,8 @@ export class StelloEngineImpl implements StelloEngine {
       tools: options.tools,
       tags: options.tags,
       metadata: options.metadata,
+      consolidateFn: options.consolidateFn,
+      compressFn: options.compressFn,
     });
 
     if (this.splitGuard) {
@@ -377,6 +379,8 @@ export class StelloEngineImpl implements StelloEngine {
         context,
         llm: profile?.llm,
         tools: profile?.tools,
+        consolidateFn: profile?.consolidateFn,
+        compressFn: profile?.compressFn,
         metadata: {
           sourceSessionId: this.session.id,
           ...(Object.keys(stelloMeta).length > 0 ? { _stello: stelloMeta } : {}),

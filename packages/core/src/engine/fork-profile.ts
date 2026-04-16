@@ -1,4 +1,8 @@
 import type { LLMAdapter, LLMCompleteOptions, ForkContextFn } from '@stello-ai/session'
+import type {
+  SessionCompatibleConsolidateFn,
+  SessionCompatibleCompressFn,
+} from '../adapters/session-runtime'
 
 /**
  * Fork Profile — 预注册的 fork 配置模板
@@ -34,6 +38,10 @@ export interface ForkProfile {
   skills?: string[]
   /** 子会话的第一条 assistant 开场消息（优先于 LLM 提供的 prompt） */
   prompt?: string
+  /** 子 session 的 L3→L2 提炼函数（不传则继承父 session 的） */
+  consolidateFn?: SessionCompatibleConsolidateFn
+  /** 子 session 的上下文压缩函数（不传则继承父 session 的） */
+  compressFn?: SessionCompatibleCompressFn
 }
 
 /**

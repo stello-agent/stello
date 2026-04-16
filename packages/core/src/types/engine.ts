@@ -18,6 +18,10 @@ import type {
 import type { EngineRuntimeSession, EngineStreamResult, EngineTurnResult } from '../engine/stello-engine';
 import type { TurnRunnerOptions } from '../engine/turn-runner';
 import type { ForkContextFn, LLMAdapter, LLMCompleteOptions } from '@stello-ai/session';
+import type {
+  SessionCompatibleConsolidateFn,
+  SessionCompatibleCompressFn,
+} from '../adapters/session-runtime';
 
 // ─── 策略配置 ───
 
@@ -118,6 +122,10 @@ export interface EngineForkOptions {
   metadata?: Record<string, unknown>
   /** 显式指定拓扑父节点 ID（不传则用当前 session.id） */
   topologyParentId?: string
+  /** 子 session 的 L3→L2 提炼函数（不传则继承父 session 的） */
+  consolidateFn?: SessionCompatibleConsolidateFn
+  /** 子 session 的上下文压缩函数（不传则继承父 session 的） */
+  compressFn?: SessionCompatibleCompressFn
 }
 
 // ─── Session Runtime 解析器 ───
