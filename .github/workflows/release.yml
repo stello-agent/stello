@@ -38,7 +38,7 @@ jobs:
         run: pnpm test
 
       - name: Publish to npm
-        run: pnpm -r publish --no-git-checks --access public
+        run: pnpm --filter @stello-ai/session --filter @stello-ai/core publish --no-git-checks --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

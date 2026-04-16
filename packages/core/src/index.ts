@@ -159,6 +159,7 @@ export { createAnthropicAdapter } from '@stello-ai/session';
 export { InMemoryStorageAdapter } from '@stello-ai/session';
 export { createSessionTool } from '@stello-ai/session';
 export { tool } from '@stello-ai/session';
+export { SessionArchivedError, NotImplementedError } from '@stello-ai/session';
 export type {
   // LLM 适配器
   LLMAdapter, LLMResult, LLMChunk, LLMCompleteOptions, Message,
@@ -168,6 +169,11 @@ export type {
   AnthropicAdapterOptions,
   // Session API
   Session, MainSession, SendResult, StreamResult,
+  MessageQueryOptions,
+  // Session 元数据
+  SessionMetaUpdate, SessionFilter,
+  // Fork
+  ForkOptions, ForkContextFn,
   // 存储
   SessionStorage, MainStorage, ListRecordsOptions,
   // 函数签名
@@ -175,5 +181,5 @@ export type {
   CreateSessionOptions as SessionCreateOptions,
   LoadSessionOptions, CreateMainSessionOptions, LoadMainSessionOptions,
   // 工具
-  Tool, CallToolResult,
+  Tool, CallToolResult, ToolAnnotations,
 } from '@stello-ai/session';
