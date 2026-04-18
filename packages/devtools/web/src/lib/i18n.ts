@@ -65,6 +65,8 @@ const dict: Record<string, Record<Locale, string>> = {
   'conv.filterSessions': { en: 'Filter sessions...', zh: '筛选会话...' },
   'conv.noMessages': { en: 'No messages yet. Start a conversation below.', zh: '暂无消息，在下方开始对话。' },
   'conv.sendPlaceholder': { en: 'Send a message...', zh: '发送消息...' },
+  'conv.addImage': { en: 'Add image', zh: '添加图片' },
+  'conv.removeImage': { en: 'Remove image', zh: '移除图片' },
   'conv.loadFailed': { en: 'Failed to load sessions', zh: '加载会话失败' },
   'conv.noSession': { en: 'No session', zh: '未选择会话' },
   'conv.context': { en: 'Context', zh: '上下文' },

@@ -1,6 +1,8 @@
 import { Hono } from 'hono'
+import type { Context } from 'hono'
 import type { StelloAgent, StelloAgentHotConfig } from '@stello-ai/core'
 import type { LLMConfigProvider, PromptProvider, SessionAccessProvider, ToolsProvider, SkillsProvider, IntegrationProvider, ResetProvider, DevtoolsPersistedState, DevtoolsStateStore } from './types.js'
+import { normalizeTurnInput } from './multimodal-input.js'
 
 /** 让主 session 固定排第一，其余保持原始顺序 */
 async function orderSessionsWithMainFirst(agent: StelloAgent) {
@@ -161,6 +163,17 @@ export function createRoutes(
   const app = new Hono()
   withErrorHandler(app)
 
+  /** 解析并归一化 turn 输入。 */
+  const parseTurnInput = async (c: Context): Promise<string | Response> => {
+    const body = await c.req.json<{ input?: unknown }>()
+    try {
+      return normalizeTurnInput(body.input)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Invalid input'
+      return c.json({ error: message }, 400)
+    }
+  }
+
   /** 获取完整 session 树（递归 SessionTreeNode） */
   app.get('/sessions/tree', async (c) => {
     const tree = await agent.sessions.getTree()
@@ -240,7 +253,9 @@ export function createRoutes(
   /** 流式对话（NDJSON，含 tool call 事件） */
   app.post('/sessions/:id/stream', async (c) => {
     const id = c.req.param('id')
-    const { input } = await c.req.json<{ input: string }>()
+    const parsedInput = await parseTurnInput(c)
+    if (parsedInput instanceof Response) return parsedInput
+    const input = parsedInput
     try {
       const encoder = new TextEncoder()
       const toolCallTimers = new Map<string, number>()
@@ -306,7 +321,9 @@ export function createRoutes(
   /** 非流式对话 */
   app.post('/sessions/:id/turn', async (c) => {
     const id = c.req.param('id')
-    const { input } = await c.req.json<{ input: string }>()
+    const parsedInput = await parseTurnInput(c)
+    if (parsedInput instanceof Response) return parsedInput
+    const input = parsedInput
     const toolCallTimers = new Map<string, number>()
     const toolCalls: TurnToolCallDetail[] = []
     const result = await agent.turn(id, input, {

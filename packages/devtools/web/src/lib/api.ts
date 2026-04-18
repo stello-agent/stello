@@ -108,6 +108,26 @@ export interface TurnResult {
   }
 }
 
+/** 多模态文本输入块。 */
+export interface MultimodalTextPart {
+  type: 'text'
+  text: string
+}
+
+/** 多模态图片输入块。 */
+export interface MultimodalImagePart {
+  type: 'image_url'
+  imageUrl: string
+  mimeType?: string
+  name?: string
+}
+
+/** 多模态输入块。 */
+export type MultimodalInputPart = MultimodalTextPart | MultimodalImagePart
+
+/** turn 输入，兼容历史 string 协议。 */
+export type TurnInput = string | { parts: MultimodalInputPart[] }
+
 /** 通用 fetch 封装 */
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -157,7 +177,7 @@ export function enterSession(id: string) {
 }
 
 /** 发送 turn */
-export function sendTurn(sessionId: string, input: string) {
+export function sendTurn(sessionId: string, input: TurnInput) {
   return request<TurnResult>(`/sessions/${sessionId}/turn`, {
     method: 'POST',
     body: JSON.stringify({ input }),
