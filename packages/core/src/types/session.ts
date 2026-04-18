@@ -8,22 +8,17 @@ export type SessionStatus = 'active' | 'archived';
  *
  * Session 是 Stello 的原子单元——一个独立的对话空间。
  * 不包含树结构信息，Session 不感知自己在拓扑中的位置。
+ * 清理后只保留核心标识/状态/时间戳，scope/tags/metadata 已迁出。
  */
 export interface SessionMeta {
   /** 唯一标识 */
   readonly id: string;
   /** 显示名称 */
   label: string;
-  /** 作用域标签，影响记忆系统的召回范围 */
-  scope: string | null;
   /** 当前状态 */
   status: SessionStatus;
   /** 对话轮次数 */
   turnCount: number;
-  /** 开发者自定义元数据（`_stello` 为框架保留前缀，请勿覆盖） */
-  metadata: Record<string, unknown>;
-  /** 自由标签 */
-  tags: string[];
   /** 创建时间（ISO 8601） */
   createdAt: string;
   /** 最后更新时间（ISO 8601） */
@@ -52,6 +47,8 @@ export interface TopologyNode {
   index: number;
   /** 显示名称（冗余存放，渲染用） */
   label: string;
+  /** fork 时的上下文来源 session ID（当 topologyParentId 被覆盖时可能 ≠ parentId） */
+  sourceSessionId?: string;
 }
 
 /**
@@ -82,12 +79,8 @@ export interface CreateSessionOptions {
   parentId: string;
   /** 显示名称 */
   label: string;
-  /** 作用域标签 */
-  scope?: string;
-  /** 自定义元数据 */
-  metadata?: Record<string, unknown>;
-  /** 标签 */
-  tags?: string[];
+  /** fork 时的上下文来源 session（不传默认语义 = parentId） */
+  sourceSessionId?: string;
 }
 
 /**
@@ -112,7 +105,7 @@ export interface SessionTree {
   /** 更新 Session 元数据 */
   updateMeta(
     id: string,
-    updates: Partial<Pick<SessionMeta, 'label' | 'scope' | 'tags' | 'metadata' | 'turnCount'>>,
+    updates: Partial<Pick<SessionMeta, 'label' | 'turnCount'>>,
   ): Promise<SessionMeta>;
   /** 获取单个拓扑节点 */
   getNode(id: string): Promise<TopologyNode | null>;

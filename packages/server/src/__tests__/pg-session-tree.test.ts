@@ -41,9 +41,6 @@ describe('PgSessionTree', () => {
       const child = await tree.createChild({
         parentId: root.id,
         label: 'Child 1',
-        scope: 'coding',
-        tags: ['test'],
-        metadata: { key: 'val' },
       })
 
       // TopologyNode 字段
@@ -51,11 +48,25 @@ describe('PgSessionTree', () => {
       expect(child.label).toBe('Child 1')
       expect(child.depth).toBe(1)
       expect(child.index).toBe(0)
+      expect(child.sourceSessionId).toBeUndefined()
 
       // SessionMeta 字段通过 get() 验证
       const meta = await tree.get(child.id)
       expect(meta!.label).toBe('Child 1')
       expect(meta!.status).toBe('active')
+    })
+
+    it('写入 sourceSessionId 后 TopologyNode 直接暴露该字段', async () => {
+      const root = await tree.createRoot()
+      const a = await tree.createChild({ parentId: root.id, label: 'A' })
+      const b = await tree.createChild({
+        parentId: root.id,
+        label: 'B',
+        sourceSessionId: a.id,
+      })
+      expect(b.sourceSessionId).toBe(a.id)
+      const node = await tree.getNode(b.id)
+      expect(node!.sourceSessionId).toBe(a.id)
     })
 
     it('多个子节点 index 递增', async () => {
@@ -115,7 +126,7 @@ describe('PgSessionTree', () => {
     it('返回递归树结构', async () => {
       const root = await tree.createRoot('Root')
       const c1 = await tree.createChild({ parentId: root.id, label: 'C1' })
-      await tree.createChild({ parentId: c1.id, label: 'C1.1', metadata: { sourceSessionId: c1.id } })
+      await tree.createChild({ parentId: c1.id, label: 'C1.1', sourceSessionId: c1.id })
       await tree.createChild({ parentId: root.id, label: 'C2' })
 
       const sessionTree = await tree.getTree()
@@ -127,6 +138,23 @@ describe('PgSessionTree', () => {
       expect(sessionTree.children[0]!.children[0]!.label).toBe('C1.1')
       expect(sessionTree.children[0]!.children[0]!.sourceSessionId).toBe(c1.id)
       expect(sessionTree.children[1]!.label).toBe('C2')
+    })
+
+    it('回填：顶层 source_session_id 为空时从 legacy metadata 取', async () => {
+      const root = await tree.createRoot('Root')
+      const c1 = await tree.createChild({ parentId: root.id, label: 'C1' })
+      const legacyChild = await tree.createChild({ parentId: c1.id, label: 'C1.1' })
+      // 直接改 DB：模拟存量数据仅写在 metadata 中
+      await pool.query(
+        `UPDATE sessions SET source_session_id = NULL, metadata = $1 WHERE id = $2`,
+        [JSON.stringify({ sourceSessionId: c1.id }), legacyChild.id],
+      )
+
+      const node = await tree.getNode(legacyChild.id)
+      expect(node!.sourceSessionId).toBe(c1.id)
+
+      const sessionTree = await tree.getTree()
+      expect(sessionTree.children[0]!.children[0]!.sourceSessionId).toBe(c1.id)
     })
   })
 
@@ -209,9 +237,9 @@ describe('PgSessionTree', () => {
       const root = await tree.createRoot()
       const child = await tree.createChild({ parentId: root.id, label: 'Original' })
 
-      const updated = await tree.updateMeta(child.id, { label: 'Renamed', tags: ['new'] })
+      const updated = await tree.updateMeta(child.id, { label: 'Renamed', turnCount: 2 })
       expect(updated.label).toBe('Renamed')
-      expect(updated.tags).toEqual(['new'])
+      expect(updated.turnCount).toBe(2)
     })
   })
 

@@ -10,16 +10,25 @@ function now(): string {
   return new Date().toISOString()
 }
 
-/** 从 DB 行投影为 SessionMeta（不含树字段） */
+/** 从 DB 行解析 sourceSessionId：优先读一等列，回退到 legacy metadata.sourceSessionId */
+function resolveSourceSessionId(row: Record<string, unknown>): string | undefined {
+  const first = row['source_session_id']
+  if (typeof first === 'string') return first
+  const metadata = row['metadata']
+  if (metadata && typeof metadata === 'object') {
+    const legacy = (metadata as Record<string, unknown>)['sourceSessionId']
+    if (typeof legacy === 'string') return legacy
+  }
+  return undefined
+}
+
+/** 从 DB 行投影为 SessionMeta（不含树字段、scope/tags/metadata 已清理） */
 function rowToSessionMeta(row: Record<string, unknown>): SessionMeta {
   return {
     id: row['id'] as string,
     label: row['label'] as string,
-    scope: (row['scope'] as string) ?? null,
     status: row['status'] as 'active' | 'archived',
     turnCount: row['turn_count'] as number,
-    metadata: (row['metadata'] as Record<string, unknown>) ?? {},
-    tags: (row['tags'] as string[]) ?? [],
     createdAt: (row['created_at'] as Date).toISOString(),
     updatedAt: (row['updated_at'] as Date).toISOString(),
     lastActiveAt: (row['last_active_at'] as Date).toISOString(),
@@ -32,7 +41,7 @@ function rowToTopologyNode(
   children: string[],
   refs: string[],
 ): TopologyNode {
-  return {
+  const node: TopologyNode = {
     id: row['id'] as string,
     parentId: (row['parent_id'] as string) ?? null,
     children,
@@ -41,6 +50,9 @@ function rowToTopologyNode(
     index: row['index'] as number,
     label: row['label'] as string,
   }
+  const source = resolveSourceSessionId(row)
+  if (source !== undefined) node.sourceSessionId = source
+  return node
 }
 
 /**
@@ -58,8 +70,8 @@ export class PgSessionTree implements SessionTree {
     const id = randomUUID()
     const ts = now()
     await this.client.query(
-      `INSERT INTO sessions (id, space_id, parent_id, label, role, status, depth, "index", turn_count, tags, metadata, created_at, updated_at, last_active_at)
-       VALUES ($1, $2, NULL, $3, 'main', 'active', 0, 0, 0, '{}', '{}', $4, $4, $4)`,
+      `INSERT INTO sessions (id, space_id, parent_id, label, role, status, depth, "index", turn_count, created_at, updated_at, last_active_at)
+       VALUES ($1, $2, NULL, $3, 'main', 'active', 0, 0, 0, $4, $4, $4)`,
       [id, this.spaceId, label, ts],
     )
     return { id, parentId: null, children: [], refs: [], depth: 0, index: 0, label }
@@ -83,17 +95,17 @@ export class PgSessionTree implements SessionTree {
     const depth = (parentRow['depth'] as number) + 1
 
     await this.client.query(
-      `INSERT INTO sessions (id, space_id, parent_id, label, role, status, scope, depth, "index", turn_count, tags, metadata, created_at, updated_at, last_active_at)
-       VALUES ($1, $2, $3, $4, 'standard', 'active', $5, $6, $7, 0, $8, $9, $10, $10, $10)`,
+      `INSERT INTO sessions (id, space_id, parent_id, label, role, status, depth, "index", turn_count, source_session_id, created_at, updated_at, last_active_at)
+       VALUES ($1, $2, $3, $4, 'standard', 'active', $5, $6, 0, $7, $8, $8, $8)`,
       [
         id, this.spaceId, options.parentId, options.label,
-        options.scope ?? null, depth, idx,
-        options.tags ?? [], JSON.stringify(options.metadata ?? {}),
+        depth, idx,
+        options.sourceSessionId ?? null,
         ts,
       ],
     )
 
-    return {
+    const node: TopologyNode = {
       id,
       parentId: options.parentId,
       children: [],
@@ -102,6 +114,8 @@ export class PgSessionTree implements SessionTree {
       index: idx,
       label: options.label,
     }
+    if (options.sourceSessionId !== undefined) node.sourceSessionId = options.sourceSessionId
+    return node
   }
 
   /** 获取单个 Session 元数据 */
@@ -165,10 +179,10 @@ export class PgSessionTree implements SessionTree {
     )
   }
 
-  /** 更新 Session 元数据 */
+  /** 更新 Session 元数据（仅 label / turnCount） */
   async updateMeta(
     id: string,
-    updates: Partial<Pick<SessionMeta, 'label' | 'scope' | 'tags' | 'metadata' | 'turnCount'>>,
+    updates: Partial<Pick<SessionMeta, 'label' | 'turnCount'>>,
   ): Promise<SessionMeta> {
     await this.requireRow(id)
 
@@ -179,21 +193,6 @@ export class PgSessionTree implements SessionTree {
     if (updates.label !== undefined) {
       sets.push(`label = $${idx}`)
       params.push(updates.label)
-      idx++
-    }
-    if (updates.scope !== undefined) {
-      sets.push(`scope = $${idx}`)
-      params.push(updates.scope)
-      idx++
-    }
-    if (updates.tags !== undefined) {
-      sets.push(`tags = $${idx}`)
-      params.push(updates.tags)
-      idx++
-    }
-    if (updates.metadata !== undefined) {
-      sets.push(`metadata = $${idx}`)
-      params.push(JSON.stringify(updates.metadata))
       idx++
     }
     if (updates.turnCount !== undefined) {
@@ -226,7 +225,7 @@ export class PgSessionTree implements SessionTree {
   /** 获取完整递归树 */
   async getTree(): Promise<SessionTreeNode> {
     const { rows } = await this.client.query(
-      'SELECT id, parent_id, label, status, turn_count, metadata FROM sessions WHERE space_id = $1 ORDER BY depth ASC, "index" ASC',
+      'SELECT id, parent_id, label, status, turn_count, source_session_id, metadata FROM sessions WHERE space_id = $1 ORDER BY depth ASC, "index" ASC',
       [this.spaceId],
     )
 
@@ -234,16 +233,15 @@ export class PgSessionTree implements SessionTree {
     let root: SessionTreeNode | null = null
 
     for (const row of rows) {
+      const source = resolveSourceSessionId(row)
       const node: SessionTreeNode = {
         id: row['id'] as string,
         label: row['label'] as string,
-        sourceSessionId: typeof (row['metadata'] as Record<string, unknown> | null)?.['sourceSessionId'] === 'string'
-          ? (row['metadata'] as Record<string, unknown>)['sourceSessionId'] as string
-          : undefined,
         status: row['status'] as 'active' | 'archived',
         turnCount: (row['turn_count'] as number) ?? 0,
         children: [],
       }
+      if (source !== undefined) node.sourceSessionId = source
       nodeMap.set(node.id, node)
 
       const parentId = row['parent_id'] as string | null

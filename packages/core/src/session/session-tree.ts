@@ -8,7 +8,11 @@ import type {
   CreateSessionOptions,
 } from '../types/session';
 
-/** 内部存储格式（meta.json），包含 session + topology 全部字段 */
+/**
+ * 内部存储格式（meta.json），包含 session + topology 全部字段。
+ * `metadata` 保留用于读取存量 legacy 数据（例如历史上写入的 metadata.sourceSessionId），
+ * 新写入不再依赖它承载框架字段。
+ */
 interface StoredMeta {
   id: string;
   parentId: string | null;
@@ -16,12 +20,13 @@ interface StoredMeta {
   refs: string[];
   label: string;
   index: number;
-  scope: string | null;
   status: 'active' | 'archived';
   depth: number;
   turnCount: number;
-  metadata: Record<string, unknown>;
-  tags: string[];
+  /** fork 上下文来源 session ID（一等字段，新写入的数据直接落这里） */
+  sourceSessionId?: string;
+  /** 历史 legacy 数据的 metadata 槽位；新数据不再写入，仅用于读取兼容 */
+  metadata?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
   lastActiveAt: string;
@@ -37,16 +42,20 @@ function now(): string {
   return new Date().toISOString();
 }
 
+/** 从 StoredMeta 解析 sourceSessionId：优先读顶层，回退到 legacy metadata.sourceSessionId */
+function resolveSourceSessionId(stored: StoredMeta): string | undefined {
+  if (typeof stored.sourceSessionId === 'string') return stored.sourceSessionId;
+  const legacy = stored.metadata?.['sourceSessionId'];
+  return typeof legacy === 'string' ? legacy : undefined;
+}
+
 /** 从内部存储格式投影为 SessionMeta */
 function toSessionMeta(stored: StoredMeta): SessionMeta {
   return {
     id: stored.id,
     label: stored.label,
-    scope: stored.scope,
     status: stored.status,
     turnCount: stored.turnCount,
-    metadata: stored.metadata,
-    tags: stored.tags,
     createdAt: stored.createdAt,
     updatedAt: stored.updatedAt,
     lastActiveAt: stored.lastActiveAt,
@@ -55,7 +64,7 @@ function toSessionMeta(stored: StoredMeta): SessionMeta {
 
 /** 从内部存储格式投影为 TopologyNode */
 function toTopologyNode(stored: StoredMeta): TopologyNode {
-  return {
+  const node: TopologyNode = {
     id: stored.id,
     parentId: stored.parentId,
     children: stored.children,
@@ -64,6 +73,9 @@ function toTopologyNode(stored: StoredMeta): TopologyNode {
     index: stored.index,
     label: stored.label,
   };
+  const source = resolveSourceSessionId(stored);
+  if (source !== undefined) node.sourceSessionId = source;
+  return node;
 }
 
 /**
@@ -85,12 +97,9 @@ export class SessionTreeImpl implements SessionTree {
       refs: [],
       label,
       index: 0,
-      scope: null,
       status: 'active',
       depth: 0,
       turnCount: 0,
-      metadata: {},
-      tags: [],
       createdAt: ts,
       updatedAt: ts,
       lastActiveAt: ts,
@@ -108,6 +117,7 @@ export class SessionTreeImpl implements SessionTree {
     return toTopologyNode(stored);
   }
 
+  /** 创建子 Session，写入 meta.json 并更新父节点 children 列表 */
   async createChild(options: CreateSessionOptions): Promise<TopologyNode> {
     const parent = await this.requireStored(options.parentId);
     const ts = now();
@@ -118,16 +128,16 @@ export class SessionTreeImpl implements SessionTree {
       refs: [],
       label: options.label,
       index: parent.children.length,
-      scope: options.scope ?? null,
       status: 'active',
       depth: parent.depth + 1,
       turnCount: 0,
-      metadata: options.metadata ?? {},
-      tags: options.tags ?? [],
       createdAt: ts,
       updatedAt: ts,
       lastActiveAt: ts,
     };
+    if (options.sourceSessionId !== undefined) {
+      stored.sourceSessionId = options.sourceSessionId;
+    }
     // 写子 Session meta.json
     await this.fs.writeJSON(metaPath(stored.id), stored);
     // 初始化三个 .md 内容文件
@@ -186,15 +196,13 @@ export class SessionTreeImpl implements SessionTree {
     await this.fs.writeJSON(metaPath(fromId), from);
   }
 
+  /** 更新 SessionMeta 可变字段（label / turnCount） */
   async updateMeta(
     id: string,
-    updates: Partial<Pick<SessionMeta, 'label' | 'scope' | 'tags' | 'metadata' | 'turnCount'>>,
+    updates: Partial<Pick<SessionMeta, 'label' | 'turnCount'>>,
   ): Promise<SessionMeta> {
     const stored = await this.requireStored(id);
     if (updates.label !== undefined) stored.label = updates.label;
-    if (updates.scope !== undefined) stored.scope = updates.scope;
-    if (updates.tags !== undefined) stored.tags = updates.tags;
-    if (updates.metadata !== undefined) stored.metadata = updates.metadata;
     if (updates.turnCount !== undefined) stored.turnCount = updates.turnCount;
     stored.updatedAt = now();
     await this.fs.writeJSON(metaPath(id), stored);
@@ -212,19 +220,22 @@ export class SessionTreeImpl implements SessionTree {
     const root = all.find((s) => s.parentId === null);
     if (!root) throw new Error('根 Session 不存在');
 
-    const buildNode = (stored: StoredMeta): SessionTreeNode => ({
-      id: stored.id,
-      label: stored.label,
-      sourceSessionId: typeof stored.metadata?.['sourceSessionId'] === 'string'
-        ? stored.metadata['sourceSessionId'] as string
-        : undefined,
-      status: stored.status,
-      turnCount: stored.turnCount,
-      children: stored.children
-        .map((childId) => map.get(childId))
-        .filter((c): c is StoredMeta => c !== undefined)
-        .map(buildNode),
-    });
+    // 递归构建树节点，sourceSessionId 走统一解析（兼容 legacy metadata）
+    const buildNode = (stored: StoredMeta): SessionTreeNode => {
+      const source = resolveSourceSessionId(stored);
+      const node: SessionTreeNode = {
+        id: stored.id,
+        label: stored.label,
+        status: stored.status,
+        turnCount: stored.turnCount,
+        children: stored.children
+          .map((childId) => map.get(childId))
+          .filter((c): c is StoredMeta => c !== undefined)
+          .map(buildNode),
+      };
+      if (source !== undefined) node.sourceSessionId = source;
+      return node;
+    };
 
     return buildNode(root);
   }

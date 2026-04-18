@@ -91,14 +91,16 @@ describe('SessionTreeImpl', () => {
     expect(found?.label).toBe('测试');
     expect(found?.status).toBe('active');
     expect(found?.turnCount).toBe(0);
-    expect(found?.tags).toEqual([]);
-    expect(found?.metadata).toEqual({});
     // SessionMeta 不含拓扑字段
     expect(found).not.toHaveProperty('parentId');
     expect(found).not.toHaveProperty('children');
     expect(found).not.toHaveProperty('depth');
     expect(found).not.toHaveProperty('index');
     expect(found).not.toHaveProperty('refs');
+    // SessionMeta 不再暴露 scope/tags/metadata
+    expect(found).not.toHaveProperty('scope');
+    expect(found).not.toHaveProperty('tags');
+    expect(found).not.toHaveProperty('metadata');
 
     const notFound = await tree.get('not-exist');
     expect(notFound).toBeNull();
@@ -148,7 +150,6 @@ describe('SessionTreeImpl', () => {
     // TopologyNode 不含 SessionMeta 专有字段
     expect(rootNode).not.toHaveProperty('status');
     expect(rootNode).not.toHaveProperty('turnCount');
-    expect(rootNode).not.toHaveProperty('tags');
 
     const childNode = await tree.getNode(child.id);
     expect(childNode?.parentId).toBe(root.id);
@@ -158,13 +159,84 @@ describe('SessionTreeImpl', () => {
     expect(notFound).toBeNull();
   });
 
+  // ─── getNode.sourceSessionId（一等字段） ───
+
+  it('createChild 写入 sourceSessionId 后 getNode 暴露该字段', async () => {
+    const root = await tree.createRoot();
+    const a = await tree.createChild({ parentId: root.id, label: 'A' });
+    const b = await tree.createChild({
+      parentId: root.id,
+      label: 'B',
+      sourceSessionId: a.id,
+    });
+
+    // createChild 返回值直接带 sourceSessionId
+    expect(b.sourceSessionId).toBe(a.id);
+
+    // 持久化后 getNode 仍能读到
+    const node = await tree.getNode(b.id);
+    expect(node?.sourceSessionId).toBe(a.id);
+  });
+
+  it('createChild 未传 sourceSessionId 时拓扑节点该字段为 undefined', async () => {
+    const root = await tree.createRoot();
+    const child = await tree.createChild({ parentId: root.id, label: 'C' });
+    expect(child.sourceSessionId).toBeUndefined();
+    const node = await tree.getNode(child.id);
+    expect(node?.sourceSessionId).toBeUndefined();
+  });
+
+  it('回填读取：顶层 sourceSessionId 缺失时从 legacy metadata.sourceSessionId 取', async () => {
+    // 直接写一份 legacy 格式的 meta.json（仅含 metadata.sourceSessionId）
+    const fs = new NodeFileSystemAdapter(tmpDir);
+    const ts = new Date().toISOString();
+    const rootId = 'legacy-root';
+    const childId = 'legacy-child';
+    await fs.writeJSON(`sessions/${rootId}/meta.json`, {
+      id: rootId,
+      parentId: null,
+      children: [childId],
+      refs: [],
+      label: 'root',
+      index: 0,
+      status: 'active',
+      depth: 0,
+      turnCount: 0,
+      metadata: {},
+      createdAt: ts,
+      updatedAt: ts,
+      lastActiveAt: ts,
+    });
+    await fs.writeJSON(`sessions/${childId}/meta.json`, {
+      id: childId,
+      parentId: rootId,
+      children: [],
+      refs: [],
+      label: 'child',
+      index: 0,
+      status: 'active',
+      depth: 1,
+      turnCount: 0,
+      metadata: { sourceSessionId: rootId },
+      createdAt: ts,
+      updatedAt: ts,
+      lastActiveAt: ts,
+    });
+
+    const node = await tree.getNode(childId);
+    expect(node?.sourceSessionId).toBe(rootId);
+
+    const treeData = await tree.getTree();
+    expect(treeData.children[0]?.sourceSessionId).toBe(rootId);
+  });
+
   // ─── getTree ───
 
   it('getTree 返回递归树结构', async () => {
     const root = await tree.createRoot('根');
     const a = await tree.createChild({ parentId: root.id, label: 'A' });
     const b = await tree.createChild({ parentId: root.id, label: 'B' });
-    await tree.createChild({ parentId: a.id, label: 'A1', metadata: { sourceSessionId: a.id } });
+    await tree.createChild({ parentId: a.id, label: 'A1', sourceSessionId: a.id });
 
     const treeData = await tree.getTree();
     expect(treeData.id).toBe(root.id);
@@ -288,21 +360,24 @@ describe('SessionTreeImpl', () => {
 
   // ─── updateMeta（返回 SessionMeta） ───
 
-  it('updateMeta 更新字段并返回 SessionMeta', async () => {
+  it('updateMeta 更新 label/turnCount 并返回 SessionMeta', async () => {
     const root = await tree.createRoot();
     const updated = await tree.updateMeta(root.id, {
       label: '新名称',
-      tags: ['tag1', 'tag2'],
-      scope: 'us-application',
+      turnCount: 3,
     });
     expect(updated.label).toBe('新名称');
-    expect(updated.tags).toEqual(['tag1', 'tag2']);
-    expect(updated.scope).toBe('us-application');
+    expect(updated.turnCount).toBe(3);
     // updateMeta 返回 SessionMeta，不含拓扑字段
     expect(updated).not.toHaveProperty('parentId');
     expect(updated).not.toHaveProperty('depth');
+    // 也不再暴露 scope/tags/metadata
+    expect(updated).not.toHaveProperty('scope');
+    expect(updated).not.toHaveProperty('tags');
+    expect(updated).not.toHaveProperty('metadata');
     // 持久化验证
     const reread = await tree.get(root.id);
     expect(reread?.label).toBe('新名称');
+    expect(reread?.turnCount).toBe(3);
   });
 });
