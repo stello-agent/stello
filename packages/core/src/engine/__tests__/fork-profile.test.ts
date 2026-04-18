@@ -52,7 +52,7 @@ describe('resolveSystemPrompt', () => {
 
   it('preset 模式：支持函数模板 + vars', () => {
     const profile: ForkProfile = {
-      systemPrompt: (vars) => `你是${vars.region}专家`,
+      systemPromptFn: (vars) => `你是${vars.region}专家`,
       systemPromptMode: 'preset',
     }
     expect(resolveSystemPrompt(profile, undefined, { region: '美国' }))
