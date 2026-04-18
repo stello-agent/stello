@@ -97,6 +97,11 @@ export interface AgentConfig {
     hasLifecycle: boolean
     hasConfirm: boolean
   }
+  scheduling: {
+    hasScheduler: boolean
+    consolidation: { trigger: string; everyNTurns: number | null }
+    integration: { trigger: string; everyNTurns: number | null }
+  }
   hooks: string[]
 }
 

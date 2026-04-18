@@ -96,6 +96,17 @@ function serializeConfig(agent: StelloAgent) {
       hasLifecycle: !!config.capabilities.lifecycle,
       hasConfirm: !!config.capabilities.confirm,
     },
+    scheduling: {
+      hasScheduler: false,
+      consolidation: {
+        trigger: config.orchestration?.consolidateEveryNTurns ? 'everyNTurns' : 'manual',
+        everyNTurns: config.orchestration?.consolidateEveryNTurns ?? null,
+      },
+      integration: {
+        trigger: 'manual',
+        everyNTurns: null,
+      },
+    },
     hooks: hookKeys,
   }
 }
