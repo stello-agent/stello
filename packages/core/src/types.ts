@@ -39,3 +39,6 @@ export type {
   EngineForkOptions,
   SessionRuntimeResolver,
 } from './types/engine';
+
+// Session 统一配置
+export type { SessionConfig, MainSessionConfig } from './types/session-config';
