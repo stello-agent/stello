@@ -1,5 +1,7 @@
 // ─── Session 系统类型定义 ───
 
+import type { SerializableSessionConfig } from './session-config';
+
 /** Session 状态 */
 export type SessionStatus = 'active' | 'archived';
 
@@ -115,4 +117,19 @@ export interface SessionTree {
   getAncestors(id: string): Promise<TopologyNode[]>;
   /** 获取同级兄弟节点 */
   getSiblings(id: string): Promise<TopologyNode[]>;
+  /**
+   * 读取 Session 的固化配置（可序列化子集）
+   *
+   * 普通 Session 与 Main Session 共用同一存储槽。未写入或文件不存在时返回 null。
+   * 仅包含可序列化字段（systemPrompt/skills），函数/适配器等运行时引用由
+   * 应用层通过 sessionDefaults 重新合成。
+   */
+  getConfig(id: string): Promise<SerializableSessionConfig | null>;
+  /**
+   * 写入 Session 的固化配置（可序列化子集）
+   *
+   * 覆盖已有配置。调用方只传可序列化字段；若传入完整 SessionConfig 框架不会拒绝，
+   * 但非可序列化字段在反序列化时将被丢弃。
+   */
+  putConfig(id: string, config: SerializableSessionConfig): Promise<void>;
 }

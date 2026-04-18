@@ -7,6 +7,7 @@ import type {
   SessionTree,
   CreateSessionOptions,
 } from '../types/session';
+import type { SerializableSessionConfig } from '../types/session-config';
 
 /**
  * 内部存储格式（meta.json），包含 session + topology 全部字段。
@@ -35,6 +36,11 @@ interface StoredMeta {
 /** meta.json 的存储路径 */
 function metaPath(id: string): string {
   return `sessions/${id}/meta.json`;
+}
+
+/** config.json 的存储路径（持久化 SessionConfig 的可序列化子集） */
+function configPath(id: string): string {
+  return `sessions/${id}/config.json`;
 }
 
 /** 获取当前时间 ISO 字符串 */
@@ -250,6 +256,16 @@ export class SessionTreeImpl implements SessionTree {
       current = parent;
     }
     return ancestors;
+  }
+
+  /** 读取 Session 固化配置，缺失/不可读时返回 null */
+  async getConfig(id: string): Promise<SerializableSessionConfig | null> {
+    return this.fs.readJSON<SerializableSessionConfig>(configPath(id));
+  }
+
+  /** 写入 Session 固化配置（覆盖） */
+  async putConfig(id: string, config: SerializableSessionConfig): Promise<void> {
+    await this.fs.writeJSON(configPath(id), config);
   }
 
   async getSiblings(id: string): Promise<TopologyNode[]> {

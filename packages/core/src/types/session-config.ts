@@ -49,3 +49,29 @@ export interface MainSessionConfig {
   /** 上下文压缩函数 */
   compressFn?: SessionCompatibleCompressFn;
 }
+
+/**
+ * SessionConfig 的可序列化子集
+ *
+ * 用于存储固化配置：只保留纯数据字段，丢弃函数/适配器等运行时引用。
+ * 运行时通过 mergeSessionConfig 与 sessionDefaults 重新合成完整 SessionConfig。
+ */
+export interface SerializableSessionConfig {
+  /** 该 Session 的 system prompt */
+  systemPrompt?: string;
+  /** skill 白名单 */
+  skills?: string[];
+}
+
+/**
+ * MainSessionConfig 的可序列化子集
+ *
+ * 语义与 SerializableSessionConfig 相同，但独立声明以保持与 MainSessionConfig
+ * 的一一对应关系，便于未来各自扩展。
+ */
+export interface SerializableMainSessionConfig {
+  /** Main Session 的 system prompt */
+  systemPrompt?: string;
+  /** skill 白名单 */
+  skills?: string[];
+}

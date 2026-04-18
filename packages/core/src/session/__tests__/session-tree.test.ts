@@ -380,4 +380,65 @@ describe('SessionTreeImpl', () => {
     expect(reread?.label).toBe('新名称');
     expect(reread?.turnCount).toBe(3);
   });
+
+  // ─── getConfig / putConfig（固化 SessionConfig 可序列化子集） ───
+
+  it('putConfig → getConfig 往返读取相同内容', async () => {
+    const root = await tree.createRoot();
+    const config = { systemPrompt: '你是一个助手', skills: ['math', 'code'] };
+    await tree.putConfig(root.id, config);
+    const read = await tree.getConfig(root.id);
+    expect(read).toEqual(config);
+  });
+
+  it('getConfig 在未写入配置时返回 null', async () => {
+    const root = await tree.createRoot();
+    const read = await tree.getConfig(root.id);
+    expect(read).toBeNull();
+  });
+
+  it('putConfig 覆盖已有配置', async () => {
+    const root = await tree.createRoot();
+    await tree.putConfig(root.id, { systemPrompt: 'A', skills: ['a'] });
+    await tree.putConfig(root.id, { systemPrompt: 'B', skills: ['b', 'c'] });
+    const read = await tree.getConfig(root.id);
+    expect(read).toEqual({ systemPrompt: 'B', skills: ['b', 'c'] });
+  });
+
+  it('putConfig 仅含 systemPrompt 的部分配置', async () => {
+    const root = await tree.createRoot();
+    await tree.putConfig(root.id, { systemPrompt: '只有 prompt' });
+    const read = await tree.getConfig(root.id);
+    expect(read).toEqual({ systemPrompt: '只有 prompt' });
+    expect(read).not.toHaveProperty('skills');
+  });
+
+  it('putConfig 仅含 skills 的部分配置', async () => {
+    const root = await tree.createRoot();
+    await tree.putConfig(root.id, { skills: ['only-skills'] });
+    const read = await tree.getConfig(root.id);
+    expect(read).toEqual({ skills: ['only-skills'] });
+    expect(read).not.toHaveProperty('systemPrompt');
+  });
+
+  it('putConfig 空对象也能存读', async () => {
+    const root = await tree.createRoot();
+    await tree.putConfig(root.id, {});
+    const read = await tree.getConfig(root.id);
+    expect(read).toEqual({});
+  });
+
+  it('putConfig 与 updateMeta 互不干扰', async () => {
+    const root = await tree.createRoot('初始');
+    await tree.putConfig(root.id, { systemPrompt: '固化 prompt', skills: ['s'] });
+    // 更新 meta 不应影响 config
+    await tree.updateMeta(root.id, { label: '新名称', turnCount: 5 });
+    const config = await tree.getConfig(root.id);
+    expect(config).toEqual({ systemPrompt: '固化 prompt', skills: ['s'] });
+    // 反向：更新 config 不应影响 meta
+    await tree.putConfig(root.id, { systemPrompt: '再改', skills: ['t'] });
+    const meta = await tree.get(root.id);
+    expect(meta?.label).toBe('新名称');
+    expect(meta?.turnCount).toBe(5);
+  });
 });
