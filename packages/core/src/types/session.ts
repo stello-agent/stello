@@ -92,6 +92,8 @@ export interface CreateSessionOptions {
  * 不支持删除，只支持归档（归档不连带子 Session）。
  */
 export interface SessionTree {
+  /** 创建根 Session，返回拓扑节点（label 不传由实现兜底默认值） */
+  createRoot(label?: string): Promise<TopologyNode>;
   /** 创建子 Session，返回拓扑节点 */
   createChild(options: CreateSessionOptions): Promise<TopologyNode>;
   /** 获取单个 Session 元数据 */

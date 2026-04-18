@@ -93,7 +93,7 @@ function toTopologyNode(stored: StoredMeta): TopologyNode {
 export class SessionTreeImpl implements SessionTree {
   constructor(private readonly fs: FileSystemAdapter) {}
 
-  /** 创建根 Session（不在接口中，初始化时调用） */
+  /** 创建根 Session，初始化配套 .md 与 core.json */
   async createRoot(label = 'Root'): Promise<TopologyNode> {
     const ts = now();
     const stored: StoredMeta = {

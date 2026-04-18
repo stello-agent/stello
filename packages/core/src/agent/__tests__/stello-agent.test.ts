@@ -407,4 +407,136 @@ describe('StelloAgent', () => {
     expect(result.turn.rawResponse).toContain('"content":"done"');
     expect(result.turn.toolCallsExecuted).toBe(1);
   });
+
+  describe('createMainSession', () => {
+    /** 构建带 createRoot/putConfig/getConfig 能力的 sessions mock */
+    function sessionsMock() {
+      const store = new Map<string, unknown>();
+      const createRoot = vi.fn().mockImplementation(async (label?: string) => ({
+        id: 'root',
+        parentId: null,
+        children: [],
+        refs: [],
+        depth: 0,
+        index: 0,
+        label: label ?? 'Root',
+      }));
+      const putConfig = vi.fn().mockImplementation(async (id: string, config: unknown) => {
+        store.set(id, config);
+      });
+      const getConfig = vi.fn().mockImplementation(async (id: string) => store.get(id) ?? null);
+      return { createRoot, putConfig, getConfig, store };
+    }
+
+    it('createMainSession 返回根拓扑节点（指定 label）', async () => {
+      const sessions = sessionsMock();
+      const agent = createStelloAgent(
+        baseConfig({
+          sessions: {
+            createRoot: sessions.createRoot,
+            putConfig: sessions.putConfig,
+            getConfig: sessions.getConfig,
+          },
+        }),
+      );
+
+      const node = await agent.createMainSession({ label: 'Main' });
+
+      expect(sessions.createRoot).toHaveBeenCalledWith('Main');
+      expect(node.id).toBe('root');
+      expect(node.parentId).toBeNull();
+      expect(node.depth).toBe(0);
+      expect(node.label).toBe('Main');
+    });
+
+    it('createMainSession 无 label 时走 createRoot 默认值', async () => {
+      const sessions = sessionsMock();
+      const agent = createStelloAgent(
+        baseConfig({
+          sessions: {
+            createRoot: sessions.createRoot,
+            putConfig: sessions.putConfig,
+            getConfig: sessions.getConfig,
+          },
+        }),
+      );
+
+      const node = await agent.createMainSession();
+
+      expect(sessions.createRoot).toHaveBeenCalledWith(undefined);
+      expect(node.label).toBe('Root');
+    });
+
+    it('createMainSession 将 mainSessionConfig 的可序列化字段写入 putConfig', async () => {
+      const sessions = sessionsMock();
+      const agent = createStelloAgent({
+        ...baseConfig({
+          sessions: {
+            createRoot: sessions.createRoot,
+            putConfig: sessions.putConfig,
+            getConfig: sessions.getConfig,
+          },
+        }),
+        mainSessionConfig: {
+          systemPrompt: 'P',
+          skills: ['a'],
+        },
+      });
+
+      await agent.createMainSession({ label: 'Main' });
+
+      expect(sessions.putConfig).toHaveBeenCalledWith('root', {
+        systemPrompt: 'P',
+        skills: ['a'],
+      });
+      expect(await agent.sessions.getConfig('root')).toEqual({
+        systemPrompt: 'P',
+        skills: ['a'],
+      });
+    });
+
+    it('createMainSession 剔除非可序列化字段（llm/integrateFn 等）', async () => {
+      const sessions = sessionsMock();
+      const dummyLlm = { complete: vi.fn() } as never;
+      const dummyFn = vi.fn();
+      const agent = createStelloAgent({
+        ...baseConfig({
+          sessions: {
+            createRoot: sessions.createRoot,
+            putConfig: sessions.putConfig,
+            getConfig: sessions.getConfig,
+          },
+        }),
+        mainSessionConfig: {
+          systemPrompt: 'P',
+          llm: dummyLlm,
+          integrateFn: dummyFn,
+        },
+      });
+
+      await agent.createMainSession({ label: 'Main' });
+
+      expect(sessions.putConfig).toHaveBeenCalledWith('root', { systemPrompt: 'P' });
+      const stored = sessions.store.get('root') as Record<string, unknown>;
+      expect(stored).not.toHaveProperty('llm');
+      expect(stored).not.toHaveProperty('integrateFn');
+    });
+
+    it('createMainSession 无 mainSessionConfig 时写入空对象', async () => {
+      const sessions = sessionsMock();
+      const agent = createStelloAgent(
+        baseConfig({
+          sessions: {
+            createRoot: sessions.createRoot,
+            putConfig: sessions.putConfig,
+            getConfig: sessions.getConfig,
+          },
+        }),
+      );
+
+      await agent.createMainSession({ label: 'Main' });
+
+      expect(sessions.putConfig).toHaveBeenCalledWith('root', {});
+    });
+  });
 });

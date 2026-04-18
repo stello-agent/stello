@@ -65,7 +65,7 @@ export class PgSessionTree implements SessionTree {
     private readonly spaceId: string,
   ) {}
 
-  /** 创建根 Session（不在接口中，创建 space 时调用） */
+  /** 创建根 Session，写入 sessions 表 */
   async createRoot(label = 'Root'): Promise<TopologyNode> {
     const id = randomUUID()
     const ts = now()

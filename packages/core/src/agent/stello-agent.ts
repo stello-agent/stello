@@ -26,7 +26,7 @@ import {
   type SessionCompatible,
   type SessionCompatibleSendResult,
 } from '../adapters/session-runtime';
-import type { SessionTree } from '../types/session';
+import type { SessionTree, TopologyNode } from '../types/session';
 import type { MemoryEngine } from '../types/memory';
 import type { ConfirmProtocol, SkillRouter } from '../types/lifecycle';
 import type { EngineLifecycleAdapter, EngineToolRuntime } from '../engine/stello-engine';
@@ -137,6 +137,16 @@ function resolveRuntimeResolver(config: StelloAgentConfig): SessionRuntimeResolv
   );
 }
 
+/** 从 MainSessionConfig 抽取可序列化子集 */
+function serializeMainSessionConfig(
+  config: MainSessionConfig | undefined,
+): SerializableMainSessionConfig {
+  const result: SerializableMainSessionConfig = {};
+  if (config?.systemPrompt !== undefined) result.systemPrompt = config.systemPrompt;
+  if (config?.skills !== undefined) result.skills = config.skills;
+  return result;
+}
+
 function resolveTurnRunner(config: StelloAgentConfig): TurnRunner | undefined {
   if (config.orchestration?.turnRunner) {
     return config.orchestration.turnRunner;
@@ -200,6 +210,14 @@ export class StelloAgent {
       this.runtimeManager,
       config.orchestration?.strategy ?? new MainSessionFlatStrategy(),
     );
+  }
+
+  /** 创建 main session（根节点），使用 mainSessionConfig 固化其配置 */
+  async createMainSession(options?: { label?: string }): Promise<TopologyNode> {
+    const node = await this.sessions.createRoot(options?.label);
+    const serialized = serializeMainSessionConfig(this.config.mainSessionConfig);
+    await this.sessions.putConfig(node.id, serialized);
+    return node;
   }
 
   /** 进入指定 session 的整轮对话 */
