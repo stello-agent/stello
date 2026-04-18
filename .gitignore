@@ -159,3 +159,4 @@ demo/**/.vite/
 
 # npm lock files (use pnpm-lock.yaml instead)
 package-lock.json
+.worktrees/
