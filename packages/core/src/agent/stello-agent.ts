@@ -50,10 +50,11 @@ export interface StelloAgentCapabilitiesConfig {
 }
 
 /**
- * Session 组件接入配置。
+ * Session I/O 接入层。
  *
- * 这部分配置用于把 @stello-ai/session 的真实 Session / MainSession
- * 正式接入到 core 的 Engine 体系里。
+ * 按 sessionId 加载 Session 实例与其固化配置（SerializableSessionConfig）。
+ * Engine 构造 runtime 时消费这些数据；不再在此承担 `compressFn` 等运行时行为配置
+ * （迁移至 `sessionDefaults`）。
  */
 export interface StelloAgentSessionConfig {
   /** 按 sessionId 加载固化配置 + meta（纯 I/O），返回 Session 实例与其序列化配置 */
@@ -119,6 +120,7 @@ function resolveRuntimeResolver(config: StelloAgentConfig): SessionRuntimeResolv
 
   if (config.session?.sessionLoader) {
     const adaptOptions = {
+      // TODO(unified-session-config): 接入 fork 合成链后，compressFn 应来自合成配置而非 sessionDefaults
       compressFn: config.sessionDefaults?.compressFn,
       serializeResult: config.session!.serializeSendResult ?? serializeSessionSendResult,
     };
