@@ -2,6 +2,18 @@
 
 import type { SerializableSessionConfig } from './session-config';
 
+/**
+ * Main Session 的固定 ID。
+ *
+ * Stello 每个拓扑有且仅有一个 main session（root 节点），其 ID 必须为此值。
+ * Engine 通过比较 `sourceSessionId === MAIN_SESSION_ID` 判断 fork 来源是否为 main，
+ * 从而在合成链中跳过 parent 层（见 fork-design invariant #6）。
+ *
+ * 宿主若自行实现 `SessionTree`，`createRoot` 返回的 TopologyNode.id 必须等于此常量，
+ * 否则 fork-from-main 的行为会违反 spec。
+ */
+export const MAIN_SESSION_ID = 'main';
+
 /** Session 状态 */
 export type SessionStatus = 'active' | 'archived';
 

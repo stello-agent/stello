@@ -1,5 +1,20 @@
 # @stello-ai/core
 
+## 0.5.2
+
+### Patch Changes
+
+- fix(core): 从 main session fork 不再继承 main 的配置（#55）
+  - Engine `forkSession` 在 `sourceSessionId === MAIN_SESSION_ID` 时跳过 `sessions.getConfig`，避免 main 的 `systemPrompt` / `skills` 通过四层合成链泄漏到子 session（违反 fork-design invariant #6）
+  - `SessionTreeImpl.createRoot` 使用固定 ID `MAIN_SESSION_ID = 'main'`，并在 main 已存在时幂等返回现有节点、不覆写数据
+  - 新增导出 `MAIN_SESSION_ID` 常量
+
+### ⚠️ Soft breaking — 自行实现 `SessionTree` 的宿主需同步
+
+内置 `SessionTreeImpl` 的宿主不受影响。若自行实现 `SessionTree`，`createRoot` 必须返回 `id === MAIN_SESSION_ID` 的 TopologyNode，否则 fork-from-main 的保护逻辑无法生效。
+
+已使用旧版本（UUID 作为 main session id）创建过 main session 的 installs 不会自动迁移：升级后下一次 `createMainSession` 调用会创建 id=`'main'` 的新根，旧 UUID 根将成为孤儿。宿主需要迁移请自行处理。
+
 ## 0.3.0
 
 ### Minor Changes

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { NodeFileSystemAdapter } from '../../fs/file-system-adapter';
 import { SessionTreeImpl } from '../session-tree';
+import { MAIN_SESSION_ID } from '../../types/session';
 
 describe('SessionTreeImpl', () => {
   let tmpDir: string;
@@ -41,6 +42,23 @@ describe('SessionTreeImpl', () => {
     expect(await fs.exists(`sessions/${root.id}/memory.md`)).toBe(true);
     expect(await fs.exists(`sessions/${root.id}/scope.md`)).toBe(true);
     expect(await fs.exists(`sessions/${root.id}/index.md`)).toBe(true);
+  });
+
+  it('createRoot 返回固定的 MAIN_SESSION_ID 作为 id', async () => {
+    const root = await tree.createRoot('Any');
+    expect(root.id).toBe(MAIN_SESSION_ID);
+  });
+
+  it('createRoot 幂等：第二次调用返回现有节点，不覆写 label 与已写入的内容', async () => {
+    const fs = new NodeFileSystemAdapter(tmpDir);
+    const first = await tree.createRoot('Original');
+    // 模拟用户在 memory.md 写入内容，确认后续 createRoot 不覆写
+    await fs.writeFile(`sessions/${first.id}/memory.md`, 'user content');
+
+    const second = await tree.createRoot('Ignored');
+    expect(second.id).toBe(first.id);
+    expect(second.label).toBe('Original');
+    expect(await fs.readFile(`sessions/${first.id}/memory.md`)).toBe('user content');
   });
 
   // ─── createChild ───
