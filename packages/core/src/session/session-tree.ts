@@ -7,6 +7,7 @@ import type {
   SessionTree,
   CreateSessionOptions,
 } from '../types/session';
+import { MAIN_SESSION_ID } from '../types/session';
 import type { SerializableSessionConfig } from '../types/session-config';
 
 /**
@@ -93,11 +94,19 @@ function toTopologyNode(stored: StoredMeta): TopologyNode {
 export class SessionTreeImpl implements SessionTree {
   constructor(private readonly fs: FileSystemAdapter) {}
 
-  /** 创建根 Session，初始化配套 .md 与 core.json */
+  /**
+   * 创建根 Session（main），初始化配套 .md 与 core.json
+   *
+   * 幂等：若 `MAIN_SESSION_ID` 对应的 meta 已存在，直接返回现有 TopologyNode，不覆写任何数据。
+   */
   async createRoot(label = 'Root'): Promise<TopologyNode> {
+    const existing = await this.fs.readJSON<StoredMeta>(metaPath(MAIN_SESSION_ID));
+    if (existing !== null) {
+      return toTopologyNode(existing);
+    }
     const ts = now();
     const stored: StoredMeta = {
-      id: randomUUID(),
+      id: MAIN_SESSION_ID,
       parentId: null,
       children: [],
       refs: [],
@@ -116,8 +125,8 @@ export class SessionTreeImpl implements SessionTree {
     await this.fs.writeFile(`sessions/${stored.id}/scope.md`, '');
     await this.fs.writeFile(`sessions/${stored.id}/index.md`, '');
     // 初始化 core.json（如果不存在）
-    const existing = await this.fs.readJSON('core.json');
-    if (existing === null) {
+    const coreExisting = await this.fs.readJSON('core.json');
+    if (coreExisting === null) {
       await this.fs.writeJSON('core.json', {});
     }
     return toTopologyNode(stored);

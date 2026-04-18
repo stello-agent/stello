@@ -1,5 +1,5 @@
 /** Stello SDK 版本号 */
-export const VERSION = '0.5.0';
+export const VERSION = '0.5.2';
 
 // 导出所有类型定义
 export type {
@@ -46,6 +46,9 @@ export type {
   SerializableSessionConfig,
   SerializableMainSessionConfig,
 } from './types';
+
+// 导出常量
+export { MAIN_SESSION_ID } from './types/session';
 
 // 导出实现
 export { NodeFileSystemAdapter } from './fs';
