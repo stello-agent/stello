@@ -200,6 +200,7 @@ export class StelloAgent {
       turnRunner: resolveTurnRunner(config),
       hooks: config.orchestration?.hooks,
       consolidateEveryNTurns: config.orchestration?.consolidateEveryNTurns,
+      sessionDefaults: config.sessionDefaults,
     });
     this.runtimeManager = new DefaultEngineRuntimeManager(
       engineFactory,
