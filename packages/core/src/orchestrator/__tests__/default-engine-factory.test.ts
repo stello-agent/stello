@@ -78,7 +78,7 @@ describe('DefaultEngineFactory', () => {
     expect(onSessionEnter).toHaveBeenCalledWith({ sessionId: 's-special' });
   });
 
-  it('session metadata 有 _stello.allowedSkills 时，engine 使用过滤后的 skills', async () => {
+  it('固化 SessionConfig.skills 为白名单时，engine 使用过滤后的 skills', async () => {
     const runtimeSession = makeSession()
     const globalSkills = {
       get: vi.fn((name: string) => ({ name, description: `${name} desc`, content: `${name} content` })),
@@ -96,11 +96,7 @@ describe('DefaultEngineFactory', () => {
       skills: globalSkills,
       sessions: {
         ...opts.sessions,
-        get: vi.fn().mockResolvedValue({
-          id: 's1', label: 'test', scope: null, status: 'active',
-          turnCount: 0, tags: [], createdAt: '', updatedAt: '', lastActiveAt: '',
-          metadata: { _stello: { allowedSkills: ['research', 'coding'] } },
-        }),
+        getConfig: vi.fn().mockResolvedValue({ skills: ['research', 'coding'] }),
       } as unknown as SessionTree,
       sessionRuntimeResolver: {
         resolve: vi.fn().mockResolvedValue(runtimeSession),
@@ -117,7 +113,7 @@ describe('DefaultEngineFactory', () => {
     expect(skillTool!.description).not.toContain('translate')
   })
 
-  it('session metadata 有 _stello.allowedSkills: [] 时，activate_skill 工具不出现', async () => {
+  it('固化 SessionConfig.skills: [] 时，activate_skill 工具不出现', async () => {
     const runtimeSession = makeSession()
     const globalSkills = {
       get: vi.fn(),
@@ -133,11 +129,7 @@ describe('DefaultEngineFactory', () => {
       skills: globalSkills,
       sessions: {
         ...opts.sessions,
-        get: vi.fn().mockResolvedValue({
-          id: 's1', label: 'test', scope: null, status: 'active',
-          turnCount: 0, tags: [], createdAt: '', updatedAt: '', lastActiveAt: '',
-          metadata: { _stello: { allowedSkills: [] } },
-        }),
+        getConfig: vi.fn().mockResolvedValue({ skills: [] }),
       } as unknown as SessionTree,
       sessionRuntimeResolver: {
         resolve: vi.fn().mockResolvedValue(runtimeSession),
@@ -149,7 +141,7 @@ describe('DefaultEngineFactory', () => {
     expect(defs.find(d => d.name === 'activate_skill')).toBeUndefined()
   })
 
-  it('session metadata 无 _stello 时，使用全局 skills（不过滤）', async () => {
+  it('固化 SessionConfig.skills 未定义（或为 null）时，使用全局 skills（不过滤）', async () => {
     const runtimeSession = makeSession()
     const globalSkills = {
       get: vi.fn(),
@@ -165,11 +157,7 @@ describe('DefaultEngineFactory', () => {
       skills: globalSkills,
       sessions: {
         ...opts.sessions,
-        get: vi.fn().mockResolvedValue({
-          id: 's1', label: 'test', scope: null, status: 'active',
-          turnCount: 0, tags: [], createdAt: '', updatedAt: '', lastActiveAt: '',
-          metadata: { sourceSessionId: 'root' },
-        }),
+        getConfig: vi.fn().mockResolvedValue(null),
       } as unknown as SessionTree,
       sessionRuntimeResolver: {
         resolve: vi.fn().mockResolvedValue(runtimeSession),

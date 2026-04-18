@@ -14,6 +14,7 @@ import type { SplitGuard } from '../session/split-guard';
 import type { ForkProfileRegistry } from '../engine/fork-profile';
 import type { EngineFactory, OrchestratorEngine } from './session-orchestrator';
 import type { SessionRuntimeResolver } from '../types/engine';
+import type { SessionConfig } from '../types/session-config';
 
 /** hooks 提供方式 */
 export type EngineHookProvider =
@@ -35,6 +36,8 @@ export interface DefaultEngineFactoryOptions {
   hooks?: EngineHookProvider;
   /** 每 N 轮自动触发 consolidation（0 或不传则禁用） */
   consolidateEveryNTurns?: number;
+  /** Agent 级默认配置（fork 合成链最低优先级） */
+  sessionDefaults?: SessionConfig;
 }
 
 /**
@@ -64,28 +67,23 @@ export class DefaultEngineFactory implements EngineFactory {
       profiles: this.options.profiles,
       turnRunner: this.options.turnRunner,
       hooks: mergedHooks,
+      sessionDefaults: this.options.sessionDefaults,
     });
   }
 
-  /** 按 session metadata 中的 _stello.allowedSkills 创建过滤后的 SkillRouter */
+  /** 按固化 SessionConfig.skills 创建过滤后的 SkillRouter：undefined=继承，[]=禁用，['a']=白名单 */
   private async resolveSkillRouter(sessionId: string): Promise<SkillRouter> {
-    const meta = typeof this.options.sessions.get === 'function'
-      ? await this.options.sessions.get(sessionId)
+    const frozen = typeof this.options.sessions.getConfig === 'function'
+      ? await this.options.sessions.getConfig(sessionId)
       : null;
-    const stelloMeta = meta?.metadata?._stello;
 
-    if (
-      !stelloMeta
-      || typeof stelloMeta !== 'object'
-      || !('allowedSkills' in stelloMeta)
-      || !Array.isArray((stelloMeta as Record<string, unknown>).allowedSkills)
-    ) {
+    if (!frozen || frozen.skills === undefined) {
       return this.options.skills;
     }
 
     return new FilteredSkillRouter(
       this.options.skills,
-      new Set((stelloMeta as { allowedSkills: string[] }).allowedSkills),
+      new Set(frozen.skills),
     );
   }
 
