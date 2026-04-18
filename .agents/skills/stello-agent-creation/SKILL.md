@@ -1,6 +1,6 @@
 ---
 name: stello-agent-creation
-description: StelloAgent 创建配置教程。完整说明 createStelloAgent 的每个配置项，包含 tools、skills、forkProfiles、consolidation 触发、session 接入等。
+description: StelloAgent 创建配置教程。完整说明 createStelloAgent 的每个配置项，包含 sessionDefaults、mainSessionConfig、tools、skills、forkProfiles、session 层接入等。
 ---
 
 # StelloAgent 创建配置教程
@@ -28,7 +28,7 @@ const agent = createStelloAgent({
     confirm: { ... },                // ConfirmProtocol
   },
   session: {
-    sessionResolver: async (id) => loadedSession,
+    sessionLoader: async (id) => ({ session: loadedSession, config: null }),
   },
 })
 ```
@@ -41,6 +41,8 @@ const agent = createStelloAgent({
 interface StelloAgentConfig {
   sessions: SessionTree             // 拓扑树（必填）
   memory: MemoryEngine              // 记忆引擎（必填）
+  sessionDefaults?: SessionConfig   // Regular session 的 agent 级默认配置
+  mainSessionConfig?: MainSessionConfig  // Main session 的独立配置
   capabilities: {                   // 能力注入（必填）
     lifecycle: EngineLifecycleAdapter
     tools: EngineToolRuntime        // 用户自定义工具
@@ -56,11 +58,81 @@ interface StelloAgentConfig {
 
 ---
 
-## 1. `capabilities` — 能力注入
+## 1. `sessionDefaults` 与 `mainSessionConfig`
 
-### 1.1 `tools` — 用户自定义工具
+### `sessionDefaults` — Regular Session 的 Agent 级默认
 
-用 `ToolRegistryImpl` 注册自定义 tool，每个 tool 是一个 `ToolRegistryEntry`：
+`sessionDefaults` 是所有 regular session 的配置基线，是 fork 合成链的最低优先级层。
+
+```typescript
+createStelloAgent({
+  sessionDefaults: {
+    llm: defaultLlm,               // 所有子 session 使用的默认 LLM
+    consolidateFn: defaultConsolidateFn,  // 默认 L3→L2 提炼函数
+    compressFn: defaultCompressFn, // 默认上下文压缩函数
+    systemPrompt: '你是一个助手。', // 所有子 session 的基础 prompt（可被 fork 覆盖）
+    skills: undefined,             // undefined = 继承全局 SkillRouter（默认）
+  },
+  // ...
+})
+```
+
+**`SessionConfig` 完整字段**：
+
+```typescript
+interface SessionConfig {
+  systemPrompt?: string
+  llm?: LLMAdapter
+  tools?: LLMCompleteOptions['tools']
+  skills?: string[]          // undefined=继承全局；[]=禁用所有 skill；['a','b']=白名单
+  consolidateFn?: SessionCompatibleConsolidateFn
+  compressFn?: SessionCompatibleCompressFn
+}
+```
+
+### `mainSessionConfig` — Main Session 的独立配置
+
+`mainSessionConfig` 是 main session 的专属配置，不参与 regular session 的 fork 合成链。
+
+```typescript
+createStelloAgent({
+  mainSessionConfig: {
+    systemPrompt: '你是全局协调者，负责统筹所有子任务。',
+    llm: mainLlm,              // main session 可用更强的模型
+    integrateFn: myIntegrateFn,  // all L2s → synthesis + insights
+    compressFn: mainCompressFn,
+  },
+  // ...
+})
+```
+
+**`MainSessionConfig` 字段**（与 `SessionConfig` 平行，但用 `integrateFn` 替代 `consolidateFn`）：
+
+```typescript
+interface MainSessionConfig {
+  systemPrompt?: string
+  llm?: LLMAdapter
+  tools?: LLMCompleteOptions['tools']
+  skills?: string[]
+  integrateFn?: SessionCompatibleIntegrateFn  // main session 专属
+  compressFn?: SessionCompatibleCompressFn
+}
+```
+
+**与 `sessionDefaults` 的区别**：
+
+| | `sessionDefaults` | `mainSessionConfig` |
+|--|------------------|---------------------|
+| 作用对象 | 所有 regular session | 仅 main session |
+| 提炼函数 | `consolidateFn` | `integrateFn` |
+| 参与 fork 合成链 | 是（最低优先级） | 否 |
+| 固化时机 | 每次 fork | `createMainSession()` 调用时 |
+
+---
+
+## 2. `capabilities` — 能力注入
+
+### 2.1 `tools` — 用户自定义工具
 
 ```typescript
 import { ToolRegistryImpl } from '@stello-ai/core'
@@ -82,22 +154,6 @@ toolRegistry.register({
     return { success: true, data: { saved: true } }
   },
 })
-
-toolRegistry.register({
-  name: 'search_docs',
-  description: '搜索知识库',
-  parameters: {
-    type: 'object',
-    properties: {
-      query: { type: 'string', description: '搜索关键词' },
-    },
-    required: ['query'],
-  },
-  execute: async (args) => {
-    const results = await vectorStore.search(String(args.query))
-    return { success: true, data: results }
-  },
-})
 ```
 
 **要点**：
@@ -106,7 +162,7 @@ toolRegistry.register({
 - tool 执行失败时 Engine 自动将 error 作为 tool result 返回给 LLM，不中断对话
 - **不需要注册 `stello_create_session` 和 `activate_skill`**——框架自动注入
 
-### 1.2 `skills` — Skill 注册表
+### 2.2 `skills` — Skill 注册表
 
 Skill 是两级渐进式加载的 prompt 片段：LLM 始终看到 name + description，主动调用 `activate_skill` 后注入完整 content。
 
@@ -119,11 +175,7 @@ const skillRouter = new SkillRouterImpl()
 skillRouter.register({
   name: 'code-review',
   description: '代码审查专家，激活后按标准流程审查代码质量',
-  content: `你现在是代码审查专家。请按以下流程审查：
-1. 检查代码风格一致性
-2. 检查潜在 bug 和边界条件
-3. 检查性能问题
-4. 给出改进建议`,
+  content: `你现在是代码审查专家。...`,
 })
 
 // 方式二：从目录批量加载（标准 agent skills 格式）
@@ -136,11 +188,15 @@ for (const skill of fileSkills) {
 **行为**：
 - 有 skills 注册时，Engine 自动注入 `activate_skill` 内置 tool
 - 无 skills 时，`activate_skill` 不出现在 LLM 的可用工具列表中
-- Skill 目录格式：每个子目录包含 `SKILL.md`，用 YAML frontmatter 定义 name 和 description
 
-### 1.3 `profiles` — Fork Profile 注册表（可选）
+**per-session skill 白名单**通过 `SessionConfig.skills` 控制（见 fork 配置合成链一节）：
+- `undefined`（默认）：该 session 继承全局 SkillRouter 的全部 skill
+- `[]`：禁用该 session 的 `activate_skill`，LLM 看不到任何 skill
+- `['search', 'summarize']`：只允许这两个 skill 对该 session 可见
 
-ForkProfile 是预定义的 fork 配置模板。LLM 调用 `stello_create_session` 时可通过 `profile` 参数引用。
+### 2.3 `profiles` — Fork Profile 注册表（可选）
+
+ForkProfile 是预定义的 fork 配置模板，extends `SessionConfig`。LLM 调用 `stello_create_session` 时可通过 `profile` 参数引用。
 
 ```typescript
 import { ForkProfileRegistryImpl } from '@stello-ai/core'
@@ -150,49 +206,57 @@ const forkProfiles = new ForkProfileRegistryImpl()
 // 基础 profile：固定角色
 forkProfiles.register('poet', {
   systemPrompt: '你是一位诗人。所有回复必须用诗歌形式。',
-  systemPromptMode: 'preset',      // 忽略 LLM 提供的 systemPrompt
+  systemPromptMode: 'preset',      // 忽略 fork options 的 systemPrompt
 })
 
-// 高级 profile：prepend 合成 + 限制 skills + 自定义 consolidation
+// 动态 systemPrompt 模板
+forkProfiles.register('region-expert', {
+  systemPromptFn: (vars) => `你是${vars.region}地区的留学专家。`, // 优先于 systemPrompt
+  systemPromptMode: 'preset',
+  llm: cheaperLlmAdapter,
+  skills: ['search', 'summarize'], // 白名单：只允许这两个 skill
+  consolidateFn: researchConsolidateFn,
+})
+
+// prepend 合成 + 继承上下文
 forkProfiles.register('researcher', {
   systemPrompt: '你是研究助手，善于深入分析。',
-  systemPromptMode: 'prepend',     // profile prompt 在前，LLM prompt 在后
+  systemPromptMode: 'prepend',     // profile prompt 在前，fork options 的 prompt 在后
   context: 'inherit',              // 继承父会话的对话历史
-  skills: ['search', 'summarize'], // 只允许这两个 skill
-  consolidateFn: researchConsolidateFn,  // 研究类 session 专属的 L3→L2 策略
-})
-
-// 模板函数 profile：动态生成 systemPrompt
-forkProfiles.register('region-expert', {
-  systemPrompt: (vars) => `你是${vars.region}地区的留学专家。`,
-  systemPromptMode: 'preset',
-  llm: cheaperLlmAdapter,          // 使用更便宜的模型
-  tools: customToolList,           // 覆盖工具列表
 })
 ```
 
+**`ForkProfile` 完整字段**（extends `SessionConfig`）：
+
+```typescript
+interface ForkProfile extends SessionConfig {
+  // SessionConfig 字段（systemPrompt / llm / tools / skills / consolidateFn / compressFn）
+
+  systemPromptFn?: (vars: Record<string, string>) => string  // 动态模板，优先于 systemPrompt
+  systemPromptMode?: 'preset' | 'prepend' | 'append'        // 默认 'prepend'
+  context?: 'none' | 'inherit' | ForkContextFn              // 上下文继承策略
+  prompt?: string                                            // fork 后的开场消息（默认值）
+}
+```
+
 **`systemPromptMode` 三种模式**：
-- `'preset'`：只用 profile 的 systemPrompt，忽略 LLM 提供的
-- `'prepend'`（默认）：profile prompt 在前 + LLM prompt 在后
-- `'append'`：LLM prompt 在前 + profile prompt 在后
+- `'preset'`：只用 profile 的 systemPrompt，完全忽略 fork options 的 systemPrompt
+- `'prepend'`（默认）：`[profile prompt]\n[fork options prompt]`
+- `'append'`：`[fork options prompt]\n[profile prompt]`
 
 **行为**：
-- 有 profiles 时，`stello_create_session` 的参数定义自动包含 `profile` 枚举和 `vars` 对象
-- 无 profiles 时，`stello_create_session` 只有 label / systemPrompt / prompt / context 参数
-- `skills` 白名单写入子 session 的 metadata，Factory 创建子 Engine 时自动过滤
-- `consolidateFn` / `compressFn` 在 fork 时注入子 session，不指定则继承父 session 的
+- 有 profiles 注册时，`stello_create_session` 自动增加 `profile` 枚举参数和 `vars` 对象参数
+- 无 profiles 时，`stello_create_session` 只有 `label / systemPrompt / prompt / context` 参数
 
-### 1.4 `lifecycle` — 生命周期适配器
+### 2.4 `lifecycle` — 生命周期适配器
 
 ```typescript
 const lifecycle: EngineLifecycleAdapter = {
-  // 进入 session 时组装上下文
   bootstrap: async (sessionId) => ({
     context: await memory.assembleContext(sessionId),
     session: await sessions.get(sessionId),
   }),
 
-  // 每轮对话后持久化记录
   afterTurn: async (sessionId, userMsg, assistantMsg) => {
     await memory.appendRecord(sessionId, userMsg)
     await memory.appendRecord(sessionId, assistantMsg)
@@ -201,15 +265,16 @@ const lifecycle: EngineLifecycleAdapter = {
 }
 ```
 
-### 1.5 `confirm` — 确认协议
+### 2.5 `confirm` — 确认协议
 
 ```typescript
 const confirm: ConfirmProtocol = {
   async confirmSplit(proposal) {
-    // LLM 建议拆分时的处理
+    // LLM 建议拆分时，创建子 session
+    // proposal 含 parentId、suggestedLabel
     return agent.forkSession(proposal.parentId, {
       label: proposal.suggestedLabel,
-      scope: proposal.suggestedScope,
+      // 如需基于 LLM 建议的 prompt 约束子 session 行为，用 systemPrompt
     })
   },
   async dismissSplit() {},
@@ -220,25 +285,33 @@ const confirm: ConfirmProtocol = {
 
 ---
 
-## 2. `session` — Session 层接入
+## 3. `session` — Session 层接入
 
-这是 `@stello-ai/session` 包接入 core 的适配层。提供 resolver + 提炼函数，StelloAgent 自动完成适配。
+`StelloAgentSessionConfig` 的职责是**纯 I/O 数据加载**，不在 resolver 闭包里构造 session 行为配置（`consolidateFn` 等移到 `sessionDefaults`）。
 
 ```typescript
 session: {
-  // 按 ID 加载真实 Session（必填）
-  sessionResolver: async (sessionId) => {
+  // 按 ID 加载 Session 实例与其固化配置（必填）
+  sessionLoader: async (sessionId) => {
     const session = await loadSession(sessionId, {
       storage: sessionStorage,
       llm: currentLlm,
-      tools: sessionTools,  // session 层需要的 tool schema
     })
     if (!session) throw new Error(`Session not found: ${sessionId}`)
-    return session
+    return {
+      session,      // SessionCompatible 实例
+      config: null, // SerializableSessionConfig | null（目前传 null 即可）
+    }
   },
 
   // 加载 MainSession（可选，需要 integration 时提供）
-  mainSessionResolver: async () => mainSession,
+  mainSessionLoader: async () => {
+    if (!mainSession) return null
+    return {
+      session: mainSession,  // MainSessionCompatible 实例
+      config: null,
+    }
+  },
 
   // 可选：自定义 send() 结果序列化（默认 JSON）
   serializeSendResult: (result) => JSON.stringify(result),
@@ -248,54 +321,26 @@ session: {
 }
 ```
 
-`consolidateFn` 和 `integrateFn` 在 Session 创建时绑定，通过 `sessionResolver` 返回的 Session 实例携带——`session.consolidate()` 和 `mainSession.integrate()` 无参调用，fn 已在构建时注入。
-
 **两种 session 接入方式**：
 
 | 方式 | 配置 | 适用场景 |
 |------|------|---------|
-| Session 适配 | `session.sessionResolver` | 使用 `@stello-ai/session` 包 |
+| Session 适配 | `session.sessionLoader` | 使用 `@stello-ai/session` 包（推荐） |
 | 直接提供 runtime | `runtime.resolver` | 自定义 session 实现 |
-
-方式一是推荐路径。StelloAgent 内部自动调用 `adaptSessionToEngineRuntime()` 完成适配。
 
 ---
 
-## 3. `orchestration` — 编排策略（可选）
+## 4. `orchestration` — 编排策略（可选）
 
-### 3.1 `consolidateEveryNTurns` — 自动 consolidation
-
-每 N 轮对话后自动触发 consolidation（fire-and-forget）。不配置时，consolidation 只能手动触发。
+### `consolidateEveryNTurns` — 自动 consolidation
 
 ```typescript
 orchestration: {
-  consolidateEveryNTurns: 5,  // 每 5 轮自动 consolidate
+  consolidateEveryNTurns: 5,  // 每 5 轮自动 consolidate（fire-and-forget）
 }
 ```
 
-手动触发：使用 `agent.consolidateSession(sessionId)` 和 `agent.integrate()`。Integration 无框架级自动触发，由应用层在适当时机调用。
-
-### 3.2 `strategy` — 编排策略
-
-控制 fork 时的拓扑父节点选择。
-
-```typescript
-import { MainSessionFlatStrategy, HierarchicalOkrStrategy } from '@stello-ai/core'
-
-// 默认：所有 fork 挂到根节点
-orchestration: {
-  strategy: new MainSessionFlatStrategy(),
-}
-
-// 或：保持层级结构
-orchestration: {
-  strategy: new HierarchicalOkrStrategy(),
-}
-```
-
-### 3.3 `splitGuard` — 拆分保护
-
-防止过早或过于频繁的 fork。
+### `splitGuard` — 拆分保护
 
 ```typescript
 import { SplitGuard } from '@stello-ai/core'
@@ -308,60 +353,40 @@ orchestration: {
 }
 ```
 
-### 3.4 `hooks` — Engine 事件钩子
+### `hooks` — Engine 事件钩子
 
 ```typescript
 orchestration: {
   hooks: {
-    onRoundStart({ sessionId, input }) {
-      console.log(`[${sessionId}] 用户: ${input}`)
-    },
-    onRoundEnd({ sessionId, turn }) {
-      console.log(`[${sessionId}] 助手: ${turn.finalContent}`)
-    },
+    onRoundStart({ sessionId, input }) {},
+    onRoundEnd({ sessionId, turn }) {},
     onSessionFork({ parentId, child }) {
       console.log(`Fork: ${parentId} → ${child.id}`)
     },
-    onToolCall({ sessionId, toolCall }) {
-      console.log(`Tool: ${toolCall.name}`)
-    },
-    onError({ source, error }) {
-      console.error(`[${source}]`, error)
-    },
+    onToolCall({ sessionId, toolCall }) {},
+    onError({ source, error }) {},
   },
+  // 也支持按 sessionId 动态生成
+  // hooks: (sessionId) => ({ onRoundEnd({ turn }) { ... } }),
 }
 ```
 
-hooks 也支持按 sessionId 动态生成：
-
-```typescript
-orchestration: {
-  hooks: (sessionId) => ({
-    onRoundEnd({ turn }) {
-      analytics.track(sessionId, turn)
-    },
-  }),
-}
-```
-
-所有 hooks 都是 **fire-and-forget**：抛错时 emit error 事件，不中断对话。
+所有 hooks **fire-and-forget**：抛错时 emit error 事件，不中断对话。
 
 ---
 
-## 4. 内置 Tool 的自动注册机制
+## 5. 内置 Tool 的自动注册
 
-用户**不需要**手动注册以下内置 tool，Engine 构造时自动处理：
+用户**不需要**手动注册：
 
-| 内置 Tool | 注入条件 | 功能 |
-|-----------|---------|------|
-| `stello_create_session` | 始终注入 | LLM 发起 fork 创建子会话 |
-| `activate_skill` | `skills.getAll().length > 0` | LLM 按需加载 skill prompt |
-
-**内部机制**：Engine 构造时通过 `createBuiltinToolEntries()` 生成 `ToolRegistryEntry` 实例（闭包捕获 Engine 上下文），与用户 `tools` 一起包装为 `CompositeToolRuntime`。内置 tool 优先级高于用户同名 tool。
+| 内置 Tool | 注入条件 |
+|-----------|---------|
+| `stello_create_session` | 始终注入 |
+| `activate_skill` | `skills.getAll().length > 0` 时注入 |
 
 ---
 
-## 5. 完整配置示例
+## 6. 完整配置示例
 
 ```typescript
 import {
@@ -372,14 +397,13 @@ import {
   SplitGuard,
   SessionTreeImpl,
   NodeFileSystemAdapter,
-  FileSystemMemoryEngine,
   createDefaultConsolidateFn,
-  createOpenAICompatibleAdapter,
-  InMemoryStorageAdapter,
+  createDefaultIntegrateFn,
   loadSession,
-  createMainSession,
+  loadMainSession,
   type StelloAgentConfig,
 } from '@stello-ai/core'
+import { InMemoryStorageAdapter } from '@stello-ai/session'
 
 // ─── 基础设施 ───
 const fs = new NodeFileSystemAdapter('./data')
@@ -387,26 +411,16 @@ const sessions = new SessionTreeImpl(fs)
 const memory = new FileSystemMemoryEngine(fs, sessions)
 const sessionStorage = new InMemoryStorageAdapter()
 
-const llm = createOpenAICompatibleAdapter({
-  apiKey: process.env.OPENAI_API_KEY!,
-  model: 'gpt-4o',
-  maxContextTokens: 128000,
-})
+const llm = createOpenAICompatibleAdapter({ apiKey: process.env.OPENAI_API_KEY!, model: 'gpt-4o' })
+const llmCall: LLMCallFn = async (messages) => (await llm.complete(messages)).content ?? ''
 
 // ─── 自定义 Tools ───
 const toolRegistry = new ToolRegistryImpl()
 toolRegistry.register({
   name: 'search_knowledge',
   description: '搜索知识库',
-  parameters: {
-    type: 'object',
-    properties: { query: { type: 'string' } },
-    required: ['query'],
-  },
-  execute: async (args) => {
-    const results = await knowledgeBase.search(String(args.query))
-    return { success: true, data: results }
-  },
+  parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+  execute: async (args) => ({ success: true, data: await knowledgeBase.search(String(args.query)) }),
 })
 
 // ─── Skills ───
@@ -419,31 +433,45 @@ skills.register({
 
 // ─── Fork Profiles ───
 const profiles = new ForkProfileRegistryImpl()
-profiles.register('deep-dive', {
-  systemPrompt: '你是深度研究助手，擅长对特定主题进行详尽分析。',
+profiles.register('researcher', {
+  systemPrompt: '你是研究助手，善于深入分析。',
   systemPromptMode: 'prepend',
   context: 'inherit',
-  consolidateFn: createDefaultConsolidateFn('请提炼研究要点和关键发现', llmCall),
+  skills: ['search', 'data-analysis'],
+  consolidateFn: createDefaultConsolidateFn('请提炼研究要点', llmCall),
 })
 
-// ─── LLM 调用函数（供 consolidate/integrate 使用）───
-const llmCall = async (messages: Array<{ role: string; content: string }>) => {
-  const result = await llm.complete(
-    messages.map(m => ({ role: m.role as 'user' | 'system', content: m.content }))
-  )
-  return result.content ?? ''
-}
-
 // ─── 创建 Agent ───
-const agent = createStelloAgent({
+let agent: ReturnType<typeof createStelloAgent>
+agent = createStelloAgent({
   sessions,
   memory,
 
+  // Regular session 的 agent 级默认配置
+  sessionDefaults: {
+    llm,
+    consolidateFn: createDefaultConsolidateFn('请提炼对话要点', llmCall),
+    compressFn: createDefaultCompressFn(llmCall),
+  },
+
+  // Main session 的独立配置
+  mainSessionConfig: {
+    systemPrompt: '你是全局协调者，负责统筹所有子任务。',
+    llm,
+    integrateFn: createDefaultIntegrateFn('请综合所有子任务的要点', llmCall),
+  },
+
   session: {
-    sessionResolver: async (sessionId) => {
-      return await loadSession(sessionId, { storage: sessionStorage, llm })
+    sessionLoader: async (sessionId) => {
+      const session = await loadSession(sessionId, { storage: sessionStorage, llm })
+      if (!session) throw new Error(`Session not found: ${sessionId}`)
+      return { session, config: null }
     },
-    mainSessionResolver: async () => mainSession,
+    mainSessionLoader: async () => {
+      const mainSession = await loadMainSession({ storage: sessionStorage, llm })
+      if (!mainSession) return null
+      return { session: mainSession, config: null }
+    },
   },
 
   capabilities: {
@@ -480,14 +508,17 @@ const agent = createStelloAgent({
   },
 })
 
-// ─── 使用 ───
-await agent.enterSession(rootSessionId)
-const result = await agent.turn(rootSessionId, '帮我分析一下市场趋势')
+// ─── 创建 Main Session（推荐入口）───
+const mainNode = await agent.createMainSession({ label: 'Main' })
+
+// ─── 开始对话 ───
+await agent.enterSession(mainNode.id)
+const result = await agent.turn(mainNode.id, '帮我分析一下市场趋势')
 console.log(result.turn.finalContent)
 ```
 
 ---
 
-## 6. 运行时使用
+## 7. 运行时使用
 
-Agent 创建后的运行时操作（turn / stream / fork / attach / detach / 热更新等）见 skill `stello-agent-usage`。
+Agent 创建后的运行时操作（turn / stream / fork / attach / detach 等）见 skill `stello-agent-usage`。
