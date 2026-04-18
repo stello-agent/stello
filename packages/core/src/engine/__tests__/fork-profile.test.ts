@@ -59,6 +59,33 @@ describe('resolveSystemPrompt', () => {
       .toBe('你是美国专家')
   })
 
+  it('preset 模式：systemPromptFn 优先于 systemPrompt', () => {
+    const profile: ForkProfile = {
+      systemPrompt: '静态模板',
+      systemPromptFn: () => '动态模板',
+      systemPromptMode: 'preset',
+    }
+    expect(resolveSystemPrompt(profile, undefined, {})).toBe('动态模板')
+  })
+
+  it('prepend 模式：systemPromptFn 与 LLM prompt 合成', () => {
+    const profile: ForkProfile = {
+      systemPromptFn: (vars) => `动态: ${vars.name}`,
+      systemPromptMode: 'prepend',
+    }
+    expect(resolveSystemPrompt(profile, 'llm-prompt', { name: 'X' }))
+      .toBe('动态: X\n\nllm-prompt')
+  })
+
+  it('append 模式：systemPromptFn 与 LLM prompt 合成', () => {
+    const profile: ForkProfile = {
+      systemPromptFn: () => '动态',
+      systemPromptMode: 'append',
+    }
+    expect(resolveSystemPrompt(profile, 'llm-prompt', {}))
+      .toBe('llm-prompt\n\n动态')
+  })
+
   it('prepend 模式（默认）：profile 在前，LLM 在后', () => {
     const profile: ForkProfile = {
       systemPrompt: '角色定义',
