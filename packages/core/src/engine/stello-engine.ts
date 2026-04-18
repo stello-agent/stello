@@ -11,9 +11,14 @@ import type {
 import type { StelloEngine, StelloEventMap, EngineForkOptions } from '../types/engine';
 import type { TopologyNode } from '../types/session';
 import type { SplitGuard } from '../session/split-guard';
-import { resolveSystemPrompt, type ForkProfile, type ForkProfileRegistry } from './fork-profile';
+import type { ForkProfileRegistry } from './fork-profile';
 import { createBuiltinToolEntries, CompositeToolRuntime } from '../tool/tool-registry';
 import type { SessionCompatibleForkOptions } from '../adapters/session-runtime';
+import type {
+  SerializableSessionConfig,
+  SessionConfig,
+} from '../types/session-config';
+import { mergeSessionConfig } from './merge-session-config';
 import {
   TurnRunner,
   type ToolCallParser,
@@ -74,6 +79,8 @@ export interface StelloEngineOptions {
   hooks?: Partial<EngineHooks>;
   /** Fork profile 注册表（可选） */
   profiles?: ForkProfileRegistry;
+  /** Agent 级默认配置（fork 合成链最低优先级） */
+  sessionDefaults?: SessionConfig;
 }
 
 /** turn 的聚合结果 */
@@ -139,6 +146,7 @@ export class StelloEngineImpl implements StelloEngine {
   private readonly turnRunner: TurnRunner;
   private readonly hooks: Partial<EngineHooks>;
   private readonly profiles?: ForkProfileRegistry;
+  private readonly sessionDefaults?: SessionConfig;
   private readonly handlers = new Map<keyof StelloEventMap, Set<(data: unknown) => void>>();
 
   constructor(options: StelloEngineOptions) {
@@ -151,6 +159,7 @@ export class StelloEngineImpl implements StelloEngine {
     this.splitGuard = options.splitGuard;
     this.hooks = options.hooks ?? {};
     this.profiles = options.profiles;
+    this.sessionDefaults = options.sessionDefaults;
     this.turnRunner =
       options.turnRunner ??
       new TurnRunner({
@@ -287,14 +296,21 @@ export class StelloEngineImpl implements StelloEngine {
     return { sessionId: this.session.id };
   }
 
-  /** 从当前 session 发起 fork */
+  /** 从当前 session 发起 fork：合成配置、创建拓扑节点、调用 session.fork */
   async forkSession(options: EngineForkOptions): Promise<TopologyNode> {
-    const parentId = options.topologyParentId ?? this.session.id;
+    const topologyParentId = options.topologyParentId ?? this.session.id;
+    const sourceSessionId = this.session.id;
+
+    // 先解析 profile（user-level 参数校验，优先于基础设施检查）
+    const profile = options.profile ? this.profiles?.get(options.profile) : undefined;
+    if (options.profile && !profile) {
+      throw new Error(`Fork profile "${options.profile}" 未注册`);
+    }
 
     if (this.splitGuard) {
-      const check = await this.splitGuard.checkCanSplit(parentId);
+      const check = await this.splitGuard.checkCanSplit(topologyParentId);
       if (!check.canSplit) {
-        throw new Error(check.reason ?? `Session ${parentId} 当前不允许拆分`);
+        throw new Error(check.reason ?? `Session ${topologyParentId} 当前不允许拆分`);
       }
     }
 
@@ -302,35 +318,50 @@ export class StelloEngineImpl implements StelloEngine {
       throw new Error('Fork 不可用：当前 session runtime 未实现 fork()');
     }
 
-    // 1. Topology-first：创建拓扑节点，获取 ID
-    const child = await this.sessions.createChild({
-      parentId,
-      label: options.label,
-      scope: options.scope,
-      metadata: options.metadata,
-      tags: options.tags,
+    // 读取父 regular session 的固化配置（可能为 null：历史 session 或 main session）
+    const parentFrozen = await this.sessions.getConfig(sourceSessionId);
+    const parent: SessionConfig = parentFrozen ?? {};
+
+    // 合成最终配置：defaults → parent → profile → forkOptions
+    const merged = mergeSessionConfig({
+      defaults: this.sessionDefaults,
+      parent,
+      profile,
+      profileVars: options.profileVars,
+      forkOptions: options,
     });
 
-    // 2. session.fork()：用拓扑 ID 创建 session 实例
+    // Topology-first：创建拓扑节点，获取 ID（sourceSessionId 作为一等字段持久化）
+    const child = await this.sessions.createChild({
+      parentId: topologyParentId,
+      label: options.label,
+      sourceSessionId,
+    });
+
+    // 持久化可序列化的子集（systemPrompt / skills），供后续加载重放
+    const serializable: SerializableSessionConfig = {};
+    if (merged.systemPrompt !== undefined) serializable.systemPrompt = merged.systemPrompt;
+    if (merged.skills !== undefined) serializable.skills = merged.skills;
+    await this.sessions.putConfig(child.id, serializable);
+
+    // session.fork()：用拓扑 ID 创建 session 实例，透传合成后的运行时字段
     await this.session.fork({
       id: child.id,
       label: options.label,
-      systemPrompt: options.systemPrompt,
-      context: options.context as SessionCompatibleForkOptions['context'],
-      prompt: options.prompt,
-      llm: options.llm,
-      tools: options.tools,
-      tags: options.tags,
-      metadata: options.metadata,
-      consolidateFn: options.consolidateFn,
-      compressFn: options.compressFn,
+      systemPrompt: merged.systemPrompt,
+      context: (options.context ?? profile?.context) as SessionCompatibleForkOptions['context'],
+      prompt: options.prompt ?? profile?.prompt,
+      llm: merged.llm,
+      tools: merged.tools,
+      consolidateFn: merged.consolidateFn,
+      compressFn: merged.compressFn,
     });
 
     if (this.splitGuard) {
-      this.splitGuard.recordSplit(parentId, this.session.meta.turnCount);
+      this.splitGuard.recordSplit(topologyParentId, this.session.meta.turnCount);
     }
 
-    this.fireHook('onSessionFork', { parentId, child });
+    this.fireHook('onSessionFork', { parentId: topologyParentId, child });
     return child;
   }
 
@@ -344,54 +375,31 @@ export class StelloEngineImpl implements StelloEngine {
     return this.compositeTools.executeTool(name, args);
   }
 
-  /** 执行内置 stello_create_session：走 forkSession 完整路径，支持 profile 解析 */
+  /** 执行内置 stello_create_session：把 LLM 透传参数转为 EngineForkOptions 后调 forkSession */
   private async executeCreateSession(
     args: Record<string, unknown>,
   ): Promise<ToolExecutionResult> {
     try {
-      const profileName = args.profile as string | undefined;
-      let profile: ForkProfile | undefined;
-
-      if (profileName) {
-        profile = this.profiles?.get(profileName);
-        if (!profile) {
-          return { success: false, error: `Fork profile "${profileName}" 未注册` };
-        }
-      }
-
-      const systemPrompt = resolveSystemPrompt(
-        profile,
-        args.systemPrompt as string | undefined,
-        args.vars as Record<string, string> | undefined,
-      );
-
-      // context：profile.contextFn > profile.context > args.context
-      const argsContext = args.context as 'none' | 'inherit' | undefined;
-      const context = profile?.contextFn ?? profile?.context ?? argsContext ?? undefined;
-
-      const stelloMeta: Record<string, unknown> = {}
-      if (profile?.skills) {
-        stelloMeta.allowedSkills = profile.skills
-      }
-
-      // prompt：profile 优先，LLM 提供的作为 fallback
-      const prompt = profile?.prompt ?? (args.prompt as string | undefined);
-
-      const child = await this.forkSession({
+      const forkOptions: EngineForkOptions = {
         label: args.label as string,
-        systemPrompt,
-        prompt,
-        context,
-        llm: profile?.llm,
-        tools: profile?.tools,
-        consolidateFn: profile?.consolidateFn,
-        compressFn: profile?.compressFn,
-        metadata: {
-          sourceSessionId: this.session.id,
-          ...(Object.keys(stelloMeta).length > 0 ? { _stello: stelloMeta } : {}),
-        },
-      });
+      };
+      if (args.systemPrompt !== undefined) {
+        forkOptions.systemPrompt = args.systemPrompt as string;
+      }
+      if (args.prompt !== undefined) {
+        forkOptions.prompt = args.prompt as string;
+      }
+      if (args.context !== undefined) {
+        forkOptions.context = args.context as 'none' | 'inherit';
+      }
+      if (args.profile !== undefined) {
+        forkOptions.profile = args.profile as string;
+      }
+      if (args.vars !== undefined) {
+        forkOptions.profileVars = args.vars as Record<string, string>;
+      }
 
+      const child = await this.forkSession(forkOptions);
       return { success: true, data: { sessionId: child.id, label: child.label } };
     } catch (error) {
       return {

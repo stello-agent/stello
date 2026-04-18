@@ -109,7 +109,7 @@ describe('SessionOrchestrator', () => {
     };
 
     const orchestrator = new SessionOrchestrator(sessions, runtimeManager as never);
-    const result = await orchestrator.forkSession('s1', { label: 'UI', scope: 'ui' });
+    const result = await orchestrator.forkSession('s1', { label: 'UI' });
 
     expect(runtimeManager.acquire).toHaveBeenCalledWith(
       's1',
@@ -117,9 +117,7 @@ describe('SessionOrchestrator', () => {
     );
     expect(engine.forkSession).toHaveBeenCalledWith({
       label: 'UI',
-      scope: 'ui',
       topologyParentId: 's1',
-      metadata: { sourceSessionId: 's1' },
     });
     expect(result.id).toBe('child-1');
   });
@@ -150,7 +148,7 @@ describe('SessionOrchestrator', () => {
       runtimeManager as never,
       new MainSessionFlatStrategy(),
     );
-    const result = await orchestrator.forkSession('child-1', { label: 'UI 2', scope: 'ui' });
+    const result = await orchestrator.forkSession('child-1', { label: 'UI 2' });
 
     expect(sessions.getRoot).toHaveBeenCalledTimes(1);
     // fork 在 source session (child-1) 上执行
@@ -161,9 +159,7 @@ describe('SessionOrchestrator', () => {
     // topologyParentId 指向 root（平铺策略）
     expect(childEngine.forkSession).toHaveBeenCalledWith({
       label: 'UI 2',
-      scope: 'ui',
       topologyParentId: 'root',
-      metadata: { sourceSessionId: 'child-1' },
     });
     expect(result.parentId).toBe('root');
   });

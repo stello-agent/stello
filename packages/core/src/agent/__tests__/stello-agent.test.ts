@@ -161,6 +161,8 @@ describe('StelloAgent', () => {
         getRoot: vi.fn().mockResolvedValue(rootSession),
         archive: vi.fn(),
         createChild,
+        getConfig: vi.fn().mockResolvedValue(null),
+        putConfig: vi.fn().mockResolvedValue(undefined),
       } as unknown as SessionTree,
       memory: {} as MemoryEngine,
       capabilities: {
@@ -195,11 +197,10 @@ describe('StelloAgent', () => {
       },
     });
 
-    const result = await agent.forkSession('child-1', { label: 'UI 2', scope: 'ui' });
+    const result = await agent.forkSession('child-1', { label: 'UI 2' });
 
     expect(createChild).toHaveBeenCalledWith(expect.objectContaining({
       label: 'UI 2',
-      scope: 'ui',
       parentId: 'root',
     }));
     expect(sessionFork).toHaveBeenCalledWith(expect.objectContaining({

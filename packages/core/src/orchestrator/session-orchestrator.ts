@@ -162,10 +162,6 @@ export class SessionOrchestrator {
         engine.forkSession({
           ...options,
           topologyParentId,
-          metadata: {
-            ...(options.metadata ?? {}),
-            sourceSessionId: sessionId,
-          },
         }),
       );
     });

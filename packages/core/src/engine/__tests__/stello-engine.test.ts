@@ -20,6 +20,8 @@ describe('StelloEngineImpl', () => {
     archive: vi.fn().mockResolvedValue(undefined),
     getNode: vi.fn(),
     getTree: vi.fn(),
+    getConfig: vi.fn().mockResolvedValue(null),
+    putConfig: vi.fn().mockResolvedValue(undefined),
   } as unknown as SessionTree;
 
   const memory = {} as MemoryEngine;
@@ -354,11 +356,11 @@ describe('StelloEngineImpl', () => {
       },
     });
 
-    const child = await engine.forkSession({ label: 'UI', scope: 'ui' });
+    const child = await engine.forkSession({ label: 'UI' });
 
     expect(splitGuard.checkCanSplit).toHaveBeenCalledWith('s1');
     expect(createChild).toHaveBeenCalledWith(expect.objectContaining({
-      parentId: 's1', label: 'UI', scope: 'ui',
+      parentId: 's1', label: 'UI', sourceSessionId: 's1',
     }));
     expect(sessionFork).toHaveBeenCalledWith(expect.objectContaining({
       id: 'child-1', label: 'UI',
@@ -697,7 +699,7 @@ describe('StelloEngineImpl', () => {
       expect(profileDef.enum).toEqual(['research', 'lightweight']);
     });
 
-    it('profile.skills 写入 metadata._stello.allowedSkills', async () => {
+    it('profile.skills 固化到 SessionConfig.skills（通过 putConfig）', async () => {
       const profileRegistry = new ForkProfileRegistryImpl()
       profileRegistry.register('research', {
         systemPrompt: '你是研究助手',
@@ -712,6 +714,7 @@ describe('StelloEngineImpl', () => {
         id: 'c1', meta: { id: 'c1', turnCount: 0, status: 'active' },
         turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
       })
+      const putConfig = vi.fn().mockResolvedValue(undefined)
 
       const engine = new StelloEngineImpl({
         session: {
@@ -722,7 +725,7 @@ describe('StelloEngineImpl', () => {
           consolidate: vi.fn(),
           fork: sessionFork,
         },
-        sessions: { ...sessions, createChild } as unknown as SessionTree,
+        sessions: { ...sessions, createChild, putConfig } as unknown as SessionTree,
         memory, skills, confirm,
         lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
         tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
@@ -734,16 +737,13 @@ describe('StelloEngineImpl', () => {
         profile: 'research',
       })
 
-      expect(sessionFork).toHaveBeenCalledWith(
-        expect.objectContaining({
-          metadata: expect.objectContaining({
-            _stello: { allowedSkills: ['search', 'summarize'] },
-          }),
-        }),
+      expect(putConfig).toHaveBeenCalledWith(
+        'c1',
+        expect.objectContaining({ skills: ['search', 'summarize'] }),
       )
     })
 
-    it('profile 无 skills 时 metadata 不包含 _stello', async () => {
+    it('profile 无 skills 时 putConfig 的 config.skills 为 undefined', async () => {
       const profileRegistry = new ForkProfileRegistryImpl()
       profileRegistry.register('basic', {
         systemPrompt: '基础',
@@ -757,6 +757,7 @@ describe('StelloEngineImpl', () => {
         id: 'c1', meta: { id: 'c1', turnCount: 0, status: 'active' },
         turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
       })
+      const putConfig = vi.fn().mockResolvedValue(undefined)
 
       const engine = new StelloEngineImpl({
         session: {
@@ -767,7 +768,7 @@ describe('StelloEngineImpl', () => {
           consolidate: vi.fn(),
           fork: sessionFork,
         },
-        sessions: { ...sessions, createChild } as unknown as SessionTree,
+        sessions: { ...sessions, createChild, putConfig } as unknown as SessionTree,
         memory, skills, confirm,
         lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
         tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
@@ -779,8 +780,8 @@ describe('StelloEngineImpl', () => {
         profile: 'basic',
       })
 
-      const calledMeta = sessionFork.mock.calls[0]![0].metadata
-      expect(calledMeta).not.toHaveProperty('_stello')
+      const calledConfig = putConfig.mock.calls[0]![1]
+      expect(calledConfig).not.toHaveProperty('skills')
     })
   });
 
