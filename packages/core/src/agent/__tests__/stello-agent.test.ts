@@ -260,6 +260,36 @@ describe('StelloAgent', () => {
     });
   });
 
+  it('会保留 sessionDefaults 作为 fork 合成链的最低优先级默认值', () => {
+    const compressFn = vi.fn();
+    const agent = createStelloAgent({
+      ...baseConfig(),
+      sessionDefaults: {
+        systemPrompt: 'default system prompt',
+        compressFn,
+        skills: ['read_file'],
+      },
+    });
+
+    expect(agent.config.sessionDefaults?.systemPrompt).toBe('default system prompt');
+    expect(agent.config.sessionDefaults?.compressFn).toBe(compressFn);
+    expect(agent.config.sessionDefaults?.skills).toEqual(['read_file']);
+  });
+
+  it('会保留 mainSessionConfig 独立配置（不参与 fork 合成链）', () => {
+    const integrateFn = vi.fn();
+    const agent = createStelloAgent({
+      ...baseConfig(),
+      mainSessionConfig: {
+        systemPrompt: 'main prompt',
+        integrateFn,
+      },
+    });
+
+    expect(agent.config.mainSessionConfig?.systemPrompt).toBe('main prompt');
+    expect(agent.config.mainSessionConfig?.integrateFn).toBe(integrateFn);
+  });
+
   it('updateConfig 可热更新 runtime 配置', async () => {
     vi.useFakeTimers();
 
@@ -306,19 +336,19 @@ describe('StelloAgent', () => {
     const agent = createStelloAgent({
       ...baseConfig(),
       session: {
-        mainSessionResolver: vi.fn().mockResolvedValue(mainSession),
+        mainSessionLoader: vi.fn().mockResolvedValue({ session: mainSession, config: null }),
       },
     });
     await agent.integrate();
     expect(integrateFn).toHaveBeenCalledTimes(1);
   });
 
-  it('integrate 未配置 mainSessionResolver 时抛错', async () => {
+  it('integrate 未配置 mainSessionLoader 时抛错', async () => {
     const agent = createStelloAgent(baseConfig());
-    await expect(agent.integrate()).rejects.toThrow('No mainSessionResolver configured');
+    await expect(agent.integrate()).rejects.toThrow('No mainSessionLoader configured');
   });
 
-  it('支持通过 session.sessionResolver 正式接入 Session 配置', async () => {
+  it('支持通过 session.sessionLoader 正式接入 Session 配置', async () => {
     const session = {
       meta: {
         id: 'root',
@@ -347,7 +377,7 @@ describe('StelloAgent', () => {
       } as unknown as SessionTree,
       memory: {} as MemoryEngine,
       session: {
-        sessionResolver: vi.fn().mockResolvedValue(session),
+        sessionLoader: vi.fn().mockResolvedValue({ session, config: null }),
       },
       capabilities: {
         lifecycle: {

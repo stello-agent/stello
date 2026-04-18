@@ -24,7 +24,6 @@ import {
   sessionSendResultParser,
   type MainSessionCompatible,
   type SessionCompatible,
-  type SessionCompatibleCompressFn,
   type SessionCompatibleSendResult,
 } from '../adapters/session-runtime';
 import type { SessionTree } from '../types/session';
@@ -33,6 +32,12 @@ import type { ConfirmProtocol, SkillRouter } from '../types/lifecycle';
 import type { EngineLifecycleAdapter, EngineToolRuntime } from '../engine/stello-engine';
 import type { ForkProfileRegistry } from '../engine/fork-profile';
 import type { SplitGuard } from '../session/split-guard';
+import type {
+  MainSessionConfig,
+  SerializableMainSessionConfig,
+  SerializableSessionConfig,
+  SessionConfig,
+} from '../types/session-config';
 
 /** Session 能力相关配置 */
 export interface StelloAgentCapabilitiesConfig {
@@ -51,12 +56,16 @@ export interface StelloAgentCapabilitiesConfig {
  * 正式接入到 core 的 Engine 体系里。
  */
 export interface StelloAgentSessionConfig {
-  /** 按 sessionId 解析真实 Session */
-  sessionResolver?: (sessionId: string) => Promise<SessionCompatible>;
-  /** 解析 MainSession（可选，仅在需要 integration 时提供） */
-  mainSessionResolver?: () => Promise<MainSessionCompatible | null>;
-  /** 上下文压缩函数（超阈值时调用） */
-  compressFn?: SessionCompatibleCompressFn;
+  /** 按 sessionId 加载固化配置 + meta（纯 I/O），返回 Session 实例与其序列化配置 */
+  sessionLoader?: (sessionId: string) => Promise<{
+    session: SessionCompatible;
+    config: SerializableSessionConfig | null;
+  }>;
+  /** 加载 MainSession 与其固化配置（可选，仅在需要 integration 时提供） */
+  mainSessionLoader?: () => Promise<{
+    session: MainSessionCompatible;
+    config: SerializableMainSessionConfig | null;
+  } | null>;
   /** send() 结果序列化方式，默认 JSON 序列化 */
   serializeSendResult?: (result: SessionCompatibleSendResult) => string;
   /** TurnRunner 用的 tool call parser，默认 sessionSendResultParser */
@@ -92,6 +101,10 @@ export interface StelloAgentOrchestrationConfig {
 export interface StelloAgentConfig {
   sessions: SessionTree;
   memory: MemoryEngine;
+  /** Regular session 的 agent 级默认配置，fork 合成链的最低优先级 */
+  sessionDefaults?: SessionConfig;
+  /** Main session 独立配置（不参与 fork 合成链） */
+  mainSessionConfig?: MainSessionConfig;
   session?: StelloAgentSessionConfig;
   capabilities: StelloAgentCapabilitiesConfig;
   runtime?: StelloAgentRuntimeConfig;
@@ -104,21 +117,21 @@ function resolveRuntimeResolver(config: StelloAgentConfig): SessionRuntimeResolv
     return config.runtime.resolver;
   }
 
-  if (config.session?.sessionResolver) {
+  if (config.session?.sessionLoader) {
     const adaptOptions = {
-      compressFn: config.session!.compressFn,
+      compressFn: config.sessionDefaults?.compressFn,
       serializeResult: config.session!.serializeSendResult ?? serializeSessionSendResult,
     };
     return {
       resolve: async (sessionId: string) => {
-        const session = await config.session!.sessionResolver!(sessionId);
+        const { session } = await config.session!.sessionLoader!(sessionId);
         return adaptSessionToEngineRuntime(session, adaptOptions);
       },
     };
   }
 
   throw new Error(
-    'StelloAgentConfig 缺少 runtime.resolver；若使用 session 配置接入，请提供 session.sessionResolver',
+    'StelloAgentConfig 缺少 runtime.resolver；若使用 session 配置接入，请提供 session.sessionLoader',
   );
 }
 
@@ -131,7 +144,7 @@ function resolveTurnRunner(config: StelloAgentConfig): TurnRunner | undefined {
     return new TurnRunner(config.session.toolCallParser ?? sessionSendResultParser);
   }
 
-  if (config.session?.sessionResolver) {
+  if (config.session?.sessionLoader) {
     return new TurnRunner(sessionSendResultParser);
   }
 
@@ -255,15 +268,15 @@ export class StelloAgent {
 
   /** 对 main session 执行 integration */
   async integrate(): Promise<unknown> {
-    const mainSessionResolver = this.config.session?.mainSessionResolver;
-    if (!mainSessionResolver) {
-      throw new Error('No mainSessionResolver configured');
+    const mainSessionLoader = this.config.session?.mainSessionLoader;
+    if (!mainSessionLoader) {
+      throw new Error('No mainSessionLoader configured');
     }
-    const mainSession = await mainSessionResolver();
-    if (!mainSession) {
+    const loaded = await mainSessionLoader();
+    if (!loaded) {
       throw new Error('MainSession not found');
     }
-    return mainSession.integrate();
+    return loaded.session.integrate();
   }
 
   /** 热更新运行时配置（仅支持值类型字段） */
