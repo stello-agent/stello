@@ -28,6 +28,8 @@ export interface MergeSessionConfigInput {
  * 合成顺序：defaults → parent → profile → forkOptions，字段级覆盖，undefined 不覆盖。
  * systemPrompt 特殊：profile 存在时走 profile.systemPromptMode 规则合成 profile prompt
  * 与 forkOptions.systemPrompt（caller 层），profile 缺省时退化为常规 later-wins 链。
+ * 若 profile 存在但未贡献 prompt（无 systemPrompt/systemPromptFn，或 preset 模式下均为空），
+ * 且 forkOptions 也无 prompt，则回落到 parent → defaults（later-wins）。
  * skills 整数组替换，显式设 [] 视作 disabled，可覆盖下层非空值。
  */
 export function mergeSessionConfig(input: MergeSessionConfigInput): SessionConfig {

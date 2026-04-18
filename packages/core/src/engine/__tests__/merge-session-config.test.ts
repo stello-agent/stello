@@ -240,6 +240,15 @@ describe('mergeSessionConfig', () => {
     expect(result.systemPrompt).toBe('region=北京')
   })
 
+  it('systemPrompt：profile preset 模式且均为空时回落到 defaults', () => {
+    const profile: ForkProfile = { systemPromptMode: 'preset' }
+    const defaults: SessionConfig = { systemPrompt: 'D' }
+    const forkOptions: EngineForkOptions = { label: 't' }
+
+    const result = mergeSessionConfig({ defaults, profile, forkOptions })
+    expect(result.systemPrompt).toBe('D')
+  })
+
   it('parent undefined（从 main session fork）时正常合成', () => {
     const profile: ForkProfile = {
       systemPrompt: 'P',
