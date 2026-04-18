@@ -743,6 +743,44 @@ describe('StelloEngineImpl', () => {
       )
     })
 
+    it('sessionDefaults.systemPrompt 在无 profile/forkOptions 时兜底到 putConfig + session.fork', async () => {
+      const createChild = vi.fn().mockResolvedValue({
+        id: 'c1', parentId: 's1', children: [], refs: [],
+        depth: 1, index: 0, label: 'default-sp',
+      })
+      const sessionFork = vi.fn().mockResolvedValue({
+        id: 'c1', meta: { id: 'c1', turnCount: 0, status: 'active' },
+        turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+      })
+      const putConfig = vi.fn().mockResolvedValue(undefined)
+
+      const engine = new StelloEngineImpl({
+        session: {
+          id: 's1',
+          meta: { id: 's1', turnCount: 0, status: 'active' as const },
+          turnCount: 0,
+          send: vi.fn(),
+          consolidate: vi.fn(),
+          fork: sessionFork,
+        },
+        sessions: { ...sessions, createChild, putConfig } as unknown as SessionTree,
+        memory, skills, confirm,
+        lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
+        tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
+        sessionDefaults: { systemPrompt: 'D' },
+      })
+
+      await engine.executeTool('stello_create_session', { label: 'default-sp' })
+
+      expect(putConfig).toHaveBeenCalledWith(
+        'c1',
+        expect.objectContaining({ systemPrompt: 'D' }),
+      )
+      expect(sessionFork).toHaveBeenCalledWith(
+        expect.objectContaining({ systemPrompt: 'D' }),
+      )
+    })
+
     it('profile 无 skills 时 putConfig 的 config.skills 为 undefined', async () => {
       const profileRegistry = new ForkProfileRegistryImpl()
       profileRegistry.register('basic', {

@@ -298,6 +298,8 @@ export class StelloEngineImpl implements StelloEngine {
 
   /** 从当前 session 发起 fork：合成配置、创建拓扑节点、调用 session.fork */
   async forkSession(options: EngineForkOptions): Promise<TopologyNode> {
+    // sourceSessionId 始终是上下文来源（当前 session），与 topologyParentId（拓扑挂载点）分离；
+    // flat 拓扑策略下两者可能不同。
     const topologyParentId = options.topologyParentId ?? this.session.id;
     const sourceSessionId = this.session.id;
 
@@ -339,10 +341,13 @@ export class StelloEngineImpl implements StelloEngine {
     });
 
     // 持久化可序列化的子集（systemPrompt / skills），供后续加载重放
+    // 空对象时跳过写入，避免对存储层产生 noise
     const serializable: SerializableSessionConfig = {};
     if (merged.systemPrompt !== undefined) serializable.systemPrompt = merged.systemPrompt;
     if (merged.skills !== undefined) serializable.skills = merged.skills;
-    await this.sessions.putConfig(child.id, serializable);
+    if (Object.keys(serializable).length > 0) {
+      await this.sessions.putConfig(child.id, serializable);
+    }
 
     // session.fork()：用拓扑 ID 创建 session 实例，透传合成后的运行时字段
     await this.session.fork({
