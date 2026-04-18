@@ -195,12 +195,12 @@ async function main(): Promise<void> {
     sessions,
     memory,
     session: {
-      sessionResolver: async (sessionId) => {
+      sessionLoader: async (sessionId) => {
         const session = mockSessions.get(sessionId)
         if (!session) {
           throw new Error(`Unknown session: ${sessionId}`)
         }
-        return session
+        return { session, config: null }
       },
     },
     capabilities: {
@@ -219,7 +219,7 @@ async function main(): Promise<void> {
   print('config shape', {
     hasSessions: Boolean(config.sessions),
     hasMemory: Boolean(config.memory),
-    hasSessionResolver: Boolean(config.session?.sessionResolver),
+    hasSessionLoader: Boolean(config.session?.sessionLoader),
     hasLifecycle: Boolean(config.capabilities.lifecycle),
     hasTools: Boolean(config.capabilities.tools),
     recyclePolicy: config.runtime?.recyclePolicy ?? null,
@@ -252,7 +252,6 @@ async function main(): Promise<void> {
 
   const child = await agent.forkSession(root.id, {
     label: 'UI Exploration',
-    scope: 'ui',
   })
   print('child', child)
 

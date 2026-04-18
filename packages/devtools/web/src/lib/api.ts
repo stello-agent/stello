@@ -6,14 +6,23 @@ const BASE = '/api'
 export interface SessionMeta {
   id: string
   label: string
-  scope: string | null
   status: 'active' | 'archived'
   turnCount: number
-  tags: string[]
-  metadata: Record<string, unknown>
   createdAt: string
   updatedAt: string
   lastActiveAt: string
+}
+
+/** 拓扑节点（和 core 的 TopologyNode 一致） */
+export interface TopologyNode {
+  id: string
+  parentId: string | null
+  children: string[]
+  refs: string[]
+  depth: number
+  index: number
+  label: string
+  sourceSessionId?: string
 }
 
 /** 递归树节点（和 core 的 SessionTreeNode 一致） */
@@ -53,27 +62,34 @@ export interface SessionDetail {
 export interface AgentConfig {
   orchestration: {
     strategy: string
-    hasMainSession: boolean
+    consolidateEveryNTurns: number | null
     hasTurnRunner: boolean
   }
   runtime: {
     idleTtlMs: number
     hasResolver: boolean
   }
-  scheduling: {
-    consolidation: { trigger: string; everyNTurns?: number }
-    integration: { trigger: string; everyNTurns?: number }
-    hasScheduler: boolean
-  }
   splitGuard: { minTurns: number; cooldownTurns: number } | null
   session: {
-    hasSessionResolver: boolean
-    hasMainSessionResolver: boolean
-    hasConsolidateFn: boolean
-    hasIntegrateFn: boolean
+    hasSessionLoader: boolean
+    hasMainSessionLoader: boolean
     hasSerializeSendResult: boolean
     hasToolCallParser: boolean
     options: Record<string, unknown> | null
+  }
+  sessionDefaults: {
+    hasSystemPrompt: boolean
+    hasLLM: boolean
+    hasConsolidateFn: boolean
+    hasCompressFn: boolean
+    skills: string[] | null
+  }
+  mainSessionConfig: {
+    hasSystemPrompt: boolean
+    hasLLM: boolean
+    hasIntegrateFn: boolean
+    hasCompressFn: boolean
+    skills: string[] | null
   }
   capabilities: {
     tools: Array<{ name: string; description: string; parameters?: Record<string, unknown> }>

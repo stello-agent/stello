@@ -665,7 +665,6 @@ export async function bootstrap() {
       if (!agentRef) throw new Error('Agent not initialized')
       return agentRef.forkSession(proposal.parentId, {
         label: proposal.suggestedLabel,
-        scope: proposal.suggestedScope,
       })
     },
     async dismissSplit() {},
@@ -677,13 +676,13 @@ export async function bootstrap() {
     sessions: sessions as SessionTree,
     memory,
     session: {
-      sessionResolver: async (sessionId) => {
+      sessionLoader: async (sessionId) => {
         const entry = sessionMap.get(sessionId)
         if (entry) {
           if ('main' in entry && entry.main) {
-            return wrapMainSession(sessionId, entry.main, memory, sessionMap)
+            return { session: wrapMainSession(sessionId, entry.main, memory, sessionMap), config: null }
           }
-          return wrapStandardSession(sessionId, entry.session, memory, sessionMap)
+          return { session: wrapStandardSession(sessionId, entry.session, memory, sessionMap), config: null }
         }
         // fork 创建的 session 可能不在 map 中（重启后），从 storage 加载
         const session = await loadSession(sessionId, {
@@ -694,20 +693,23 @@ export async function bootstrap() {
         })
         if (!session) throw new Error(`Session not found: ${sessionId}`)
         sessionMap.set(sessionId, { session })
-        return wrapStandardSession(sessionId, session, memory, sessionMap)
+        return { session: wrapStandardSession(sessionId, session, memory, sessionMap), config: null }
       },
-      mainSessionResolver: async () => ({
-        async integrate() {
-          const result = await mainSession.integrate()
-          /* 同步 synthesis + insights 到文件持久化层 */
-          if (result) {
-            await memory.writeMemory(rootId, result.synthesis)
-            for (const { sessionId, content } of result.insights) {
-              await memory.writeScope(sessionId, content)
+      mainSessionLoader: async () => ({
+        session: {
+          async integrate() {
+            const result = await mainSession.integrate()
+            /* 同步 synthesis + insights 到文件持久化层 */
+            if (result) {
+              await memory.writeMemory(rootId, result.synthesis)
+              for (const { sessionId, content } of result.insights) {
+                await memory.writeScope(sessionId, content)
+              }
             }
-          }
-          return result
+            return result
+          },
         },
+        config: null,
       }),
     },
     capabilities: {
@@ -821,9 +823,9 @@ export async function bootstrap() {
     },
     integration: {
       async trigger() {
-        const resolvedMain = await config.session!.mainSessionResolver?.()
-        if (!resolvedMain) throw new Error('MainSession is not configured')
-        const result = await resolvedMain.integrate() as {
+        const loaded = await config.session!.mainSessionLoader?.()
+        if (!loaded) throw new Error('MainSession is not configured')
+        const result = await loaded.session.integrate() as {
           synthesis: string
           insights: Array<{ sessionId: string; content: string }>
         }

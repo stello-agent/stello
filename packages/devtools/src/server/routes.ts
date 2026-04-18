@@ -67,11 +67,25 @@ function serializeConfig(agent: StelloAgent) {
     },
     splitGuard: splitGuardConfig ?? null,
     session: {
-      hasSessionResolver: !!config.session?.sessionResolver,
-      hasMainSessionResolver: !!config.session?.mainSessionResolver,
+      hasSessionLoader: !!config.session?.sessionLoader,
+      hasMainSessionLoader: !!config.session?.mainSessionLoader,
       hasSerializeSendResult: !!config.session?.serializeSendResult,
       hasToolCallParser: !!config.session?.toolCallParser,
       options: config.session?.options ?? null,
+    },
+    sessionDefaults: {
+      hasSystemPrompt: !!config.sessionDefaults?.systemPrompt,
+      hasLLM: !!config.sessionDefaults?.llm,
+      hasConsolidateFn: !!config.sessionDefaults?.consolidateFn,
+      hasCompressFn: !!config.sessionDefaults?.compressFn,
+      skills: config.sessionDefaults?.skills ?? null,
+    },
+    mainSessionConfig: {
+      hasSystemPrompt: !!config.mainSessionConfig?.systemPrompt,
+      hasLLM: !!config.mainSessionConfig?.llm,
+      hasIntegrateFn: !!config.mainSessionConfig?.integrateFn,
+      hasCompressFn: !!config.mainSessionConfig?.compressFn,
+      skills: config.mainSessionConfig?.skills ?? null,
     },
     capabilities: {
       tools: config.capabilities.tools.getToolDefinitions(),
@@ -354,7 +368,7 @@ export function createRoutes(
   /** Fork session */
   app.post('/sessions/:id/fork', async (c) => {
     const id = c.req.param('id')
-    const options = await c.req.json<{ label: string; scope?: string }>()
+    const options = await c.req.json<{ label: string }>()
     const child = await agent.forkSession(id, options)
     return c.json(child)
   })

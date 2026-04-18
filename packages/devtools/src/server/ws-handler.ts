@@ -8,7 +8,7 @@ type WsClientMessage =
   | { type: 'session.leave' }
   | { type: 'session.message'; input: string }
   | { type: 'session.stream'; input: string }
-  | { type: 'session.fork'; options: { label: string; scope?: string } }
+  | { type: 'session.fork'; options: { label: string } }
 
 /** 发送 JSON 消息到客户端 */
 function send(ws: WebSocket, data: Record<string, unknown>): void {
