@@ -17,11 +17,8 @@ import type {
 } from './lifecycle';
 import type { EngineRuntimeSession, EngineStreamResult, EngineTurnResult } from '../engine/stello-engine';
 import type { TurnRunnerOptions } from '../engine/turn-runner';
-import type { ForkContextFn, LLMAdapter, LLMCompleteOptions } from '@stello-ai/session';
-import type {
-  SessionCompatibleConsolidateFn,
-  SessionCompatibleCompressFn,
-} from '../adapters/session-runtime';
+import type { ForkContextFn } from '@stello-ai/session';
+import type { SessionConfig } from './session-config';
 
 // ─── 策略配置 ───
 
@@ -108,24 +105,25 @@ export interface StelloEngine {
 
 // ─── Engine Fork 选项 ───
 
-/** Engine fork 操作的选项：topology 字段 + session 字段 */
-export interface EngineForkOptions {
+/**
+ * Engine fork 操作的选项。
+ *
+ * 继承 SessionConfig 的字段集（systemPrompt/llm/tools/skills/consolidateFn/compressFn），
+ * 另加 fork 专属字段。LLM 发起的 fork 通过 profile 引用命名模板，profileVars 注入模板变量。
+ */
+export interface EngineForkOptions extends SessionConfig {
+  /** 子 session 显示名称（必填） */
   label: string
-  scope?: string
-  systemPrompt?: string
+  /** fork 后立即发送的首条消息 */
   prompt?: string
-  /** 上下文策略：'none' | 'inherit' | ForkContextFn */
-  context?: 'none' | 'inherit' | ForkContextFn
-  llm?: LLMAdapter
-  tools?: LLMCompleteOptions['tools']
-  tags?: string[]
-  metadata?: Record<string, unknown>
   /** 显式指定拓扑父节点 ID（不传则用当前 session.id） */
   topologyParentId?: string
-  /** 子 session 的 L3→L2 提炼函数（不传则继承父 session 的） */
-  consolidateFn?: SessionCompatibleConsolidateFn
-  /** 子 session 的上下文压缩函数（不传则继承父 session 的） */
-  compressFn?: SessionCompatibleCompressFn
+  /** 上下文继承策略（fork 专属，根 session 无意义） */
+  context?: 'none' | 'inherit' | ForkContextFn
+  /** 引用预注册的 ForkProfile 名称 */
+  profile?: string
+  /** ForkProfile systemPrompt 模板变量 */
+  profileVars?: Record<string, string>
 }
 
 // ─── Session Runtime 解析器 ───
