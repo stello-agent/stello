@@ -49,7 +49,7 @@ export interface SessionCompatibleForkOptions {
   id?: string;
   label: string;
   systemPrompt?: string;
-  context?: 'none' | 'inherit' | ForkContextFn;
+  context?: 'none' | 'inherit' | 'compress' | ForkContextFn;
   prompt?: string;
   llm?: LLMAdapter;
   tools?: LLMCompleteOptions['tools'];
