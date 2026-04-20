@@ -49,7 +49,7 @@ export interface SessionCompatibleForkOptions {
   id?: string;
   label: string;
   systemPrompt?: string;
-  context?: 'none' | 'inherit' | ForkContextFn;
+  context?: 'none' | 'inherit' | 'compress' | ForkContextFn;
   prompt?: string;
   llm?: LLMAdapter;
   tools?: LLMCompleteOptions['tools'];
@@ -159,6 +159,9 @@ export async function adaptSessionToEngineRuntime(
       const result = await session.send(input);
       turnCount += 1;
       return (options.serializeResult ?? serializeSessionSendResult)(result);
+    },
+    async messages() {
+      return session.messages();
     },
     ...(session.stream
       ? {

@@ -19,7 +19,7 @@ export interface ForkProfile extends SessionConfig {
    */
   systemPromptMode?: 'preset' | 'prepend' | 'append'
   /** 上下文继承策略（与 EngineForkOptions.context 一致） */
-  context?: 'none' | 'inherit' | ForkContextFn
+  context?: 'none' | 'inherit' | 'compress' | ForkContextFn
   /** 子会话的首条 assistant 开场消息（profile 级默认，可被 EngineForkOptions.prompt 覆盖） */
   prompt?: string
 }

@@ -19,4 +19,11 @@ describe('createSessionToolDefinition', () => {
     const def = createSessionToolDefinition()
     expect(def.parameters.required).toEqual(['label'])
   })
+
+  it('context 枚举包含 none / inherit / compress', () => {
+    const def = createSessionToolDefinition()
+    const props = def.parameters.properties as { context: { enum: string[]; description: string } }
+    expect(props.context.enum).toEqual(['none', 'inherit', 'compress'])
+    expect(props.context.description).toContain('compress')
+  })
 })

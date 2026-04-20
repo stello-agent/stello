@@ -20,6 +20,8 @@ import type {
   SessionConfig,
 } from '../types/session-config';
 import { mergeSessionConfig } from './merge-session-config';
+import { applyCompressContext } from './fork-compress';
+import { llmCallFnFromAdapter, type LLMCallFn } from '../llm/defaults';
 import {
   TurnRunner,
   type ToolCallParser,
@@ -50,6 +52,8 @@ export interface EngineRuntimeSession {
   fork?(options: SessionCompatibleForkOptions): Promise<EngineRuntimeSession>;
   /** 由 Session 自己完成 L2/L3 -> memory 的整理 */
   consolidate(): Promise<void>;
+  /** 读取当前 session 的 L3 消息（原始对话记录） */
+  messages(): Promise<Array<{ role: string; content: string; timestamp?: string }>>;
 }
 
 /** Engine 依赖的生命周期适配器 */
@@ -338,6 +342,21 @@ export class StelloEngineImpl implements StelloEngine {
       forkOptions: options,
     });
 
+    // 解析有效 context 并按需执行压缩。必须在 createChild 之前运行：
+    // 若 compress 缺少 compressFn/llm 而抛错，避免产生孤儿拓扑节点。
+    const effectiveContext = options.context ?? profile?.context;
+    const llmCallFn: LLMCallFn | undefined = merged.llm
+      ? llmCallFnFromAdapter(merged.llm)
+      : undefined;
+    const { systemPrompt: finalSystemPrompt, forwardedContext } =
+      await applyCompressContext({
+        context: effectiveContext,
+        systemPrompt: merged.systemPrompt,
+        compressFn: merged.compressFn,
+        llmCallFn,
+        sourceMessages: () => this.session.messages(),
+      });
+
     // Topology-first：创建拓扑节点，获取 ID（sourceSessionId 作为一等字段持久化）
     const child = await this.sessions.createChild({
       parentId: topologyParentId,
@@ -346,20 +365,22 @@ export class StelloEngineImpl implements StelloEngine {
     });
 
     // 持久化可序列化的子集（systemPrompt / skills），供后续加载重放
+    // finalSystemPrompt 已在 compress 路径下包含 <parent_context> 段
     // 空对象时跳过写入，避免对存储层产生 noise
     const serializable: SerializableSessionConfig = {};
-    if (merged.systemPrompt !== undefined) serializable.systemPrompt = merged.systemPrompt;
+    if (finalSystemPrompt !== undefined) serializable.systemPrompt = finalSystemPrompt;
     if (merged.skills !== undefined) serializable.skills = merged.skills;
     if (Object.keys(serializable).length > 0) {
       await this.sessions.putConfig(child.id, serializable);
     }
 
     // session.fork()：用拓扑 ID 创建 session 实例，透传合成后的运行时字段
+    // compress 路径下 forwardedContext='none'，避免底层 session 重复处理
     await this.session.fork({
       id: child.id,
       label: options.label,
-      systemPrompt: merged.systemPrompt,
-      context: (options.context ?? profile?.context) as SessionCompatibleForkOptions['context'],
+      systemPrompt: finalSystemPrompt,
+      context: forwardedContext as SessionCompatibleForkOptions['context'],
       prompt: options.prompt ?? profile?.prompt,
       llm: merged.llm,
       tools: merged.tools,
@@ -400,7 +421,7 @@ export class StelloEngineImpl implements StelloEngine {
         forkOptions.prompt = args.prompt as string;
       }
       if (args.context !== undefined) {
-        forkOptions.context = args.context as 'none' | 'inherit';
+        forkOptions.context = args.context as 'none' | 'inherit' | 'compress';
       }
       if (args.profile !== undefined) {
         forkOptions.profile = args.profile as string;

@@ -119,7 +119,7 @@ export interface EngineForkOptions extends SessionConfig {
   /** 显式指定拓扑父节点 ID（不传则用当前 session.id） */
   topologyParentId?: string
   /** 上下文继承策略（fork 专属，根 session 无意义） */
-  context?: 'none' | 'inherit' | ForkContextFn
+  context?: 'none' | 'inherit' | 'compress' | ForkContextFn
   /** 引用预注册的 ForkProfile 名称 */
   profile?: string
   /** ForkProfile systemPrompt 模板变量 */
