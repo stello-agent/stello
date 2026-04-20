@@ -1,3 +1,4 @@
+import type { LLMAdapter } from '@stello-ai/session'
 import type {
   SessionCompatibleConsolidateFn,
   SessionCompatibleIntegrateFn,
@@ -8,6 +9,21 @@ import type {
 export type LLMCallFn = (
   messages: Array<{ role: string; content: string }>,
 ) => Promise<string>
+
+/**
+ * 将 LLMAdapter 桥接为 LLMCallFn。
+ * LLMAdapter.complete 需要窄化的 role 联合,且返回 { content: string | null };
+ * LLMCallFn 使用宽松的 { role: string } 且返回 Promise<string>。
+ * 这个适配器集中处理两者之间的 role narrowing 和 null 合并。
+ */
+export function llmCallFnFromAdapter(adapter: LLMAdapter): LLMCallFn {
+  return async (msgs) => {
+    const result = await adapter.complete(
+      msgs as Array<{ role: 'system' | 'user' | 'assistant' | 'tool'; content: string }>,
+    )
+    return result.content ?? ''
+  }
+}
 
 /** 默认 consolidation 提示词 */
 export const DEFAULT_CONSOLIDATE_PROMPT = `你是对话摘要助手。请将对话提炼为一段 100-150 字的简洁摘要。

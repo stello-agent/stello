@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createDefaultIntegrateFn, DEFAULT_INTEGRATE_PROMPT, type LLMCallFn } from '../defaults.js'
+import type { LLMAdapter } from '@stello-ai/session'
+import {
+  createDefaultIntegrateFn,
+  DEFAULT_INTEGRATE_PROMPT,
+  llmCallFnFromAdapter,
+  type LLMCallFn,
+} from '../defaults.js'
 
 describe('createDefaultIntegrateFn', () => {
   it('在传给 LLM 的子 Session 摘要中包含真实 sessionId', async () => {
@@ -18,5 +24,25 @@ describe('createDefaultIntegrateFn', () => {
     const [messages] = llm.mock.calls[0]!
     expect(messages[1]?.content).toContain('[sessionId=sess-1] 选校: 已完成第一轮筛选')
     expect(messages[1]?.content).toContain('[sessionId=sess-2] 文书: PS 初稿待修改')
+  })
+})
+
+describe('llmCallFnFromAdapter', () => {
+  it('forwards messages to adapter.complete and returns content', async () => {
+    const adapter = {
+      complete: vi.fn(async () => ({ content: 'hello' })),
+    } as unknown as LLMAdapter
+    const fn = llmCallFnFromAdapter(adapter)
+    const result = await fn([{ role: 'user', content: 'hi' }])
+    expect(result).toBe('hello')
+    expect(adapter.complete).toHaveBeenCalledWith([{ role: 'user', content: 'hi' }])
+  })
+
+  it('coerces null content to empty string', async () => {
+    const adapter = {
+      complete: vi.fn(async () => ({ content: null })),
+    } as unknown as LLMAdapter
+    const fn = llmCallFnFromAdapter(adapter)
+    expect(await fn([{ role: 'user', content: 'x' }])).toBe('')
   })
 })

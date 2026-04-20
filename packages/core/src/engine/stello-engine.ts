@@ -21,7 +21,7 @@ import type {
 } from '../types/session-config';
 import { mergeSessionConfig } from './merge-session-config';
 import { applyCompressContext } from './fork-compress';
-import type { LLMCallFn } from '../llm/defaults';
+import { llmCallFnFromAdapter, type LLMCallFn } from '../llm/defaults';
 import {
   TurnRunner,
   type ToolCallParser,
@@ -345,16 +345,8 @@ export class StelloEngineImpl implements StelloEngine {
     // 解析有效 context 并按需执行压缩。必须在 createChild 之前运行：
     // 若 compress 缺少 compressFn/llm 而抛错，避免产生孤儿拓扑节点。
     const effectiveContext = options.context ?? profile?.context;
-    // LLMCallFn 使用宽松 { role: string } 签名以兼容 compress/consolidate 的多种场景；
-    // 这里把它桥接到 LLMAdapter.complete(Message[])，runtime 角色集合在上游已保证。
-    const mergedLlm = merged.llm;
-    const llmCallFn: LLMCallFn | undefined = mergedLlm
-      ? async (msgs) =>
-          (
-            await mergedLlm.complete(
-              msgs as Array<{ role: 'system' | 'user' | 'assistant' | 'tool'; content: string }>,
-            )
-          ).content ?? ''
+    const llmCallFn: LLMCallFn | undefined = merged.llm
+      ? llmCallFnFromAdapter(merged.llm)
       : undefined;
     const { systemPrompt: finalSystemPrompt, forwardedContext } =
       await applyCompressContext({
