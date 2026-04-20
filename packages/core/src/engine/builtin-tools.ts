@@ -20,8 +20,8 @@ export function createSessionToolDefinition(profileNames?: string[]): ToolDefini
     },
     context: {
       type: 'string',
-      enum: ['none', 'inherit'],
-      description: "上下文继承策略。'none'（默认）：子会话以空对话历史启动，适合独立主题；'inherit'：完整拷贝父会话的对话记录到子会话，适合需要完整上下文的深入探讨。如果 profile 定义了上下文策略，profile 的设置优先。",
+      enum: ['none', 'inherit', 'compress'],
+      description: "上下文继承策略。'none'（默认）：子会话以空对话历史启动，适合独立主题；'inherit'：完整拷贝父会话对话记录到子会话，适合需要完整上下文的深入探讨；'compress'：将父会话对话压缩为摘要注入子会话 system prompt（子 L3 保持空），适合子会话以独立角色专注新任务但需要父对话作为背景知识。如果 profile 定义了上下文策略，profile 的设置优先。",
     },
   };
 
