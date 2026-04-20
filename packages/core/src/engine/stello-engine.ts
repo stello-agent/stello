@@ -50,6 +50,8 @@ export interface EngineRuntimeSession {
   fork?(options: SessionCompatibleForkOptions): Promise<EngineRuntimeSession>;
   /** 由 Session 自己完成 L2/L3 -> memory 的整理 */
   consolidate(): Promise<void>;
+  /** 读取当前 session 的 L3 消息（原始对话记录） */
+  messages(): Promise<Array<{ role: string; content: string; timestamp?: string }>>;
 }
 
 /** Engine 依赖的生命周期适配器 */

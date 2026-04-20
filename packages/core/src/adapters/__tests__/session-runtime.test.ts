@@ -61,6 +61,21 @@ describe('session-runtime adapters', () => {
     expect(session.consolidate).toHaveBeenCalledWith();
   });
 
+  it('adapter 暴露 messages() 方法，转发给底层 session', async () => {
+    const parentMessages = [
+      { role: 'user', content: '你好' },
+      { role: 'assistant', content: '你好!' },
+    ];
+    const session = {
+      meta: { id: 's1', status: 'active' as const },
+      send: vi.fn(),
+      messages: vi.fn().mockResolvedValue(parentMessages),
+      consolidate: vi.fn(),
+    };
+    const adapter = await adaptSessionToEngineRuntime(session, {});
+    expect(await adapter.messages()).toEqual(parentMessages);
+  });
+
   it('adapter 暴露 fork 方法并适配返回值', async () => {
     const childSession = {
       meta: { id: 'child-1', status: 'active' as const },

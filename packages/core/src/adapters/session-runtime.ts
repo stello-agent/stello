@@ -160,6 +160,9 @@ export async function adaptSessionToEngineRuntime(
       turnCount += 1;
       return (options.serializeResult ?? serializeSessionSendResult)(result);
     },
+    async messages() {
+      return session.messages();
+    },
     ...(session.stream
       ? {
           stream(input: string) {

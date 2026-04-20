@@ -40,6 +40,7 @@ describe('StelloEngineImpl', () => {
       turnCount: 0,
       send: vi.fn(),
       consolidate: vi.fn(),
+      messages: vi.fn().mockResolvedValue([]),
     };
     const turnRunner = {
       run: vi.fn().mockResolvedValue({
@@ -119,6 +120,7 @@ describe('StelloEngineImpl', () => {
         )
         .mockResolvedValueOnce(JSON.stringify({ content: 'done', toolCalls: [] })),
       consolidate: vi.fn(),
+      messages: vi.fn().mockResolvedValue([]),
     };
     const onToolCall = vi.fn();
     const onToolResult = vi.fn();
@@ -179,6 +181,7 @@ describe('StelloEngineImpl', () => {
         turnCount: 0,
         send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
         consolidate: vi.fn(),
+        messages: vi.fn().mockResolvedValue([]),
       },
       sessions,
       memory,
@@ -229,6 +232,7 @@ describe('StelloEngineImpl', () => {
         turnCount: 0,
         send: vi.fn(),
         consolidate: vi.fn(),
+        messages: vi.fn().mockResolvedValue([]),
       },
       sessions,
       memory,
@@ -256,6 +260,7 @@ describe('StelloEngineImpl', () => {
       turnCount: 2,
       send: vi.fn(),
       consolidate: vi.fn(),
+      messages: vi.fn().mockResolvedValue([]),
     };
     const onSessionLeave = vi.fn();
 
@@ -290,6 +295,7 @@ describe('StelloEngineImpl', () => {
       turnCount: 2,
       send: vi.fn(),
       consolidate: vi.fn(),
+      messages: vi.fn().mockResolvedValue([]),
     };
     const archive = vi.fn().mockResolvedValue(undefined);
     const onSessionArchive = vi.fn();
@@ -340,6 +346,7 @@ describe('StelloEngineImpl', () => {
         turnCount: 3,
         send: vi.fn(),
         consolidate: vi.fn(),
+        messages: vi.fn().mockResolvedValue([]),
         fork: sessionFork,
       },
       sessions: { ...sessions, createChild } as unknown as SessionTree,
@@ -388,6 +395,7 @@ describe('StelloEngineImpl', () => {
           turnCount: 2,
           send: vi.fn(),
           consolidate: vi.fn(),
+          messages: vi.fn().mockResolvedValue([]),
           fork: sessionFork,
         },
         sessions: { ...sessions, createChild } as unknown as SessionTree,
@@ -427,6 +435,7 @@ describe('StelloEngineImpl', () => {
           turnCount: 0,
           send: vi.fn(),
           consolidate: vi.fn(),
+          messages: vi.fn().mockResolvedValue([]),
         },
         sessions,
         memory,
@@ -458,6 +467,7 @@ describe('StelloEngineImpl', () => {
           turnCount: 0,
           send: vi.fn(),
           consolidate: vi.fn(),
+          messages: vi.fn().mockResolvedValue([]),
         },
         sessions,
         memory,
@@ -492,6 +502,7 @@ describe('StelloEngineImpl', () => {
           turnCount: 0,
           send: vi.fn(),
           consolidate: vi.fn(),
+          messages: vi.fn().mockResolvedValue([]),
         },
         sessions,
         memory,
@@ -500,7 +511,7 @@ describe('StelloEngineImpl', () => {
         lifecycle: {
           bootstrap: vi.fn(),
           afterTurn: vi.fn(),
-  
+
         },
         tools: {
           getToolDefinitions: vi.fn().mockReturnValue([userTool]),
@@ -532,6 +543,7 @@ describe('StelloEngineImpl', () => {
           turnCount: 0,
           send: vi.fn(),
           consolidate: vi.fn(),
+          messages: vi.fn().mockResolvedValue([]),
           fork: sessionFork,
         },
         sessions: { ...sessions, createChild } as unknown as SessionTree,
@@ -574,6 +586,7 @@ describe('StelloEngineImpl', () => {
           turnCount: 2,
           send: vi.fn(),
           consolidate: vi.fn(),
+          messages: vi.fn().mockResolvedValue([]),
           fork: sessionFork,
         },
         sessions: { ...sessions, createChild } as unknown as SessionTree,
@@ -609,6 +622,7 @@ describe('StelloEngineImpl', () => {
           turnCount: 0,
           send: vi.fn(),
           consolidate: vi.fn(),
+          messages: vi.fn().mockResolvedValue([]),
         },
         sessions,
         memory,
@@ -651,6 +665,7 @@ describe('StelloEngineImpl', () => {
           turnCount: 0,
           send: vi.fn(),
           consolidate: vi.fn(),
+          messages: vi.fn().mockResolvedValue([]),
           fork: sessionFork,
         },
         sessions: { ...sessions, createChild } as unknown as SessionTree,
@@ -683,6 +698,7 @@ describe('StelloEngineImpl', () => {
           turnCount: 0,
           send: vi.fn(),
           consolidate: vi.fn(),
+          messages: vi.fn().mockResolvedValue([]),
         },
         sessions,
         memory,
@@ -724,6 +740,7 @@ describe('StelloEngineImpl', () => {
           turnCount: 0,
           send: vi.fn(),
           consolidate: vi.fn(),
+          messages: vi.fn().mockResolvedValue([]),
           fork: sessionFork,
         },
         sessions: { ...sessions, createChild, putConfig } as unknown as SessionTree,
@@ -762,6 +779,7 @@ describe('StelloEngineImpl', () => {
           turnCount: 0,
           send: vi.fn(),
           consolidate: vi.fn(),
+          messages: vi.fn().mockResolvedValue([]),
           fork: sessionFork,
         },
         sessions: { ...sessions, createChild, putConfig } as unknown as SessionTree,
@@ -805,6 +823,7 @@ describe('StelloEngineImpl', () => {
           turnCount: 0,
           send: vi.fn(),
           consolidate: vi.fn(),
+          messages: vi.fn().mockResolvedValue([]),
           fork: sessionFork,
         },
         sessions: { ...sessions, createChild, putConfig } as unknown as SessionTree,
@@ -839,6 +858,7 @@ describe('StelloEngineImpl', () => {
         turnCount: 0,
         send: vi.fn(),
         consolidate: vi.fn(),
+        messages: vi.fn().mockResolvedValue([]),
         fork: sessionFork,
       },
       sessions: { ...sessions, createChild } as unknown as SessionTree,
@@ -867,6 +887,7 @@ describe('StelloEngineImpl', () => {
         session: {
           id: 's1', meta: { id: 's1', turnCount: 2, status: 'active' as const },
           turnCount: 2, send: vi.fn(), consolidate: vi.fn(),
+          messages: vi.fn().mockResolvedValue([]),
           fork: sessionFork,
         },
         sessions: { ...sessions, createChild } as unknown as SessionTree,
@@ -893,6 +914,7 @@ describe('StelloEngineImpl', () => {
         session: {
           id: 's1', meta: { id: 's1', turnCount: 0, status: 'active' as const },
           turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+          messages: vi.fn().mockResolvedValue([]),
         },
         sessions, memory, skills, confirm,
         lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
@@ -921,6 +943,7 @@ describe('StelloEngineImpl', () => {
           id: MAIN_SESSION_ID,
           meta: { id: MAIN_SESSION_ID, turnCount: 0, status: 'active' as const },
           turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+          messages: vi.fn().mockResolvedValue([]),
           fork: sessionFork,
         },
         sessions: { ...sessions, createChild, getConfig, putConfig } as unknown as SessionTree,
@@ -952,6 +975,7 @@ describe('StelloEngineImpl', () => {
           id: MAIN_SESSION_ID,
           meta: { id: MAIN_SESSION_ID, turnCount: 0, status: 'active' as const },
           turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+          messages: vi.fn().mockResolvedValue([]),
           fork: sessionFork,
         },
         sessions: { ...sessions, createChild, getConfig, putConfig } as unknown as SessionTree,
@@ -988,6 +1012,7 @@ describe('StelloEngineImpl', () => {
         session: {
           id: 's1', meta: { id: 's1', turnCount: 0, status: 'active' as const },
           turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+          messages: vi.fn().mockResolvedValue([]),
           fork: sessionFork,
         },
         sessions: { ...sessions, createChild, getConfig } as unknown as SessionTree,
