@@ -437,12 +437,6 @@ export function SettingsPage() {
 
         {/* Orchestration */}
         <Card title={t('settings.orch.title')} icon={GitBranch}>
-          <Row label={t('settings.orch.strategy')}>
-            <div className="flex items-center gap-2">
-              <ImmutableBadge />
-              <code className="text-[11px] font-mono bg-surface px-2 py-0.5 rounded border border-border text-primary-dark">{config.orchestration.strategy}</code>
-            </div>
-          </Row>
           <Row label="MainSession">
             <StatusDot configured={config.orchestration.hasMainSession} />
           </Row>

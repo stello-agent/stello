@@ -33,13 +33,14 @@ StelloAgent 隐藏内部组件（orchestrator/factory/runtimeManager），只暴
 - **同 session 串行，不同 session 并行** — SessionOrchestrator 的 promise 链队列
 - **Engine hooks 合并** — Factory 将用户 hooks 和 Scheduler 闭包合并，同 key 下都触发
 - **Runtime ref-counting** — acquire/release 引用计数，归零回收（可配 idleTtlMs 延迟）
-- **默认 MainSessionFlatStrategy** — fork 默认挂回根节点
+- **显示拓扑由 SessionTree 直接维护** — fork 默认挂在 source 节点下（engine 用
+  `options.topologyParentId ?? this.session.id` 兜底）。orchestrator 不做显示拓扑
+  的路由改写；调用方可通过显式传入 `topologyParentId` 覆盖。
 
 ### 可注入的扩展点
 
 | 注入点 | 说明 | 默认值 |
 |--------|------|--------|
-| OrchestrationStrategy | fork 路由策略 | MainSessionFlatStrategy |
 | Scheduler | 调度时机 | 手动触发 |
 | EngineHookProvider | 开发者自定义 hook | 无 |
 | SplitGuard | fork 前置校验 | 无限制 |

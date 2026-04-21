@@ -124,7 +124,7 @@ Handles core orchestration:
 - Turn execution with tool-call loops
 - Fork orchestration
 - Consolidation / integration scheduling
-- Runtime management and orchestration strategy
+- Runtime management and lifecycle
 
 If you need a Session topology with Main Session coordinating everything, start here.
 

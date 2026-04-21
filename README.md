@@ -124,7 +124,7 @@ Stello 的做法是明确拆分三件事：
 - 带 tool-call loop 的 turn 执行
 - fork 编排
 - consolidation / integration 调度
-- runtime 管理与 orchestration strategy
+- runtime 管理与生命周期
 
 如果你需要一棵 Session 拓扑，并由 Main Session 统一调度，优先看这个包。
 

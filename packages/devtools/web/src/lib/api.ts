@@ -61,7 +61,6 @@ export interface SessionDetail {
 /** Agent 配置（只读快照） */
 export interface AgentConfig {
   orchestration: {
-    strategy: string
     consolidateEveryNTurns: number | null
     hasTurnRunner: boolean
   }

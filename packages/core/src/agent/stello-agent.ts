@@ -13,11 +13,7 @@ import {
   type RuntimeRecyclePolicy,
   type RuntimeHolderId,
 } from '../orchestrator/engine-runtime-manager';
-import {
-  MainSessionFlatStrategy,
-  SessionOrchestrator,
-  type OrchestrationStrategy,
-} from '../orchestrator/session-orchestrator';
+import { SessionOrchestrator } from '../orchestrator/session-orchestrator';
 import {
   adaptSessionToEngineRuntime,
   serializeSessionSendResult,
@@ -83,7 +79,6 @@ export interface StelloAgentRuntimeConfig {
 
 /** Engine / Orchestrator 编排相关配置 */
 export interface StelloAgentOrchestrationConfig {
-  strategy?: OrchestrationStrategy;
   splitGuard?: SplitGuard;
   turnRunner?: TurnRunner;
   hooks?: EngineHookProvider;
@@ -209,7 +204,6 @@ export class StelloAgent {
     this.orchestrator = new SessionOrchestrator(
       config.sessions,
       this.runtimeManager,
-      config.orchestration?.strategy ?? new MainSessionFlatStrategy(),
     );
   }
 

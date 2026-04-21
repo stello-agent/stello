@@ -26,47 +26,6 @@ export interface EngineFactory {
   create(sessionId: string): Promise<OrchestratorEngine>;
 }
 
-/** Orchestrator 编排策略 */
-export interface OrchestrationStrategy {
-  /** 决定一次 fork 最终应该挂到哪个父节点下 */
-  resolveForkParent(source: TopologyNode, sessions: SessionTree): Promise<string>;
-}
-
-/**
- * MainSession 平铺策略
- *
- * 规则：
- * - 根节点（MainSession）下直接创建子节点
- * - 任意子节点继续 fork 时，也默认挂回根节点
- * - 结果是 MainSession 的下一层保持平铺
- */
-export class MainSessionFlatStrategy implements OrchestrationStrategy {
-  async resolveForkParent(source: TopologyNode, sessions: SessionTree): Promise<string> {
-    if (source.parentId === null) {
-      return source.id;
-    }
-
-    const root = await sessions.getRoot();
-    return root.id;
-  }
-}
-
-/**
- * TODO: 树结构 - 层叠式 OKR 汇报策略
- *
- * 预期方向：
- * - 上层节点代表更抽象目标
- * - 下层节点代表更具体任务
- * - 子节点继续 fork 时，默认沿当前层级继续向下展开
- *
- * 当前先保留扩展点，不在这一版实现具体编排规则。
- */
-export class HierarchicalOkrStrategy implements OrchestrationStrategy {
-  async resolveForkParent(): Promise<string> {
-    throw new Error('TODO: HierarchicalOkrStrategy 尚未实现');
-  }
-}
-
 /**
  * SessionOrchestrator
  *
@@ -75,19 +34,19 @@ export class HierarchicalOkrStrategy implements OrchestrationStrategy {
  * - 校验 session 是否存在
  * - 为指定 sessionId 获取 engine
  * - 把 enter/turn/leave/fork/archive 分发给对应 engine
+ *
+ * 拓扑：SessionTree 就是轻量 topology 管理器，默认 fork 直接挂在 source 节点下
+ * （engine 用 `options.topologyParentId ?? this.session.id` 兜底），orchestrator
+ * 不再做显示拓扑的路由改写。
  */
 export class SessionOrchestrator {
   private readonly sessionQueues = new Map<string, Promise<unknown>>();
-  private readonly strategy: OrchestrationStrategy;
   private holderSequence = 0;
 
   constructor(
     private readonly sessions: SessionTree,
     private readonly runtimeManager: EngineRuntimeManager,
-    strategy?: OrchestrationStrategy,
-  ) {
-    this.strategy = strategy ?? new MainSessionFlatStrategy();
-  }
+  ) {}
 
   /** 进入指定 session */
   async enterSession(sessionId: string): Promise<BootstrapResult> {
@@ -151,19 +110,11 @@ export class SessionOrchestrator {
     options: EngineForkOptions,
   ): Promise<TopologyNode> {
     await this.requireSession(sessionId);
-    const node = await this.sessions.getNode(sessionId);
-    if (!node) throw new Error(`拓扑节点不存在: ${sessionId}`);
-
-    const topologyParentId = await this.strategy.resolveForkParent(node, this.sessions);
-
-    // fork 在 source session 上执行（继承 source 的 context/systemPrompt）
+    // fork 在 source session 上执行（继承 source 的 context/systemPrompt）。
+    // 显示拓扑的默认值由 engine 决定：`options.topologyParentId ?? this.session.id`，
+    // 即默认挂在 source 节点下；若调用方显式传入 topologyParentId 则以调用方为准。
     return this.runSerial(sessionId, async () => {
-      return this.withRuntime(sessionId, (engine) =>
-        engine.forkSession({
-          ...options,
-          topologyParentId,
-        }),
-      );
+      return this.withRuntime(sessionId, (engine) => engine.forkSession(options));
     });
   }
 

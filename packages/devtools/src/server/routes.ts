@@ -57,7 +57,6 @@ function serializeConfig(agent: StelloAgent) {
 
   return {
     orchestration: {
-      strategy: config.orchestration?.strategy?.constructor?.name ?? 'MainSessionFlatStrategy',
       consolidateEveryNTurns: config.orchestration?.consolidateEveryNTurns ?? null,
       hasTurnRunner: !!config.orchestration?.turnRunner,
     },

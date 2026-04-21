@@ -106,10 +106,7 @@ export { SessionOrchestrator } from './orchestrator/session-orchestrator';
 export type {
   OrchestratorEngine,
   EngineFactory,
-  OrchestrationStrategy,
 } from './orchestrator/session-orchestrator';
-export { MainSessionFlatStrategy } from './orchestrator/session-orchestrator';
-export { HierarchicalOkrStrategy } from './orchestrator/session-orchestrator';
 export { DefaultEngineRuntimeManager } from './orchestrator/engine-runtime-manager';
 export type {
   EngineRuntimeManager,

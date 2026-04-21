@@ -162,7 +162,6 @@ const dict: Record<string, Record<Locale, string>> = {
   'settings.prompts.integrateLabel': { en: 'INTEGRATE', zh: '整合' },
   'settings.prompts.hint': { en: 'Pass prompts option to startDevtools() to enable prompt editing.', zh: '传入 prompts 到 startDevtools() 以启用提示词编辑。' },
   'settings.orch.title': { en: 'Orchestration', zh: '编排' },
-  'settings.orch.strategy': { en: 'Strategy', zh: '策略' },
   'settings.sched.title': { en: 'Scheduling Policy', zh: '调度策略' },
   'settings.sched.consolidationTrigger': { en: 'Consolidation Trigger', zh: '整理触发' },
   'settings.sched.consolidationEveryN': { en: 'Consolidation Every N', zh: '整理间隔轮次' },

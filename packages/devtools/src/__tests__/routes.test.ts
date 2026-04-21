@@ -15,7 +15,7 @@ function createMockAgent() {
         idleTtlMs: 0,
       },
     },
-    orchestration: { strategy: { constructor: { name: 'MainSessionFlatStrategy' } } },
+    orchestration: {},
     capabilities: {
       tools: { getToolDefinitions: () => [{ name: 'search', description: 'Search papers', parameters: {} }] },
       skills: { getAll: () => [{ name: 'research', description: 'Research skill' }] },
@@ -171,8 +171,8 @@ describe('devtools REST routes', () => {
 
     const res = await app.request('/api/config')
     expect(res.status).toBe(200)
-    const body = await res.json() as { orchestration: { strategy: string }; capabilities: { tools: unknown[]; skills: unknown[] } }
-    expect(body.orchestration.strategy).toBe('MainSessionFlatStrategy')
+    const body = await res.json() as { orchestration: Record<string, unknown>; capabilities: { tools: unknown[]; skills: unknown[] } }
+    expect(body.orchestration).not.toHaveProperty('strategy')
     expect(body.capabilities.tools).toHaveLength(1)
     expect(body.capabilities.skills).toHaveLength(1)
   })
@@ -189,9 +189,9 @@ describe('devtools REST routes', () => {
     })
     expect(res.status).toBe(200)
     expect(agent.updateConfig).toHaveBeenCalledWith({ runtime: { idleTtlMs: 5000 } })
-    const body = await res.json() as { ok: boolean; config: { orchestration: { strategy: string } } }
+    const body = await res.json() as { ok: boolean; config: { orchestration: Record<string, unknown> } }
     expect(body.ok).toBe(true)
-    expect(body.config.orchestration.strategy).toBe('MainSessionFlatStrategy')
+    expect(body.config.orchestration).not.toHaveProperty('strategy')
   })
 
   it('PATCH /config 校验非法输入返回 400', async () => {

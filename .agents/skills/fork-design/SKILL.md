@@ -189,7 +189,7 @@ Engine 重新装配某 session 的 runtime config 时：
 | `sourceSessionId` | 上下文来源 session（系统提示词、历史继承的对象） | 总是 = 当前 session.id |
 | `topologyParentId` | 拓扑父节点（星空图上挂靠位置） | options 显式给出，默认 = sourceSessionId |
 
-不传 `topologyParentId` 时两者相等。`MainSessionFlatStrategy` 等策略可能让它们不同——例如总是挂回根节点（`topologyParentId = root`），但上下文继承仍来自当前 session（`sourceSessionId = current`）。
+不传 `topologyParentId` 时两者相等（默认树形拓扑：fork from X → 挂在 X 下）。调用方显式传入 `topologyParentId` 可让两者分离——例如想把节点挂到根或任意已有节点下，但上下文继承仍来自发起 fork 的 session（`sourceSessionId = current`）。
 
 ### `context` 继承策略
 

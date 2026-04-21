@@ -1,6 +1,6 @@
 {
   "name": "@stello-ai/core",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "description": "The first open-source conversation topology engine",
   "license": "Apache-2.0",
   "author": "Stello Contributors",

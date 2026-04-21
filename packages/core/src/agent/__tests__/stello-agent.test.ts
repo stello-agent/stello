@@ -115,21 +115,12 @@ describe('StelloAgent', () => {
     expect(result.turn.finalContent).toContain('"content":"done"')
   });
 
-  it('默认使用 MainSessionFlatStrategy，并通过顶层对象发起 fork', async () => {
+  it('默认树形拓扑：子节点 fork 出的新节点挂在自己下面', async () => {
     const childSession = {
       ...rootSession,
       id: 'child-1',
       label: 'UI',
       scope: 'ui',
-    };
-    const childNode = {
-      id: 'child-1',
-      parentId: 'root',
-      children: [],
-      refs: [],
-      depth: 1,
-      index: 0,
-      label: 'UI',
     };
 
     const sessionFork = vi.fn().mockResolvedValue({
@@ -147,7 +138,7 @@ describe('StelloAgent', () => {
     };
 
     const createChild = vi.fn().mockResolvedValue({
-      id: 'child-2', parentId: 'root', children: [], refs: [], depth: 1, index: 1, label: 'UI 2',
+      id: 'child-2', parentId: 'child-1', children: [], refs: [], depth: 2, index: 0, label: 'UI 2',
     });
 
     const agent = createStelloAgent({
@@ -157,8 +148,6 @@ describe('StelloAgent', () => {
           if (id === 'child-1') return childSession;
           return null;
         }),
-        getNode: vi.fn().mockResolvedValue(childNode),
-        getRoot: vi.fn().mockResolvedValue(rootSession),
         archive: vi.fn(),
         createChild,
         getConfig: vi.fn().mockResolvedValue(null),
@@ -199,15 +188,16 @@ describe('StelloAgent', () => {
 
     const result = await agent.forkSession('child-1', { label: 'UI 2' });
 
+    // engine 用 `options.topologyParentId ?? this.session.id` 默认挂到 source（child-1）下
     expect(createChild).toHaveBeenCalledWith(expect.objectContaining({
       label: 'UI 2',
-      parentId: 'root',
+      parentId: 'child-1',
     }));
     expect(sessionFork).toHaveBeenCalledWith(expect.objectContaining({
       id: 'child-2',
       label: 'UI 2',
     }));
-    expect(result.parentId).toBe('root');
+    expect(result.parentId).toBe('child-1');
   });
 
   it('可以显式 attach/detach session engine，并复用同一运行时', async () => {

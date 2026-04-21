@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SessionTree } from '../../types/session';
-import { MainSessionFlatStrategy, SessionOrchestrator } from '../session-orchestrator';
+import { SessionOrchestrator } from '../session-orchestrator';
 
 describe('SessionOrchestrator', () => {
   const flushMicrotasks = async (): Promise<void> => {
@@ -21,16 +21,6 @@ describe('SessionOrchestrator', () => {
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
     lastActiveAt: '2026-01-01T00:00:00Z',
-  };
-
-  const sessionNode = {
-    id: 's1',
-    parentId: null,
-    children: [],
-    refs: [],
-    depth: 0,
-    index: 0,
-    label: 'Root',
   };
 
   it('enterSession 会校验 session 并调用对应 engine.enterSession', async () => {
@@ -95,10 +85,9 @@ describe('SessionOrchestrator', () => {
     expect(result.sessionId).toBe('s1');
   });
 
-  it('forkSession 会在 source session 上发起 fork', async () => {
+  it('forkSession 会在 source session 上发起 fork，并原样透传 options', async () => {
     const sessions = {
       get: vi.fn().mockResolvedValue(sessionMeta),
-      getNode: vi.fn().mockResolvedValue(sessionNode),
     } as unknown as SessionTree;
     const engine = {
       forkSession: vi.fn().mockResolvedValue({ id: 'child-1', parentId: 's1', label: 'UI' }),
@@ -115,53 +104,56 @@ describe('SessionOrchestrator', () => {
       's1',
       expect.stringContaining('orchestrator:s1:'),
     );
-    expect(engine.forkSession).toHaveBeenCalledWith({
-      label: 'UI',
-      topologyParentId: 's1',
-    });
+    // orchestrator 不改写 topologyParentId；engine 内部用 `?? this.session.id` 兜底为树形
+    expect(engine.forkSession).toHaveBeenCalledWith({ label: 'UI' });
     expect(result.id).toBe('child-1');
   });
 
-  it('MainSession 平铺策略下，子节点继续 fork 会挂回主节点（但 fork 在 source 执行）', async () => {
-    const rootMeta = { ...sessionMeta, id: 'root' };
+  it('子节点继续 fork 时默认挂在自己下面（树形拓扑）', async () => {
     const childMeta = { ...sessionMeta, id: 'child-1' };
-    const childNode = { id: 'child-1', parentId: 'root', children: [], refs: [], depth: 1, index: 0, label: 'child-1' };
     const sessions = {
-      get: vi.fn().mockImplementation(async (id: string) => {
-        if (id === 'child-1') return childMeta;
-        if (id === 'root') return rootMeta;
-        return null;
-      }),
-      getNode: vi.fn().mockResolvedValue(childNode),
-      getRoot: vi.fn().mockResolvedValue(rootMeta),
+      get: vi.fn().mockResolvedValue(childMeta),
     } as unknown as SessionTree;
     const childEngine = {
-      forkSession: vi.fn().mockResolvedValue({ id: 'child-2', parentId: 'root', label: 'UI 2' }),
+      forkSession: vi.fn().mockResolvedValue({ id: 'child-2', parentId: 'child-1', label: 'UI 2' }),
     };
     const runtimeManager = {
       acquire: vi.fn().mockResolvedValue(childEngine),
       release: vi.fn().mockResolvedValue(undefined),
     };
 
-    const orchestrator = new SessionOrchestrator(
-      sessions,
-      runtimeManager as never,
-      new MainSessionFlatStrategy(),
-    );
+    const orchestrator = new SessionOrchestrator(sessions, runtimeManager as never);
     const result = await orchestrator.forkSession('child-1', { label: 'UI 2' });
 
-    expect(sessions.getRoot).toHaveBeenCalledTimes(1);
     // fork 在 source session (child-1) 上执行
     expect(runtimeManager.acquire).toHaveBeenCalledWith(
       'child-1',
       expect.stringContaining('orchestrator:child-1:'),
     );
-    // topologyParentId 指向 root（平铺策略）
-    expect(childEngine.forkSession).toHaveBeenCalledWith({
-      label: 'UI 2',
-      topologyParentId: 'root',
+    // orchestrator 不注入 topologyParentId；由 engine 默认挂到 source（child-1）下
+    expect(childEngine.forkSession).toHaveBeenCalledWith({ label: 'UI 2' });
+    expect(result.parentId).toBe('child-1');
+  });
+
+  it('调用方显式传入 topologyParentId 时原样透传给 engine', async () => {
+    const sessions = {
+      get: vi.fn().mockResolvedValue(sessionMeta),
+    } as unknown as SessionTree;
+    const engine = {
+      forkSession: vi.fn().mockResolvedValue({ id: 'child-1', parentId: 'custom', label: 'UI' }),
+    };
+    const runtimeManager = {
+      acquire: vi.fn().mockResolvedValue(engine),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const orchestrator = new SessionOrchestrator(sessions, runtimeManager as never);
+    await orchestrator.forkSession('s1', { label: 'UI', topologyParentId: 'custom' });
+
+    expect(engine.forkSession).toHaveBeenCalledWith({
+      label: 'UI',
+      topologyParentId: 'custom',
     });
-    expect(result.parentId).toBe('root');
   });
 
   it('archiveSession 会分发给指定 session 对应的 engine', async () => {
@@ -276,25 +268,15 @@ describe('SessionOrchestrator', () => {
     await Promise.all([first, second]);
   });
 
-  it('平铺策略下，不同 source 的 fork 并行执行（fork 在 source session 上运行）', async () => {
-    const rootMeta = { ...sessionMeta, id: 'root' };
+  it('不同 source 的 fork 并行执行（fork 在 source session 上运行）', async () => {
     const childAMeta = { ...sessionMeta, id: 'child-a' };
     const childBMeta = { ...sessionMeta, id: 'child-b' };
-    const nodeA = { id: 'child-a', parentId: 'root', children: [], refs: [], depth: 1, index: 0, label: 'child-a' };
-    const nodeB = { id: 'child-b', parentId: 'root', children: [], refs: [], depth: 1, index: 1, label: 'child-b' };
     const sessions = {
       get: vi.fn().mockImplementation(async (id: string) => {
-        if (id === 'root') return rootMeta;
         if (id === 'child-a') return childAMeta;
         if (id === 'child-b') return childBMeta;
         return null;
       }),
-      getNode: vi.fn().mockImplementation(async (id: string) => {
-        if (id === 'child-a') return nodeA;
-        if (id === 'child-b') return nodeB;
-        return null;
-      }),
-      getRoot: vi.fn().mockResolvedValue(rootMeta),
     } as unknown as SessionTree;
 
     const order: string[] = [];
@@ -321,7 +303,7 @@ describe('SessionOrchestrator', () => {
           return {
             ...sessionMeta,
             id: options.label,
-            parentId: 'root',
+            parentId: options.label === 'A' ? 'child-a' : 'child-b',
             label: options.label,
           };
         }),
@@ -329,11 +311,7 @@ describe('SessionOrchestrator', () => {
       release: vi.fn().mockResolvedValue(undefined),
     };
 
-    const orchestrator = new SessionOrchestrator(
-      sessions,
-      runtimeManager as never,
-      new MainSessionFlatStrategy(),
-    );
+    const orchestrator = new SessionOrchestrator(sessions, runtimeManager as never);
 
     const first = orchestrator.forkSession('child-a', { label: 'A' });
     const second = orchestrator.forkSession('child-b', { label: 'B' });
