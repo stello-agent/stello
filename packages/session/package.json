@@ -1,6 +1,6 @@
 {
   "name": "@stello-ai/session",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Session layer for Stello — conversation topology engine",
   "license": "Apache-2.0",
   "author": "Stello Contributors",
