@@ -137,7 +137,7 @@ export {
   DEFAULT_INTEGRATE_PROMPT,
   DEFAULT_COMPRESS_PROMPT,
 } from './llm/defaults';
-export type { LLMCallFn } from './llm/defaults';
+export type { LLMCallFn, DefaultFnOptions } from './llm/defaults';
 
 // Re-export @stello-ai/session 常用接口，core 用户无需额外 import session 包
 export { createSession, loadSession } from '@stello-ai/session';
