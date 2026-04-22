@@ -108,17 +108,30 @@ export interface AssembleResult {
   compressionCache?: CompressionCache | null
 }
 
+/** 根据 label 生成 <session_identity> 系统消息；label 空或 undefined 时返回空数组 */
+export function buildSessionIdentityMessages(label: string | undefined): Message[] {
+  if (!label) return []
+  return [{
+    role: 'system',
+    content: `<session_identity>\n你当前在「${label}」子会话中。\n</session_identity>`,
+  }]
+}
+
 /**
  * 组装 Session 上下文，支持自动压缩
  *
  * 默认全量回放。当估算 token 数超过 maxContextTokens * 0.8 时，
  * 调用 compressFn 生成摘要，注入 system + 摘要 + 近期 L3。
+ *
+ * 若传入 `label`（非空）则在 systemPrompt 之后插入 `<session_identity>` 系统消息，
+ * 让子 session 感知自己的身份标签。
  */
 export async function assembleSessionContext(
   sessionId: string,
   storage: SessionStorage,
   userContent: string,
   compress: CompressContext,
+  label?: string,
 ): Promise<AssembleResult> {
   const prefixMessages: Message[] = []
   let insightConsumed = false
@@ -129,7 +142,10 @@ export async function assembleSessionContext(
     prefixMessages.push({ role: 'system', content: sysPrompt })
   }
 
-  // 2. insight
+  // 2. session identity (label)
+  prefixMessages.push(...buildSessionIdentityMessages(label))
+
+  // 3. insight
   const insightContent = await storage.getInsight(sessionId)
   if (insightContent) {
     prefixMessages.push({ role: 'system', content: insightContent })

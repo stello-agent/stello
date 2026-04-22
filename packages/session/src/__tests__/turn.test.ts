@@ -54,20 +54,23 @@ describe('send() 契约', () => {
 
     const firstCall = capturedMessages[0] as Array<{ role: string; content: string }>
     expect(firstCall[0]).toEqual({ role: 'system', content: '你是助手' })
-    expect(firstCall[1]).toEqual({ role: 'system', content: '用户偏好简洁回答' })
+    // session_identity 注入（label 由 makeSession 默认给出 'Test Session'）
+    expect(firstCall[1]!.content).toContain('<session_identity>')
+    expect(firstCall[2]).toEqual({ role: 'system', content: '用户偏好简洁回答' })
 
     // 第二次 send — insight 已消费，不再出现
     await session.send('问题2')
 
     const secondCall = capturedMessages[1] as Array<{ role: string; content: string }>
     expect(secondCall[0]).toEqual({ role: 'system', content: '你是助手' })
+    expect(secondCall[1]!.content).toContain('<session_identity>')
     // L3 历史：user + assistant from first round
-    expect(secondCall[1]!.role).toBe('user')
-    expect(secondCall[1]!.content).toBe('问题1')
-    expect(secondCall[2]!.role).toBe('assistant')
+    expect(secondCall[2]!.role).toBe('user')
+    expect(secondCall[2]!.content).toBe('问题1')
+    expect(secondCall[3]!.role).toBe('assistant')
     // 当前用户消息
-    expect(secondCall[3]!.role).toBe('user')
-    expect(secondCall[3]!.content).toBe('问题2')
+    expect(secondCall[4]!.role).toBe('user')
+    expect(secondCall[4]!.content).toBe('问题2')
   })
 
   it('send() 返回 toolCalls 时透传', async () => {
@@ -132,13 +135,16 @@ describe('send() 契约', () => {
     }))
 
     const secondCall = capturedMessages[1]!
-    expect(secondCall[0]).toMatchObject({ role: 'user', content: '搜索 test' })
-    expect(secondCall[1]).toMatchObject({
+    // replay context 在 label 非空时注入 <session_identity>，之后才是 L3 回放
+    expect(secondCall[0]).toMatchObject({ role: 'system' })
+    expect(secondCall[0]!.content).toContain('<session_identity>')
+    expect(secondCall[1]).toMatchObject({ role: 'user', content: '搜索 test' })
+    expect(secondCall[2]).toMatchObject({
       role: 'assistant',
       content: '',
       toolCalls: [{ id: 'tc_1', name: 'search', input: { q: 'test' } }],
     })
-    expect(secondCall[2]).toMatchObject({
+    expect(secondCall[3]).toMatchObject({
       role: 'tool',
       toolCallId: 'tc_1',
     })

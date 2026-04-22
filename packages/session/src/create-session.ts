@@ -4,7 +4,7 @@ import { SessionArchivedError } from './types/session-api.js'
 import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './types/session.js'
 import type { Message } from './types/llm.js'
 import type { CreateSessionOptions, LoadSessionOptions, SendResult, StreamResult } from './types/functions.js'
-import { assembleSessionContext, createBuiltinCompressFn, type CompressionCache } from './context-utils.js'
+import { assembleSessionContext, buildSessionIdentityMessages, createBuiltinCompressFn, type CompressionCache } from './context-utils.js'
 
 /** 裁掉尾部不完整的 tool call 组（assistant 有 toolCalls 但缺少对应 tool 结果） */
 function trimIncompleteToolCallGroup(records: Message[]): Message[] {
@@ -91,6 +91,7 @@ function serializeToolResultContent(result: ToolResultEnvelope['toolResults'][nu
 async function assembleSessionReplayContext(
   sessionId: string,
   storage: CreateSessionOptions['storage'] | LoadSessionOptions['storage'],
+  label?: string,
 ): Promise<{ messages: Message[]; insightConsumed: boolean }> {
   const messages: Message[] = []
   let insightConsumed = false
@@ -99,6 +100,8 @@ async function assembleSessionReplayContext(
   if (sysPrompt) {
     messages.push({ role: 'system', content: sysPrompt })
   }
+
+  messages.push(...buildSessionIdentityMessages(label))
 
   const insightContent = await storage.getInsight(sessionId)
   if (insightContent) {
@@ -193,6 +196,7 @@ function buildSession(
       const assembled = await assembleSessionContext(
         currentMeta.id, storage, content,
         { maxContextTokens: options.llm.maxContextTokens, lastPromptTokens, compressFn: resolveCompressFn(), compressionCache },
+        currentMeta.label,
       )
       if (assembled.compressionCache !== undefined) {
         compressionCache = assembled.compressionCache
@@ -207,7 +211,7 @@ function buildSession(
       let recordsToPersist: Message[] = [{ role: 'user', content, timestamp: assembled.userTimestamp }]
       const toolEnvelope = parseToolResultEnvelope(content)
       if (toolEnvelope) {
-        const replayContext = await assembleSessionReplayContext(currentMeta.id, storage)
+        const replayContext = await assembleSessionReplayContext(currentMeta.id, storage, currentMeta.label)
         promptMessages = [
           ...replayContext.messages,
           ...toolEnvelope.toolResults.map((result) => ({
@@ -261,6 +265,7 @@ function buildSession(
         const assembled = await assembleSessionContext(
           currentMeta.id, storage, content,
           { maxContextTokens: options.llm!.maxContextTokens, lastPromptTokens, compressFn: resolveCompressFn(), compressionCache },
+          currentMeta.label,
         )
         if (assembled.compressionCache !== undefined) {
           compressionCache = assembled.compressionCache
@@ -275,7 +280,7 @@ function buildSession(
         let recordsToPersist: Message[] = [{ role: 'user', content, timestamp: assembled.userTimestamp }]
         const toolEnvelope = parseToolResultEnvelope(content)
         if (toolEnvelope) {
-          const replayContext = await assembleSessionReplayContext(currentMeta.id, storage)
+          const replayContext = await assembleSessionReplayContext(currentMeta.id, storage, currentMeta.label)
           promptMessages = [
             ...replayContext.messages,
             ...toolEnvelope.toolResults.map((result) => ({

@@ -81,9 +81,11 @@ describe('自动压缩 — Session', () => {
     await session.send('msg2')
 
     const secondCall = capturedMessages[1]!
-    expect(secondCall).toHaveLength(3)
-    expect(secondCall[0]!.content).toBe('msg1')
-    expect(secondCall[2]!.content).toBe('msg2')
+    // identity (system) + msg1 (user) + reply (assistant) + msg2 (user)
+    expect(secondCall).toHaveLength(4)
+    expect(secondCall[0]!.content).toContain('<session_identity>')
+    expect(secondCall[1]!.content).toBe('msg1')
+    expect(secondCall[3]!.content).toBe('msg2')
   })
 
   it('超阈值且有 compressFn 时调用压缩：注入摘要 + 裁剪 L3', async () => {
