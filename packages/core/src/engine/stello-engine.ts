@@ -1,6 +1,7 @@
 import type { SessionTree } from '../types/session';
 import { MAIN_SESSION_ID } from '../types/session';
 import type { MemoryEngine, TurnRecord } from '../types/memory';
+import type { LLMCompleteOptions } from '@stello-ai/session';
 import type {
   BootstrapResult,
   AfterTurnResult,
@@ -54,6 +55,10 @@ export interface EngineRuntimeSession {
   consolidate(): Promise<void>;
   /** 读取当前 session 的 L3 消息（原始对话记录） */
   messages(): Promise<Array<{ role: string; content: string; timestamp?: string }>>;
+  /** Current tool list visible to LLM (mirrors underlying Session.tools) */
+  readonly tools?: LLMCompleteOptions['tools'];
+  /** Replace tool list (forwards to underlying Session.setTools) */
+  setTools(tools: LLMCompleteOptions['tools'] | undefined): void;
 }
 
 /** Engine 依赖的生命周期适配器 */
