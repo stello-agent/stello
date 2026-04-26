@@ -175,6 +175,11 @@ export class StelloAgent {
   /** 暴露 MemoryEngine，方便调用方做数据读写 */
   readonly memory: StelloAgentConfig['memory'];
 
+  /** 暴露 ForkProfileRegistry，供 tool 在运行时校验 profile 名称 */
+  get profiles(): ForkProfileRegistry | undefined {
+    return this.config.capabilities.profiles;
+  }
+
   private readonly orchestrator: SessionOrchestrator;
   private readonly runtimeManager: EngineRuntimeManager;
 
@@ -196,6 +201,7 @@ export class StelloAgent {
       hooks: config.orchestration?.hooks,
       consolidateEveryNTurns: config.orchestration?.consolidateEveryNTurns,
       sessionDefaults: config.sessionDefaults,
+      agent: this,
     });
     this.runtimeManager = new DefaultEngineRuntimeManager(
       engineFactory,

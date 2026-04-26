@@ -15,6 +15,7 @@ import type { ForkProfileRegistry } from '../engine/fork-profile';
 import type { EngineFactory, OrchestratorEngine } from './session-orchestrator';
 import type { SessionRuntimeResolver } from '../types/engine';
 import type { SessionConfig } from '../types/session-config';
+import type { StelloAgent } from '../agent/stello-agent';
 
 /** hooks 提供方式 */
 export type EngineHookProvider =
@@ -38,6 +39,8 @@ export interface DefaultEngineFactoryOptions {
   consolidateEveryNTurns?: number;
   /** Agent 级默认配置（fork 合成链最低优先级） */
   sessionDefaults?: SessionConfig;
+  /** Owning agent reference, forwarded to Engine for tool runtime use */
+  agent: StelloAgent;
 }
 
 /**
@@ -68,6 +71,7 @@ export class DefaultEngineFactory implements EngineFactory {
       turnRunner: this.options.turnRunner,
       hooks: mergedHooks,
       sessionDefaults: this.options.sessionDefaults,
+      agent: this.options.agent,
     });
   }
 

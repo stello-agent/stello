@@ -15,6 +15,7 @@ import type { StelloEngine, StelloEventMap, EngineForkOptions } from '../types/e
 import type { TopologyNode } from '../types/session';
 import type { SplitGuard } from '../session/split-guard';
 import type { ForkProfileRegistry } from './fork-profile';
+import type { StelloAgent } from '../agent/stello-agent';
 import { createBuiltinToolEntries, CompositeToolRuntime } from '../tool/tool-registry';
 import type { SessionCompatibleForkOptions } from '../adapters/session-runtime';
 import type {
@@ -96,6 +97,8 @@ export interface StelloEngineOptions {
   profiles?: ForkProfileRegistry;
   /** Agent 级默认配置（fork 合成链最低优先级） */
   sessionDefaults?: SessionConfig;
+  /** Owning agent reference, exposed to tools via ToolExecutionContext */
+  agent: StelloAgent;
 }
 
 /** turn 的聚合结果 */
@@ -162,6 +165,7 @@ export class StelloEngineImpl implements StelloEngine {
   private readonly hooks: Partial<EngineHooks>;
   private readonly profiles?: ForkProfileRegistry;
   private readonly sessionDefaults?: SessionConfig;
+  private readonly agent: StelloAgent;
   private readonly handlers = new Map<keyof StelloEventMap, Set<(data: unknown) => void>>();
 
   constructor(options: StelloEngineOptions) {
@@ -175,6 +179,7 @@ export class StelloEngineImpl implements StelloEngine {
     this.hooks = options.hooks ?? {};
     this.profiles = options.profiles;
     this.sessionDefaults = options.sessionDefaults;
+    this.agent = options.agent;
     this.turnRunner =
       options.turnRunner ??
       new TurnRunner({
