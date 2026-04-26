@@ -360,3 +360,39 @@ describe('MainSession send()', () => {
     expect(messages[1]!.content).toBe('hello stream')
   })
 })
+
+describe('MainSession.setTools (per-session tool list mutation)', () => {
+  it('setTools replaces the tools auto-injected on next send', async () => {
+    const llmComplete = vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] })
+    const llm = { complete: llmComplete, stream: vi.fn(), maxContextTokens: 1_000_000 }
+    const storage = new InMemoryStorageAdapter()
+    const main = await createMainSession({
+      storage,
+      llm,
+      tools: [{ name: 'old', description: 'd', inputSchema: {} }],
+    })
+
+    expect(main.tools).toEqual([{ name: 'old', description: 'd', inputSchema: {} }])
+
+    main.setTools([{ name: 'new', description: 'd2', inputSchema: {} }])
+    expect(main.tools).toEqual([{ name: 'new', description: 'd2', inputSchema: {} }])
+
+    await main.send('hi')
+    const passedTools = llmComplete.mock.calls[0]![1]?.tools
+    expect(passedTools).toEqual([{ name: 'new', description: 'd2', inputSchema: {} }])
+  })
+
+  it('setTools(undefined) clears tools', async () => {
+    const llmComplete = vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] })
+    const llm = { complete: llmComplete, stream: vi.fn(), maxContextTokens: 1_000_000 }
+    const storage = new InMemoryStorageAdapter()
+    const main = await createMainSession({
+      storage,
+      llm,
+      tools: [{ name: 'x', description: 'd', inputSchema: {} }],
+    })
+    main.setTools(undefined)
+    await main.send('hi')
+    expect(llmComplete.mock.calls[0]![1]?.tools).toBeUndefined()
+  })
+})

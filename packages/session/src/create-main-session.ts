@@ -126,7 +126,7 @@ function buildMainSession(
 ): MainSession {
   let currentMeta = { ...meta }
   const { storage } = options
-  const tools = options.tools
+  let tools = options.tools
   let lastPromptTokens: number | null = null
   let compressionCache: CompressionCache | null = null
   function resolveCompressFn() {
@@ -414,6 +414,14 @@ function buildMainSession(
 
     setLLM(adapter) {
       options.llm = adapter
+    },
+
+    get tools() {
+      return tools
+    },
+
+    setTools(newTools) {
+      tools = newTools
     },
   }
 
