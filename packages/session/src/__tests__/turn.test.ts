@@ -240,3 +240,35 @@ describe('send() 契约', () => {
     expect(messages[1]!.content).toBe('你好，世界')
   })
 })
+
+describe('Session.setTools (per-session tool list mutation)', () => {
+  it('setTools replaces the tools auto-injected on next send', async () => {
+    const llmComplete = vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] })
+    const llm = { complete: llmComplete, stream: vi.fn(), maxContextTokens: 1_000_000 }
+    const { session } = await makeSession({
+      llm,
+      tools: [{ name: 'old', description: 'd', inputSchema: {} }],
+    })
+
+    expect(session.tools).toEqual([{ name: 'old', description: 'd', inputSchema: {} }])
+
+    session.setTools([{ name: 'new', description: 'd2', inputSchema: {} }])
+    expect(session.tools).toEqual([{ name: 'new', description: 'd2', inputSchema: {} }])
+
+    await session.send('hi')
+    const passedTools = llmComplete.mock.calls[0]![1]?.tools
+    expect(passedTools).toEqual([{ name: 'new', description: 'd2', inputSchema: {} }])
+  })
+
+  it('setTools(undefined) clears tools', async () => {
+    const llmComplete = vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] })
+    const llm = { complete: llmComplete, stream: vi.fn(), maxContextTokens: 1_000_000 }
+    const { session } = await makeSession({
+      llm,
+      tools: [{ name: 'x', description: 'd', inputSchema: {} }],
+    })
+    session.setTools(undefined)
+    await session.send('hi')
+    expect(llmComplete.mock.calls[0]![1]?.tools).toBeUndefined()
+  })
+})

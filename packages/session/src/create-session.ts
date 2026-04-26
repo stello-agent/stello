@@ -171,7 +171,7 @@ function buildSession(
 ): Session {
   let currentMeta = { ...meta }
   const { storage } = options
-  const tools = options.tools
+  let tools = options.tools
   let lastPromptTokens: number | null = null
   let compressionCache: CompressionCache | null = null
   /** 解析 compressFn：用户提供 > 内置 LLM 压缩 */
@@ -487,6 +487,14 @@ function buildSession(
 
     setLLM(adapter) {
       options.llm = adapter
+    },
+
+    get tools() {
+      return tools
+    },
+
+    setTools(newTools) {
+      tools = newTools
     },
   }
 
