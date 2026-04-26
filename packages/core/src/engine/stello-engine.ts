@@ -16,7 +16,6 @@ import type { TopologyNode } from '../types/session';
 import type { SplitGuard } from '../session/split-guard';
 import type { ForkProfileRegistry } from './fork-profile';
 import type { StelloAgent } from '../agent/stello-agent';
-import { createBuiltinToolEntries, CompositeToolRuntime } from '../tool/tool-registry';
 import type { SessionCompatibleForkOptions } from '../adapters/session-runtime';
 import type {
   SerializableSessionConfig,
@@ -159,7 +158,7 @@ export class StelloEngineImpl implements StelloEngine {
 
   private readonly session: EngineRuntimeSession;
   private readonly lifecycle: EngineLifecycleAdapter;
-  private readonly compositeTools: EngineToolRuntime;
+  private readonly tools: EngineToolRuntime;
   private readonly splitGuard?: SplitGuard;
   private readonly turnRunner: TurnRunner;
   private readonly hooks: Partial<EngineHooks>;
@@ -188,13 +187,7 @@ export class StelloEngineImpl implements StelloEngine {
         },
       } satisfies ToolCallParser);
 
-    // 内置 tool 通过闭包捕获 Engine 实例，与用户 tool 统一走 CompositeToolRuntime
-    const builtinEntries = createBuiltinToolEntries(
-      options.skills,
-      options.profiles,
-      (args) => this.executeCreateSession(args),
-    );
-    this.compositeTools = new CompositeToolRuntime(builtinEntries, options.tools);
+    this.tools = options.tools;
   }
 
   get sessionId(): string {
@@ -411,48 +404,24 @@ export class StelloEngineImpl implements StelloEngine {
     return child;
   }
 
-  /** 导出 tool 定义，包含内置 tool + 用户 tool（内置优先，同名去重） */
+  /** 导出 tool 定义，由用户提供的 tool runtime 暴露 */
   getToolDefinitions(): ToolDefinition[] {
-    return this.compositeTools.getToolDefinitions();
+    return this.tools.getToolDefinitions();
   }
 
-  /** 执行 tool call，内置 tool 优先，fallback 到用户 tool */
-  async executeTool(name: string, args: Record<string, unknown>): Promise<ToolExecutionResult> {
-    return this.compositeTools.executeTool(name, args);
-  }
-
-  /** 执行内置 stello_create_session：把 LLM 透传参数转为 EngineForkOptions 后调 forkSession */
-  private async executeCreateSession(
+  /** 执行 tool call：构造 ToolExecutionContext 后转发给 tool runtime */
+  async executeTool(
+    name: string,
     args: Record<string, unknown>,
+    toolCallId?: string,
   ): Promise<ToolExecutionResult> {
-    try {
-      const forkOptions: EngineForkOptions = {
-        label: args.label as string,
-      };
-      if (args.systemPrompt !== undefined) {
-        forkOptions.systemPrompt = args.systemPrompt as string;
-      }
-      if (args.prompt !== undefined) {
-        forkOptions.prompt = args.prompt as string;
-      }
-      if (args.context !== undefined) {
-        forkOptions.context = args.context as 'none' | 'inherit' | 'compress';
-      }
-      if (args.profile !== undefined) {
-        forkOptions.profile = args.profile as string;
-      }
-      if (args.vars !== undefined) {
-        forkOptions.profileVars = args.vars as Record<string, string>;
-      }
-
-      const child = await this.forkSession(forkOptions);
-      return { success: true, data: { sessionId: child.id, label: child.label } };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
+    const ctx: ToolExecutionContext = {
+      agent: this.agent,
+      sessionId: this.session.id,
+      toolCallId,
+      toolName: name,
+    };
+    return this.tools.executeTool(name, args, ctx);
   }
 
   on<K extends keyof StelloEventMap>(event: K, handler: (data: StelloEventMap[K]) => void): void {
