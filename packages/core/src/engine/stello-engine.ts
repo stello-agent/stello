@@ -10,6 +10,7 @@ import type {
   ToolDefinition,
   ToolExecutionResult,
 } from '../types/lifecycle';
+import type { ToolExecutionContext } from '../types/tool';
 import type { StelloEngine, StelloEventMap, EngineForkOptions } from '../types/engine';
 import type { TopologyNode } from '../types/session';
 import type { SplitGuard } from '../session/split-guard';
@@ -72,7 +73,11 @@ export interface EngineLifecycleAdapter {
 /** tool 执行器最小契约 */
 export interface EngineToolRuntime {
   getToolDefinitions(): ToolDefinition[];
-  executeTool(name: string, args: Record<string, unknown>): Promise<ToolExecutionResult>;
+  executeTool(
+    name: string,
+    args: Record<string, unknown>,
+    ctx: ToolExecutionContext,
+  ): Promise<ToolExecutionResult>;
 }
 
 /** Engine 构造参数 */

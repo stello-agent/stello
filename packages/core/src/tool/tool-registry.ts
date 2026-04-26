@@ -1,6 +1,7 @@
 import type { ToolDefinition, ToolExecutionResult, SkillRouter } from '../types/lifecycle'
 import type { EngineToolRuntime } from '../engine/stello-engine'
 import type { ForkProfileRegistry } from '../engine/fork-profile'
+import type { ToolExecutionContext } from '../types/tool'
 import { createSessionToolDefinition } from '../engine/builtin-tools'
 import { createSkillToolDefinition, executeSkillTool } from '../skill/skill-tool'
 
@@ -15,8 +16,11 @@ export interface ToolRegistryEntry {
   description: string
   /** JSON Schema 格式的参数定义 */
   parameters: Record<string, unknown>
-  /** 执行函数 */
-  execute: (args: Record<string, unknown>) => Promise<ToolExecutionResult>
+  /** 执行函数 — 接收 LLM 透传的 args 与 Engine 提供的运行时 ctx */
+  execute: (
+    args: Record<string, unknown>,
+    ctx: ToolExecutionContext,
+  ) => Promise<ToolExecutionResult>
 }
 
 /**
@@ -34,6 +38,12 @@ export interface ToolRegistry extends EngineToolRuntime {
 /** ToolRegistry 默认实现 */
 export class ToolRegistryImpl implements ToolRegistry {
   private readonly tools = new Map<string, ToolRegistryEntry>()
+
+  constructor(initialEntries?: ToolRegistryEntry[]) {
+    for (const entry of initialEntries ?? []) {
+      this.tools.set(entry.name, entry)
+    }
+  }
 
   register(tool: ToolRegistryEntry): void {
     this.tools.set(tool.name, tool)
@@ -57,12 +67,16 @@ export class ToolRegistryImpl implements ToolRegistry {
   }
 
   /** 按名称执行工具（EngineToolRuntime 接口） */
-  async executeTool(name: string, args: Record<string, unknown>): Promise<ToolExecutionResult> {
+  async executeTool(
+    name: string,
+    args: Record<string, unknown>,
+    ctx: ToolExecutionContext,
+  ): Promise<ToolExecutionResult> {
     const tool = this.tools.get(name)
     if (!tool) {
       return { success: false, error: `Unknown tool: ${name}` }
     }
-    return tool.execute(args)
+    return tool.execute(args, ctx)
   }
 }
 
