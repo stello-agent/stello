@@ -47,6 +47,8 @@ export type {
   SerializableMainSessionConfig,
 } from './types';
 
+export type { ToolExecutionContext } from './types/tool';
+
 // 导出常量
 export { MAIN_SESSION_ID } from './types/session';
 
