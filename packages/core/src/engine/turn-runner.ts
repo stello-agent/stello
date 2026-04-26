@@ -31,7 +31,11 @@ export interface TurnRunnerSession {
 /** Tool 执行器的最小契约 */
 export interface TurnRunnerToolExecutor {
   /** 执行指定工具 */
-  executeTool(name: string, args: Record<string, unknown>): Promise<ToolExecutionResult>;
+  executeTool(
+    name: string,
+    args: Record<string, unknown>,
+    toolCallId?: string,
+  ): Promise<ToolExecutionResult>;
 }
 
 /** 工具调用解析器 */
@@ -128,7 +132,7 @@ export class TurnRunner {
       const toolResults = [];
       for (const toolCall of parsed.toolCalls) {
         await options.onToolCall?.(toolCall);
-        const result = await tools.executeTool(toolCall.name, toolCall.args);
+        const result = await tools.executeTool(toolCall.name, toolCall.args, toolCall.id);
         toolCallsExecuted += 1;
         const toolResult: ToolCallResult = {
           toolCallId: toolCall.id ?? null,
@@ -207,7 +211,7 @@ export class TurnRunner {
       const toolResults = []
       for (const toolCall of parsed.toolCalls) {
         await options.onToolCall?.(toolCall)
-        const result = await tools.executeTool(toolCall.name, toolCall.args)
+        const result = await tools.executeTool(toolCall.name, toolCall.args, toolCall.id)
         toolCallsExecuted += 1
         const toolResult: ToolCallResult = {
           toolCallId: toolCall.id ?? null,
