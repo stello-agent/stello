@@ -319,6 +319,8 @@ function wrapStandardSession(
     get meta() {
       return { id: coreSessionId, status: session.meta.status } as const
     },
+    get tools() { return session.tools },
+    setTools(tools: Parameters<Session['setTools']>[0]) { session.setTools(tools) },
     async send(content: string) {
       const result = await session.send(content)
       await syncSessionScopeMirror(coreSessionId, session, memoryEngine)
@@ -367,6 +369,8 @@ function wrapMainSession(
     get meta() {
       return { id: coreSessionId, status: session.meta.status } as const
     },
+    get tools() { return session.tools },
+    setTools(tools: Parameters<MainSession['setTools']>[0]) { session.setTools(tools) },
     async send(content: string) {
       return session.send(content)
     },
