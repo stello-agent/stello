@@ -174,6 +174,7 @@ describe('forkSession compress integration', () => {
       memory,
       skills,
       confirm,
+      agent: {} as never,
       lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
       tools: {
         getToolDefinitions: vi.fn().mockReturnValue([]),

@@ -71,6 +71,7 @@ describe('session-runtime adapters', () => {
       send: vi.fn(),
       messages: vi.fn().mockResolvedValue(parentMessages),
       consolidate: vi.fn(),
+      setTools: vi.fn(),
     };
     const adapter = await adaptSessionToEngineRuntime(session, {});
     expect(await adapter.messages()).toEqual(parentMessages);
@@ -82,12 +83,14 @@ describe('session-runtime adapters', () => {
       send: vi.fn().mockResolvedValue({ content: 'hi', toolCalls: [] }),
       messages: vi.fn().mockResolvedValue([]),
       consolidate: vi.fn(),
+      setTools: vi.fn(),
     };
     const parentSession = {
       meta: { id: 'p1', status: 'active' as const },
       send: vi.fn(),
       messages: vi.fn().mockResolvedValue([]),
       consolidate: vi.fn(),
+      setTools: vi.fn(),
       fork: vi.fn().mockResolvedValue(childSession),
     };
 
@@ -105,6 +108,7 @@ describe('session-runtime adapters', () => {
       send: vi.fn(),
       messages: vi.fn().mockResolvedValue([]),
       consolidate: vi.fn(),
+      setTools: vi.fn(),
     };
     const runtime = await adaptSessionToEngineRuntime(session, {});
     expect(runtime.fork).toBeUndefined();
@@ -118,12 +122,14 @@ describe('session-runtime adapters', () => {
       send: vi.fn().mockResolvedValue({ content: 'hi', toolCalls: [] }),
       messages: vi.fn().mockResolvedValue([]),
       consolidate: vi.fn(),
+      setTools: vi.fn(),
     };
     const parentSession = {
       meta: { id: 'p1', status: 'active' as const },
       send: vi.fn(),
       messages: vi.fn().mockResolvedValue([]),
       consolidate: vi.fn(),
+      setTools: vi.fn(),
       fork: vi.fn().mockResolvedValue(childSession),
     };
 

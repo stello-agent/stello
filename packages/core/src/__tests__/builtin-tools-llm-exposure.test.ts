@@ -4,6 +4,7 @@ import type { MemoryEngine } from '../types/memory'
 import type { ConfirmProtocol } from '../types/lifecycle'
 import type { StelloAgent } from '../agent/stello-agent'
 import type { LLMAdapter, LLMResult } from '@stello-ai/session'
+import type { SessionCompatible } from '../adapters/session-runtime'
 import {
   StelloEngineImpl,
   ToolRegistryImpl,
@@ -59,8 +60,10 @@ describe('Built-in tool LLM exposure (bug regression)', () => {
       activateSkillTool(skills),
     ])
 
-    // 5. 把 Session 适配成 EngineRuntimeSession
-    const runtime = await adaptSessionToEngineRuntime(session, {
+    // 5. 把 Session 适配成 EngineRuntimeSession.
+    // 边界处的 cast：Session.fork 的 context 联合不含 'compress'（窄于 SessionCompatible），
+    // 但 applyCompressContext 在调用 session.fork 之前已把 'compress' 解析为 'none'，运行时安全。
+    const runtime = await adaptSessionToEngineRuntime(session as unknown as SessionCompatible, {
       serializeResult: serializeSessionSendResult,
     })
 

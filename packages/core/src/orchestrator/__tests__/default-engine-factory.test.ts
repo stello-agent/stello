@@ -19,6 +19,7 @@ describe('DefaultEngineFactory', () => {
       getAll: vi.fn().mockReturnValue([]),
     } as unknown as SkillRouter,
     confirm: {} as ConfirmProtocol,
+    agent: {} as never,
     lifecycle: {
       bootstrap: vi.fn().mockResolvedValue({
         context: { core: {}, memories: [], currentMemory: null, scope: null },
