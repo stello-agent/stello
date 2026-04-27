@@ -12,7 +12,14 @@ describe('createSessionTool factory', () => {
 
   it('schema exposes context: compress, profileVars, and skills', () => {
     const tool = createSessionTool()
-    const props = (tool.parameters as { properties: Record<string, { enum?: string[]; type?: string }> }).properties
+    const props = (tool.parameters as {
+      properties: {
+        context: { enum: string[] }
+        profileVars: object
+        skills: { type: string }
+        vars?: unknown
+      }
+    }).properties
     expect(props.context.enum).toEqual(['none', 'inherit', 'compress'])
     expect(props.profileVars).toBeDefined()
     expect(props.skills).toBeDefined()
@@ -58,13 +65,15 @@ describe('createSessionTool factory', () => {
     const tool = createSessionTool()
 
     await tool.execute({ label: 'L' }, ctx)
-    expect(forkSpy.mock.calls[0][1]).not.toHaveProperty('skills')
+    expect(forkSpy.mock.calls[0]![1]).not.toHaveProperty('skills')
 
     await tool.execute({ label: 'L', skills: [] }, ctx)
-    expect(forkSpy.mock.calls[1][1].skills).toEqual([])
+    const opts1 = forkSpy.mock.calls[1]![1] as { skills?: string[] }
+    expect(opts1.skills).toEqual([])
 
     await tool.execute({ label: 'L', skills: ['a'] }, ctx)
-    expect(forkSpy.mock.calls[2][1].skills).toEqual(['a'])
+    const opts2 = forkSpy.mock.calls[2]![1] as { skills?: string[] }
+    expect(opts2.skills).toEqual(['a'])
   })
 
   it('returns error for unknown profile', async () => {
