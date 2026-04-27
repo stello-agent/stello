@@ -36,4 +36,20 @@ describe('activateSkillTool factory', () => {
     expect(tool.description).toMatch(/s1/)
     expect(tool.description).toMatch(/s2/)
   })
+
+  it('omits enum field when no skills are registered (regression: Moonshot rejects empty enum arrays)', () => {
+    const router = new SkillRouterImpl()
+    const tool = activateSkillTool(router)
+    const params = tool.parameters as { properties: { name: Record<string, unknown> } }
+    expect(params.properties.name).not.toHaveProperty('enum')
+    expect(params.properties.name.type).toBe('string')
+  })
+
+  it('includes enum field when at least one skill is registered', () => {
+    const router = new SkillRouterImpl()
+    router.register({ name: 'only', description: 'd', content: 'c' })
+    const tool = activateSkillTool(router)
+    const params = tool.parameters as { properties: { name: { enum?: string[] } } }
+    expect(params.properties.name.enum).toEqual(['only'])
+  })
 })

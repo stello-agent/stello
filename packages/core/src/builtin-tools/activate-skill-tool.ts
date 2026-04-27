@@ -14,15 +14,20 @@ ${enumeration || '(无)'}
 }
 
 function buildParameters(skills: SkillRouter): Record<string, unknown> {
+  // Empty enum arrays are rejected by strict JSON-Schema validators (e.g.
+  // Moonshot). Only include the enum field when at least one skill is
+  // registered; execute() already validates unknown skill names at runtime.
+  const skillNames = skills.getAll().map(s => s.name)
+  const nameProperty: Record<string, unknown> = {
+    type: 'string',
+    description: '要激活的 skill 名',
+  }
+  if (skillNames.length > 0) {
+    nameProperty.enum = skillNames
+  }
   return {
     type: 'object',
-    properties: {
-      name: {
-        type: 'string',
-        enum: skills.getAll().map(s => s.name),
-        description: '要激活的 skill 名',
-      },
-    },
+    properties: { name: nameProperty },
     required: ['name'],
   }
 }

@@ -1,5 +1,11 @@
 # @stello-ai/core
 
+## 0.7.1
+
+### Patch Changes
+
+- `activateSkillTool`: omit the `enum` field on `name` parameter when no skills are registered. Empty enum arrays are rejected by strict JSON-Schema validators (e.g. Moonshot returns "enum array cannot be empty"). `execute()` already validates unknown skill names at runtime, so dropping the constraint is safe.
+
 ## 0.7.0
 
 ### Major Changes
