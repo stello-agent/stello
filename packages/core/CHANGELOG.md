@@ -1,5 +1,43 @@
 # @stello-ai/core
 
+## 0.7.0
+
+### Major Changes
+
+- **Built-in tools redesign**: `stello_create_session` and `activate_skill` are now factory-produced `ToolRegistryEntry` objects (`createSessionTool()`, `activateSkillTool(skills)` exported from `@stello-ai/core`). Users explicitly register what they want to expose to the LLM via `capabilities.tools`. Engine no longer auto-injects.
+- **Bug fix**: built-in tool descriptions now actually reach the LLM (previously absent in all production configs because the engine never pushed its composite registry into the session).
+- **Breaking — `ToolRegistryEntry.execute` now requires a `ctx: ToolExecutionContext` parameter** providing `agent`, `sessionId`, `toolCallId?`, `toolName`. All tools (built-in and user) are isomorphic.
+- **`EngineRuntimeSession` gains `tools` getter + `setTools(tools)`** (also added to `Session` and `MainSession` in `@stello-ai/session`). Adapter forwards to underlying `Session.setTools`.
+- Engine pushes `union(session.tools, capabilities.tools)` to session at construction and after every `forkSession()`.
+- New `unionByName` helper at `@stello-ai/core/tool/union`.
+- New `ForkProfileRegistry.has(name)` method for runtime profile validation.
+
+### Removed
+
+- `createBuiltinToolEntries`, `CompositeToolRuntime` (no longer needed; engine does not composite tools)
+- `engine/builtin-tools.ts` (schema generation moved to factory)
+- `Engine.executeCreateSession` private method (logic now lives in the `createSessionTool` factory)
+- Re-export of `createSessionTool` from `@stello-ai/session` (the legacy duplicate; the new `createSessionTool` exported from `@stello-ai/core` is the replacement)
+
+### Migration
+
+Users should update their tool setup to explicitly opt-in to built-in tools:
+
+```diff
+- tools: new ToolRegistryImpl()  // built-ins were auto-injected (broken)
++ tools: new ToolRegistryImpl([
++   createSessionTool(),         // opt-in
++   activateSkillTool(skills),   // opt-in
++ ])
+```
+
+User tool `execute` signature must now accept context parameter:
+
+```diff
+- execute: async (args) => ({ success: true, data: ... })
++ execute: async (args, _ctx) => ({ success: true, data: ... })
+```
+
 ## 0.5.2
 
 ### Patch Changes

@@ -1,5 +1,15 @@
 # @stello-ai/session
 
+## 0.6.0
+
+### Added
+
+- `Session.tools` readonly getter and `Session.setTools(tools)` mutator (same on `MainSession`). Allows external orchestrators (the Engine) to update the LLM-facing tool list at runtime. Existing `LoadSessionOptions.tools` / `CreateSessionOptions.tools` still captured at session creation time; `setTools` mutates the same closure variable.
+
+### Removed
+
+- `createSessionTool` export (legacy duplicate that bypassed Engine editing — use `@stello-ai/core`'s `createSessionTool` factory instead).
+
 ## 0.3.0
 
 ### Minor Changes
