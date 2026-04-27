@@ -38,6 +38,7 @@ describe('DefaultEngineFactory', () => {
     turnCount: 0,
     send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
     consolidate: vi.fn(),
+    setTools: vi.fn(),
   });
 
   it('会把 sessionId 解析成 runtime session，并返回对应 engine', async () => {
@@ -179,6 +180,7 @@ describe('DefaultEngineFactory', () => {
     turnCount: initialTurnCount,
     send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
     consolidate: vi.fn().mockResolvedValue(undefined),
+    setTools: vi.fn(),
   });
 
   it('consolidateEveryNTurns 到达阈值时自动触发 consolidate', async () => {

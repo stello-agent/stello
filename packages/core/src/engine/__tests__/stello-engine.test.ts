@@ -6,6 +6,7 @@ import { StelloEngineImpl } from '../stello-engine';
 import { TurnRunner, type ToolCallParser } from '../turn-runner';
 import { ForkProfileRegistryImpl } from '../fork-profile';
 import { MAIN_SESSION_ID } from '../../types/session';
+import { ToolRegistryImpl, type ToolRegistryEntry } from '../../tool/tool-registry';
 
 describe('StelloEngineImpl', () => {
   const jsonParser: ToolCallParser = {
@@ -344,7 +345,7 @@ describe('StelloEngineImpl', () => {
     });
     const sessionFork = vi.fn().mockResolvedValue({
       id: 'child-1', meta: { id: 'child-1', turnCount: 0, status: 'active' },
-      turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+      turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
     });
     const splitGuard = {
       checkCanSplit: vi.fn().mockResolvedValue({ canSplit: true }),
@@ -401,7 +402,7 @@ describe('StelloEngineImpl', () => {
       });
       const sessionFork = vi.fn().mockResolvedValue({
         id: 'child-1', meta: { id: 'child-1', turnCount: 0, status: 'active' },
-        turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+        turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
       });
 
       const engine = new StelloEngineImpl({
@@ -556,7 +557,7 @@ describe('StelloEngineImpl', () => {
       });
       const sessionFork = vi.fn().mockResolvedValue({
         id: 'c1', meta: { id: 'c1', turnCount: 0, status: 'active' },
-        turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+        turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
       });
 
       const engine = new StelloEngineImpl({
@@ -600,7 +601,7 @@ describe('StelloEngineImpl', () => {
       });
       const sessionFork = vi.fn().mockResolvedValue({
         id: 'c1', meta: { id: 'c1', turnCount: 0, status: 'active' },
-        turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+        turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
       });
 
       const engine = new StelloEngineImpl({
@@ -682,7 +683,7 @@ describe('StelloEngineImpl', () => {
       });
       const sessionFork = vi.fn().mockResolvedValue({
         id: 'c1', meta: { id: 'c1', turnCount: 0, status: 'active' },
-        turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+        turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
       });
 
       const engine = new StelloEngineImpl({
@@ -759,7 +760,7 @@ describe('StelloEngineImpl', () => {
       })
       const sessionFork = vi.fn().mockResolvedValue({
         id: 'c1', meta: { id: 'c1', turnCount: 0, status: 'active' },
-        turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+        turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
       })
       const putConfig = vi.fn().mockResolvedValue(undefined)
 
@@ -799,7 +800,7 @@ describe('StelloEngineImpl', () => {
       })
       const sessionFork = vi.fn().mockResolvedValue({
         id: 'c1', meta: { id: 'c1', turnCount: 0, status: 'active' },
-        turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+        turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
       })
       const putConfig = vi.fn().mockResolvedValue(undefined)
 
@@ -844,7 +845,7 @@ describe('StelloEngineImpl', () => {
       })
       const sessionFork = vi.fn().mockResolvedValue({
         id: 'c1', meta: { id: 'c1', turnCount: 0, status: 'active' },
-        turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+        turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
       })
       const putConfig = vi.fn().mockResolvedValue(undefined)
 
@@ -914,7 +915,7 @@ describe('StelloEngineImpl', () => {
       });
       const sessionFork = vi.fn().mockResolvedValue({
         id: 'child-1', meta: { id: 'child-1', turnCount: 0, status: 'active' },
-        turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+        turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
       });
 
       const engine = new StelloEngineImpl({
@@ -971,7 +972,7 @@ describe('StelloEngineImpl', () => {
       });
       const sessionFork = vi.fn().mockResolvedValue({
         id: 'child-1', meta: { id: 'child-1', turnCount: 0, status: 'active' },
-        turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+        turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
       });
 
       const engine = new StelloEngineImpl({
@@ -1004,7 +1005,7 @@ describe('StelloEngineImpl', () => {
       });
       const sessionFork = vi.fn().mockResolvedValue({
         id: 'child-1', meta: { id: 'child-1', turnCount: 0, status: 'active' },
-        turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+        turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
       });
 
       const engine = new StelloEngineImpl({
@@ -1043,7 +1044,7 @@ describe('StelloEngineImpl', () => {
       });
       const sessionFork = vi.fn().mockResolvedValue({
         id: 'child-1', meta: { id: 'child-1', turnCount: 0, status: 'active' },
-        turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+        turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
       });
 
       const engine = new StelloEngineImpl({
@@ -1066,6 +1067,114 @@ describe('StelloEngineImpl', () => {
       expect(sessionFork).toHaveBeenCalledWith(expect.objectContaining({
         systemPrompt: 'parent sys',
       }));
+    });
+  });
+
+  describe('Engine pushes setTools to session', () => {
+    it('pushes union(session.tools, capabilities.tools) at construction', () => {
+      const userTool: ToolRegistryEntry = {
+        name: 'user_tool',
+        description: 'd',
+        parameters: { type: 'object', properties: {} },
+        execute: async () => ({ success: true }),
+      };
+      const sessionLevelTool = {
+        name: 'session_tool',
+        description: 's',
+        inputSchema: { type: 'object' as const },
+      };
+
+      const sessionTools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> = [
+        sessionLevelTool,
+      ];
+      const setTools = vi.fn((t: typeof sessionTools | undefined) => {
+        sessionTools.length = 0;
+        if (t) sessionTools.push(...t);
+      });
+      const session = {
+        id: 's1',
+        meta: { id: 's1', turnCount: 0, status: 'active' as const },
+        turnCount: 0,
+        send: vi.fn(),
+        consolidate: vi.fn(),
+        messages: vi.fn().mockResolvedValue([]),
+        get tools() { return sessionTools; },
+        setTools,
+      };
+
+      new StelloEngineImpl({
+        session,
+        sessions,
+        memory,
+        skills,
+        confirm,
+        agent: {} as any,
+        lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
+        tools: new ToolRegistryImpl([userTool]),
+      });
+
+      expect(setTools).toHaveBeenCalledTimes(1);
+      const names = sessionTools.map(t => t.name);
+      expect(names).toContain('user_tool');
+      expect(names).toContain('session_tool');
+    });
+
+    it('pushes setTools to child runtime after forkSession', async () => {
+      const userTool: ToolRegistryEntry = {
+        name: 'user_tool',
+        description: 'd',
+        parameters: { type: 'object', properties: {} },
+        execute: async () => ({ success: true }),
+      };
+
+      const childSetTools = vi.fn();
+      const childRuntime = {
+        id: 'child-1',
+        meta: { id: 'child-1', turnCount: 0, status: 'active' as const },
+        turnCount: 0,
+        send: vi.fn(),
+        consolidate: vi.fn(),
+        messages: vi.fn().mockResolvedValue([]),
+        tools: undefined as undefined | Array<{ name: string }>,
+        setTools: childSetTools,
+      };
+      const sessionFork = vi.fn().mockResolvedValue(childRuntime);
+      const createChild = vi.fn().mockResolvedValue({
+        id: 'child-1', parentId: 's1', children: [], refs: [],
+        depth: 1, index: 0, label: 'UI',
+      });
+
+      const parentSetTools = vi.fn();
+      const engine = new StelloEngineImpl({
+        session: {
+          id: 's1',
+          meta: { id: 's1', turnCount: 2, status: 'active' as const },
+          turnCount: 2,
+          send: vi.fn(),
+          consolidate: vi.fn(),
+          messages: vi.fn().mockResolvedValue([]),
+          tools: undefined,
+          setTools: parentSetTools,
+          fork: sessionFork,
+        },
+        sessions: { ...sessions, createChild } as unknown as SessionTree,
+        memory,
+        skills,
+        confirm,
+        agent: {} as any,
+        lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
+        tools: new ToolRegistryImpl([userTool]),
+      });
+
+      // sanity: parent session received setTools at construction
+      expect(parentSetTools).toHaveBeenCalledTimes(1);
+
+      await engine.forkSession({ label: 'UI' });
+
+      expect(childSetTools).toHaveBeenCalledTimes(1);
+      const pushed = childSetTools.mock.calls[0]![0] as Array<{ name: string }>;
+      const names = pushed.map(t => t.name);
+      expect(names).toContain('user_tool');
     });
   });
 });

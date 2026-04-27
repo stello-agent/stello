@@ -124,6 +124,7 @@ describe('forkSession compress integration', () => {
       send: vi.fn(),
       consolidate: vi.fn(),
       messages: vi.fn().mockResolvedValue([]),
+      setTools: vi.fn(),
     })
     const fakeSession = {
       id: 's1',
@@ -132,6 +133,7 @@ describe('forkSession compress integration', () => {
       send: vi.fn(),
       consolidate: vi.fn(),
       messages: vi.fn().mockResolvedValue(parentMessages),
+      setTools: vi.fn(),
       fork: sessionFork,
     }
     const fakeSessions = {

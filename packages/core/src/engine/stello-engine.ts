@@ -24,6 +24,8 @@ import type {
 import { mergeSessionConfig } from './merge-session-config';
 import { applyCompressContext } from './fork-compress';
 import { llmCallFnFromAdapter, type LLMCallFn } from '../llm/defaults';
+import { buildSessionToolList } from '../tool/tool-registry';
+import { unionByName } from '../tool/union';
 import {
   TurnRunner,
   type ToolCallParser,
@@ -188,6 +190,20 @@ export class StelloEngineImpl implements StelloEngine {
       } satisfies ToolCallParser);
 
     this.tools = options.tools;
+
+    // Push union(session.tools, engine tools) to session at construction.
+    // Must run AFTER this.tools is assigned (pushToolsToSession reads this.tools).
+    this.pushToolsToSession(this.session);
+  }
+
+  /**
+   * Build the LLM-compatible tool list from this engine's tool runtime and
+   * push it to the given session runtime, unioned with whatever tools the
+   * session already advertises (engine tools win on same-name conflict).
+   */
+  private pushToolsToSession(session: EngineRuntimeSession): void {
+    const engineToolDefs = buildSessionToolList(this.tools);
+    session.setTools(unionByName(session.tools, engineToolDefs));
   }
 
   get sessionId(): string {
@@ -384,7 +400,8 @@ export class StelloEngineImpl implements StelloEngine {
 
     // session.fork()：用拓扑 ID 创建 session 实例，透传合成后的运行时字段
     // compress 路径下 forwardedContext='none'，避免底层 session 重复处理
-    await this.session.fork({
+    // session.fork is non-null here: the guard above (~line 332) throws otherwise.
+    const childRuntime = await this.session.fork!({
       id: child.id,
       label: options.label,
       systemPrompt: finalSystemPrompt,
@@ -395,6 +412,10 @@ export class StelloEngineImpl implements StelloEngine {
       consolidateFn: merged.consolidateFn,
       compressFn: merged.compressFn,
     });
+
+    // Push the engine's tool list to the child runtime, unioned with whatever
+    // tools the child's underlying session already exposes (e.g. via merged.tools).
+    this.pushToolsToSession(childRuntime);
 
     if (this.splitGuard) {
       this.splitGuard.recordSplit(topologyParentId, this.session.meta.turnCount);
