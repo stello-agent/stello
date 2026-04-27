@@ -130,6 +130,9 @@ export type {
   StelloAgentOrchestrationConfig,
 } from './agent/stello-agent';
 
+// 内置 tool 工厂（builtin-tools redesign）
+export { createSessionTool } from './builtin-tools';
+
 // 导出 LLM 默认实现
 export {
   createDefaultConsolidateFn,
@@ -149,7 +152,8 @@ export { createGPT } from '@stello-ai/session';
 export { createOpenAICompatibleAdapter } from '@stello-ai/session';
 export { createAnthropicAdapter } from '@stello-ai/session';
 export { InMemoryStorageAdapter } from '@stello-ai/session';
-export { createSessionTool } from '@stello-ai/session';
+// Note: session 包的 createSessionTool 已被 core 的 builtin-tools 工厂替代，
+// 不再从 core 重新导出（避免与 './builtin-tools' 同名冲突）。
 export { tool } from '@stello-ai/session';
 export { SessionArchivedError, NotImplementedError } from '@stello-ai/session';
 export type {

@@ -135,6 +135,7 @@ describe.skip('createBuiltinToolEntries', () => {
     const profiles: ForkProfileRegistry = {
       register: () => {},
       get: () => undefined,
+      has: (n: string) => ['research', 'lightweight'].includes(n),
       listNames: () => ['research', 'lightweight'],
     }
     const entries = createBuiltinToolEntries(emptySkills, profiles)
@@ -256,6 +257,7 @@ describe.skip('buildSessionToolList', () => {
     const profiles: ForkProfileRegistry = {
       register: () => {},
       get: () => undefined,
+      has: (n: string) => ['research', 'lightweight'].includes(n),
       listNames: () => ['research', 'lightweight'],
     }
     const builtins = createBuiltinToolEntries(emptySkills, profiles)
