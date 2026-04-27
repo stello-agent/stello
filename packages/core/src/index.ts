@@ -131,7 +131,7 @@ export type {
 } from './agent/stello-agent';
 
 // 内置 tool 工厂（builtin-tools redesign）
-export { createSessionTool } from './builtin-tools';
+export { createSessionTool, activateSkillTool } from './builtin-tools';
 
 // 导出 LLM 默认实现
 export {
