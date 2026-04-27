@@ -4,7 +4,6 @@ import type { MemoryEngine } from '../../types/memory';
 import type { ConfirmProtocol, SkillRouter } from '../../types/lifecycle';
 import { StelloEngineImpl } from '../stello-engine';
 import { TurnRunner, type ToolCallParser } from '../turn-runner';
-import { ForkProfileRegistryImpl } from '../fork-profile';
 import { MAIN_SESSION_ID } from '../../types/session';
 import { ToolRegistryImpl, type ToolRegistryEntry } from '../../tool/tool-registry';
 
@@ -66,7 +65,7 @@ describe('StelloEngineImpl', () => {
       memory,
       skills,
       confirm,
-      agent: {} as any,
+      agent: {} as never,
       lifecycle: {
         bootstrap: vi.fn(),
         afterTurn: vi.fn(),
@@ -135,7 +134,7 @@ describe('StelloEngineImpl', () => {
       memory,
       skills,
       confirm,
-      agent: {} as any,
+      agent: {} as never,
       lifecycle: {
         bootstrap: vi.fn(),
         afterTurn: vi.fn(),
@@ -193,7 +192,7 @@ describe('StelloEngineImpl', () => {
       memory,
       skills,
       confirm,
-      agent: {} as any,
+      agent: {} as never,
       lifecycle: {
         bootstrap: vi.fn(),
         afterTurn: vi.fn(),
@@ -246,7 +245,7 @@ describe('StelloEngineImpl', () => {
       memory,
       skills,
       confirm,
-      agent: {} as any,
+      agent: {} as never,
       lifecycle,
       tools: {
         getToolDefinitions: vi.fn().mockReturnValue([]),
@@ -280,7 +279,7 @@ describe('StelloEngineImpl', () => {
       memory,
       skills,
       confirm,
-      agent: {} as any,
+      agent: {} as never,
       lifecycle: {
         bootstrap: vi.fn(),
         afterTurn: vi.fn(),
@@ -318,7 +317,7 @@ describe('StelloEngineImpl', () => {
       memory,
       skills,
       confirm,
-      agent: {} as any,
+      agent: {} as never,
       lifecycle: {
         bootstrap: vi.fn(),
         afterTurn: vi.fn(),
@@ -367,7 +366,7 @@ describe('StelloEngineImpl', () => {
       memory,
       skills,
       confirm,
-      agent: {} as any,
+      agent: {} as never,
       lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
       tools: {
         getToolDefinitions: vi.fn().mockReturnValue([]),
@@ -413,7 +412,7 @@ describe('StelloEngineImpl', () => {
         fork: sessionFork,
       },
       sessions: { ...sessions, createChild } as unknown as SessionTree,
-      memory, skills, confirm, agent: {} as any,
+      memory, skills, confirm, agent: {} as never,
       lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
       tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
       splitGuard: splitGuard as never,
@@ -443,7 +442,7 @@ describe('StelloEngineImpl', () => {
           fork: sessionFork,
         },
         sessions: { ...sessions, createChild } as unknown as SessionTree,
-        memory, skills, confirm, agent: {} as any,
+        memory, skills, confirm, agent: {} as never,
         lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
         tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
       });
@@ -469,7 +468,7 @@ describe('StelloEngineImpl', () => {
           messages: vi.fn().mockResolvedValue([]),
           setTools: vi.fn(),
         },
-        sessions, memory, skills, confirm, agent: {} as any,
+        sessions, memory, skills, confirm, agent: {} as never,
         lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
         tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
       });
@@ -501,7 +500,7 @@ describe('StelloEngineImpl', () => {
           fork: sessionFork,
         },
         sessions: { ...sessions, createChild, getConfig, putConfig } as unknown as SessionTree,
-        memory, skills, confirm, agent: {} as any,
+        memory, skills, confirm, agent: {} as never,
         lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
         tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
       });
@@ -534,7 +533,7 @@ describe('StelloEngineImpl', () => {
           fork: sessionFork,
         },
         sessions: { ...sessions, createChild, getConfig, putConfig } as unknown as SessionTree,
-        memory, skills, confirm, agent: {} as any,
+        memory, skills, confirm, agent: {} as never,
         lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
         tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
       });
@@ -572,7 +571,7 @@ describe('StelloEngineImpl', () => {
           fork: sessionFork,
         },
         sessions: { ...sessions, createChild, getConfig } as unknown as SessionTree,
-        memory, skills, confirm, agent: {} as any,
+        memory, skills, confirm, agent: {} as never,
         lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
         tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
       });
@@ -624,7 +623,7 @@ describe('StelloEngineImpl', () => {
         memory,
         skills,
         confirm,
-        agent: {} as any,
+        agent: {} as never,
         lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
         tools: new ToolRegistryImpl([userTool]),
       });
@@ -677,7 +676,7 @@ describe('StelloEngineImpl', () => {
         memory,
         skills,
         confirm,
-        agent: {} as any,
+        agent: {} as never,
         lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
         tools: new ToolRegistryImpl([userTool]),
       });

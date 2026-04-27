@@ -141,7 +141,7 @@ describe('session-runtime adapters', () => {
   });
 
   it('adapter exposes tools getter and forwards setTools to underlying Session', async () => {
-    const sessionTools: any[] = [{ name: 'a', description: 'd', inputSchema: {} }];
+    const sessionTools: Array<{ name: string; description: string; inputSchema: object }> = [{ name: 'a', description: 'd', inputSchema: {} }];
     const setToolsSpy = vi.fn((t) => {
       sessionTools.length = 0;
       if (t) sessionTools.push(...t);
@@ -157,7 +157,7 @@ describe('session-runtime adapters', () => {
       consolidate: vi.fn(),
     };
 
-    const adapted = await adaptSessionToEngineRuntime(session as any, {});
+    const adapted = await adaptSessionToEngineRuntime(session as never, {});
     expect(adapted.tools).toEqual(sessionTools);
 
     adapted.setTools([{ name: 'b', description: 'e', inputSchema: {} }]);

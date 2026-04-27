@@ -32,7 +32,7 @@ export function activateSkillTool(skills: SkillRouter): ToolRegistryEntry {
     name: 'activate_skill',
     description: buildDescription(skills),
     parameters: buildParameters(skills),
-    execute: async (args, _ctx) => {
+    execute: async (args) => {
       const name = args.name as string
       const skill = skills.get(name)
       if (!skill) return { success: false, error: `Skill "${name}" 未注册` }

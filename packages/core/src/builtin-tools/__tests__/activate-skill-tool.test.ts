@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { activateSkillTool } from '../activate-skill-tool'
 import { SkillRouterImpl } from '../../skill/skill-router'
 import type { ToolExecutionContext } from '../../types/tool'
@@ -14,7 +14,7 @@ describe('activateSkillTool factory', () => {
     const router = new SkillRouterImpl()
     router.register({ name: 'analyzer', description: 'd', content: 'YOU ARE AN ANALYZER' })
     const tool = activateSkillTool(router)
-    const ctx: ToolExecutionContext = { agent: {} as any, sessionId: 's', toolName: 'activate_skill' }
+    const ctx: ToolExecutionContext = { agent: {} as never, sessionId: 's', toolName: 'activate_skill' }
     const result = await tool.execute({ name: 'analyzer' }, ctx)
     expect(result).toEqual({ success: true, data: { content: 'YOU ARE AN ANALYZER' } })
   })
@@ -22,7 +22,7 @@ describe('activateSkillTool factory', () => {
   it('execute returns error for unknown skill', async () => {
     const router = new SkillRouterImpl()
     const tool = activateSkillTool(router)
-    const ctx: ToolExecutionContext = { agent: {} as any, sessionId: 's', toolName: 'activate_skill' }
+    const ctx: ToolExecutionContext = { agent: {} as never, sessionId: 's', toolName: 'activate_skill' }
     const result = await tool.execute({ name: 'nope' }, ctx)
     expect(result.success).toBe(false)
     expect(result.error).toMatch(/skill.*nope/i)

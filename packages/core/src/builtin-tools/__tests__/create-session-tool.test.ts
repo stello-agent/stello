@@ -13,7 +13,7 @@ describe('createSessionTool factory', () => {
   it('execute calls ctx.agent.forkSession with mapped options', async () => {
     const forkSpy = vi.fn().mockResolvedValue({ id: 'child-1', label: 'Child' })
     const ctx: ToolExecutionContext = {
-      agent: { forkSession: forkSpy, profiles: undefined } as any,
+      agent: { forkSession: forkSpy, profiles: undefined } as never,
       sessionId: 'parent-1',
       toolName: 'stello_create_session',
     }
@@ -33,7 +33,7 @@ describe('createSessionTool factory', () => {
   it('returns error for unknown profile', async () => {
     const profilesStub = { has: (n: string) => n === 'known' }
     const ctx: ToolExecutionContext = {
-      agent: { forkSession: vi.fn(), profiles: profilesStub } as any,
+      agent: { forkSession: vi.fn(), profiles: profilesStub } as never,
       sessionId: 's',
       toolName: 'stello_create_session',
     }
@@ -45,7 +45,7 @@ describe('createSessionTool factory', () => {
 
   it('returns error when forkSession throws', async () => {
     const ctx: ToolExecutionContext = {
-      agent: { forkSession: vi.fn().mockRejectedValue(new Error('split blocked')), profiles: undefined } as any,
+      agent: { forkSession: vi.fn().mockRejectedValue(new Error('split blocked')), profiles: undefined } as never,
       sessionId: 's',
       toolName: 'stello_create_session',
     }
