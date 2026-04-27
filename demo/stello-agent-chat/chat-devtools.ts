@@ -9,8 +9,8 @@ import {
   ToolRegistryImpl,
   ForkProfileRegistryImpl,
   buildSessionToolList,
-  createBuiltinToolEntries,
-  CompositeToolRuntime,
+  createSessionTool,
+  activateSkillTool,
   createStelloAgent,
   type ConfirmProtocol,
   type CoreSchema,
@@ -557,9 +557,11 @@ export async function bootstrap() {
   })
 
   // session 创建时的完整工具列表（内置 tool + 用户 tool）
-  const builtinEntries = createBuiltinToolEntries(skillRouter, forkProfiles)
-  const compositeRuntime = new CompositeToolRuntime(builtinEntries, toolRegistry)
-  const sessionTools = buildSessionToolList(compositeRuntime)
+  // 内置 tool 工厂直接注册到 toolRegistry；createSessionTool 在执行时从
+  // ctx.agent.profiles 读取 fork profiles，无需在此显式传入 forkProfiles。
+  toolRegistry.register(createSessionTool())
+  toolRegistry.register(activateSkillTool(skillRouter))
+  const sessionTools = buildSessionToolList(toolRegistry)
 
   const memory = createFileMemoryEngine(fs, sessions)
 
