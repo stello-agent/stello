@@ -31,6 +31,7 @@ describe('StelloAgent', () => {
       turnCount: 0,
       send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
       consolidate: vi.fn(),
+      setTools: vi.fn(),
     };
     return {
       sessions: {
@@ -76,6 +77,7 @@ describe('StelloAgent', () => {
       turnCount: 0,
       send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
       consolidate: vi.fn(),
+      setTools: vi.fn(),
     };
 
     const agent = createStelloAgent(baseConfig({ runtimeSession }));
@@ -100,6 +102,7 @@ describe('StelloAgent', () => {
         },
       }),
       consolidate: vi.fn(),
+      setTools: vi.fn(),
     };
 
     const agent = createStelloAgent(baseConfig({ runtimeSession }));
@@ -125,7 +128,7 @@ describe('StelloAgent', () => {
 
     const sessionFork = vi.fn().mockResolvedValue({
       id: 'child-2', meta: { id: 'child-2', turnCount: 0, status: 'active' },
-      turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+      turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
     });
 
     const childRuntime = {
@@ -134,6 +137,7 @@ describe('StelloAgent', () => {
       turnCount: 1,
       send: vi.fn(),
       consolidate: vi.fn(),
+      setTools: vi.fn(),
       fork: sessionFork,
     };
 
@@ -315,6 +319,7 @@ describe('StelloAgent', () => {
       turnCount: 0,
       send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
       consolidate: vi.fn().mockResolvedValue(undefined),
+      setTools: vi.fn(),
     };
     const agent = createStelloAgent(baseConfig({ runtimeSession }));
     await agent.consolidateSession('root');
@@ -359,6 +364,7 @@ describe('StelloAgent', () => {
         };
       }),
       consolidate: vi.fn().mockResolvedValue(undefined),
+      setTools: vi.fn(),
     };
 
     const agent = createStelloAgent({

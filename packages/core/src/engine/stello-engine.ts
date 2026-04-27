@@ -1,6 +1,7 @@
 import type { SessionTree } from '../types/session';
 import { MAIN_SESSION_ID } from '../types/session';
 import type { MemoryEngine, TurnRecord } from '../types/memory';
+import type { LLMCompleteOptions } from '@stello-ai/session';
 import type {
   BootstrapResult,
   AfterTurnResult,
@@ -9,11 +10,12 @@ import type {
   ToolDefinition,
   ToolExecutionResult,
 } from '../types/lifecycle';
+import type { ToolExecutionContext } from '../types/tool';
 import type { StelloEngine, StelloEventMap, EngineForkOptions } from '../types/engine';
 import type { TopologyNode } from '../types/session';
 import type { SplitGuard } from '../session/split-guard';
 import type { ForkProfileRegistry } from './fork-profile';
-import { createBuiltinToolEntries, CompositeToolRuntime } from '../tool/tool-registry';
+import type { StelloAgent } from '../agent/stello-agent';
 import type { SessionCompatibleForkOptions } from '../adapters/session-runtime';
 import type {
   SerializableSessionConfig,
@@ -22,6 +24,8 @@ import type {
 import { mergeSessionConfig } from './merge-session-config';
 import { applyCompressContext } from './fork-compress';
 import { llmCallFnFromAdapter, type LLMCallFn } from '../llm/defaults';
+import { buildSessionToolList } from '../tool/tool-registry';
+import { unionByName } from '../tool/union';
 import {
   TurnRunner,
   type ToolCallParser,
@@ -54,6 +58,10 @@ export interface EngineRuntimeSession {
   consolidate(): Promise<void>;
   /** 读取当前 session 的 L3 消息（原始对话记录） */
   messages(): Promise<Array<{ role: string; content: string; timestamp?: string }>>;
+  /** Current tool list visible to LLM (mirrors underlying Session.tools) */
+  readonly tools?: LLMCompleteOptions['tools'];
+  /** Replace tool list (forwards to underlying Session.setTools) */
+  setTools(tools: LLMCompleteOptions['tools'] | undefined): void;
 }
 
 /** Engine 依赖的生命周期适配器 */
@@ -67,7 +75,11 @@ export interface EngineLifecycleAdapter {
 /** tool 执行器最小契约 */
 export interface EngineToolRuntime {
   getToolDefinitions(): ToolDefinition[];
-  executeTool(name: string, args: Record<string, unknown>): Promise<ToolExecutionResult>;
+  executeTool(
+    name: string,
+    args: Record<string, unknown>,
+    ctx: ToolExecutionContext,
+  ): Promise<ToolExecutionResult>;
 }
 
 /** Engine 构造参数 */
@@ -86,6 +98,8 @@ export interface StelloEngineOptions {
   profiles?: ForkProfileRegistry;
   /** Agent 级默认配置（fork 合成链最低优先级） */
   sessionDefaults?: SessionConfig;
+  /** Owning agent reference, exposed to tools via ToolExecutionContext */
+  agent: StelloAgent;
 }
 
 /** turn 的聚合结果 */
@@ -146,12 +160,13 @@ export class StelloEngineImpl implements StelloEngine {
 
   private readonly session: EngineRuntimeSession;
   private readonly lifecycle: EngineLifecycleAdapter;
-  private readonly compositeTools: EngineToolRuntime;
+  private readonly tools: EngineToolRuntime;
   private readonly splitGuard?: SplitGuard;
   private readonly turnRunner: TurnRunner;
   private readonly hooks: Partial<EngineHooks>;
   private readonly profiles?: ForkProfileRegistry;
   private readonly sessionDefaults?: SessionConfig;
+  private readonly agent: StelloAgent;
   private readonly handlers = new Map<keyof StelloEventMap, Set<(data: unknown) => void>>();
 
   constructor(options: StelloEngineOptions) {
@@ -165,6 +180,7 @@ export class StelloEngineImpl implements StelloEngine {
     this.hooks = options.hooks ?? {};
     this.profiles = options.profiles;
     this.sessionDefaults = options.sessionDefaults;
+    this.agent = options.agent;
     this.turnRunner =
       options.turnRunner ??
       new TurnRunner({
@@ -173,13 +189,21 @@ export class StelloEngineImpl implements StelloEngine {
         },
       } satisfies ToolCallParser);
 
-    // 内置 tool 通过闭包捕获 Engine 实例，与用户 tool 统一走 CompositeToolRuntime
-    const builtinEntries = createBuiltinToolEntries(
-      options.skills,
-      options.profiles,
-      (args) => this.executeCreateSession(args),
-    );
-    this.compositeTools = new CompositeToolRuntime(builtinEntries, options.tools);
+    this.tools = options.tools;
+
+    // Push union(session.tools, engine tools) to session at construction.
+    // Must run AFTER this.tools is assigned (pushToolsToSession reads this.tools).
+    this.pushToolsToSession(this.session);
+  }
+
+  /**
+   * Build the LLM-compatible tool list from this engine's tool runtime and
+   * push it to the given session runtime, unioned with whatever tools the
+   * session already advertises (engine tools win on same-name conflict).
+   */
+  private pushToolsToSession(session: EngineRuntimeSession): void {
+    const engineToolDefs = buildSessionToolList(this.tools);
+    session.setTools(unionByName(session.tools, engineToolDefs));
   }
 
   get sessionId(): string {
@@ -376,7 +400,8 @@ export class StelloEngineImpl implements StelloEngine {
 
     // session.fork()：用拓扑 ID 创建 session 实例，透传合成后的运行时字段
     // compress 路径下 forwardedContext='none'，避免底层 session 重复处理
-    await this.session.fork({
+    // session.fork is non-null here: the guard above (~line 332) throws otherwise.
+    const childRuntime = await this.session.fork!({
       id: child.id,
       label: options.label,
       systemPrompt: finalSystemPrompt,
@@ -388,6 +413,10 @@ export class StelloEngineImpl implements StelloEngine {
       compressFn: merged.compressFn,
     });
 
+    // Push the engine's tool list to the child runtime, unioned with whatever
+    // tools the child's underlying session already exposes (e.g. via merged.tools).
+    this.pushToolsToSession(childRuntime);
+
     if (this.splitGuard) {
       this.splitGuard.recordSplit(topologyParentId, this.session.meta.turnCount);
     }
@@ -396,48 +425,24 @@ export class StelloEngineImpl implements StelloEngine {
     return child;
   }
 
-  /** 导出 tool 定义，包含内置 tool + 用户 tool（内置优先，同名去重） */
+  /** 导出 tool 定义，由用户提供的 tool runtime 暴露 */
   getToolDefinitions(): ToolDefinition[] {
-    return this.compositeTools.getToolDefinitions();
+    return this.tools.getToolDefinitions();
   }
 
-  /** 执行 tool call，内置 tool 优先，fallback 到用户 tool */
-  async executeTool(name: string, args: Record<string, unknown>): Promise<ToolExecutionResult> {
-    return this.compositeTools.executeTool(name, args);
-  }
-
-  /** 执行内置 stello_create_session：把 LLM 透传参数转为 EngineForkOptions 后调 forkSession */
-  private async executeCreateSession(
+  /** 执行 tool call：构造 ToolExecutionContext 后转发给 tool runtime */
+  async executeTool(
+    name: string,
     args: Record<string, unknown>,
+    toolCallId?: string,
   ): Promise<ToolExecutionResult> {
-    try {
-      const forkOptions: EngineForkOptions = {
-        label: args.label as string,
-      };
-      if (args.systemPrompt !== undefined) {
-        forkOptions.systemPrompt = args.systemPrompt as string;
-      }
-      if (args.prompt !== undefined) {
-        forkOptions.prompt = args.prompt as string;
-      }
-      if (args.context !== undefined) {
-        forkOptions.context = args.context as 'none' | 'inherit' | 'compress';
-      }
-      if (args.profile !== undefined) {
-        forkOptions.profile = args.profile as string;
-      }
-      if (args.vars !== undefined) {
-        forkOptions.profileVars = args.vars as Record<string, string>;
-      }
-
-      const child = await this.forkSession(forkOptions);
-      return { success: true, data: { sessionId: child.id, label: child.label } };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
+    const ctx: ToolExecutionContext = {
+      agent: this.agent,
+      sessionId: this.session.id,
+      toolCallId,
+      toolName: name,
+    };
+    return this.tools.executeTool(name, args, ctx);
   }
 
   on<K extends keyof StelloEventMap>(event: K, handler: (data: StelloEventMap[K]) => void): void {

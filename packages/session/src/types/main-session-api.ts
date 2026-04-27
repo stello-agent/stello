@@ -1,5 +1,5 @@
 import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './session.js'
-import type { Message, LLMAdapter } from './llm.js'
+import type { Message, LLMAdapter, LLMCompleteOptions } from './llm.js'
 import type { SendResult, StreamResult, IntegrateResult } from './functions.js'
 import type { MessageQueryOptions, Session } from './session-api.js'
 
@@ -50,4 +50,10 @@ export interface MainSession {
 
   /** 动态替换 LLM adapter（热更新，立即对后续 send/stream 生效） */
   setLLM(adapter: LLMAdapter): void
+
+  /** Current tool list (auto-injected to LLM on send/stream) */
+  readonly tools?: LLMCompleteOptions['tools']
+
+  /** Replace tool list. Effective immediately; next send/stream uses new value. */
+  setTools(tools: LLMCompleteOptions['tools'] | undefined): void
 }

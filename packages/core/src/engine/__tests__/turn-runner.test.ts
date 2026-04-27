@@ -48,7 +48,7 @@ describe('TurnRunner', () => {
     const result = await runner.run(session, 'hello', tools);
 
     expect(session.send).toHaveBeenCalledTimes(2);
-    expect(tools.executeTool).toHaveBeenCalledWith('read', { path: 'core.name' });
+    expect(tools.executeTool).toHaveBeenCalledWith('read', { path: 'core.name' }, '1');
     expect(session.send.mock.calls[1]?.[0]).toContain('"toolResults"');
     expect(result.finalContent).toBe('done');
     expect(result.toolRoundCount).toBe(1);
@@ -79,8 +79,8 @@ describe('TurnRunner', () => {
     const result = await runner.run(session, 'hello', tools);
 
     expect(tools.executeTool.mock.calls).toEqual([
-      ['read', { path: 'core.name' }],
-      ['list', { scope: 'ui' }],
+      ['read', { path: 'core.name' }, undefined],
+      ['list', { scope: 'ui' }, undefined],
     ]);
     expect(result.toolCallsExecuted).toBe(2);
   });

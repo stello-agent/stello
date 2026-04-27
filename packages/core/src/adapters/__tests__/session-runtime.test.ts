@@ -71,6 +71,7 @@ describe('session-runtime adapters', () => {
       send: vi.fn(),
       messages: vi.fn().mockResolvedValue(parentMessages),
       consolidate: vi.fn(),
+      setTools: vi.fn(),
     };
     const adapter = await adaptSessionToEngineRuntime(session, {});
     expect(await adapter.messages()).toEqual(parentMessages);
@@ -82,12 +83,14 @@ describe('session-runtime adapters', () => {
       send: vi.fn().mockResolvedValue({ content: 'hi', toolCalls: [] }),
       messages: vi.fn().mockResolvedValue([]),
       consolidate: vi.fn(),
+      setTools: vi.fn(),
     };
     const parentSession = {
       meta: { id: 'p1', status: 'active' as const },
       send: vi.fn(),
       messages: vi.fn().mockResolvedValue([]),
       consolidate: vi.fn(),
+      setTools: vi.fn(),
       fork: vi.fn().mockResolvedValue(childSession),
     };
 
@@ -105,6 +108,7 @@ describe('session-runtime adapters', () => {
       send: vi.fn(),
       messages: vi.fn().mockResolvedValue([]),
       consolidate: vi.fn(),
+      setTools: vi.fn(),
     };
     const runtime = await adaptSessionToEngineRuntime(session, {});
     expect(runtime.fork).toBeUndefined();
@@ -118,12 +122,14 @@ describe('session-runtime adapters', () => {
       send: vi.fn().mockResolvedValue({ content: 'hi', toolCalls: [] }),
       messages: vi.fn().mockResolvedValue([]),
       consolidate: vi.fn(),
+      setTools: vi.fn(),
     };
     const parentSession = {
       meta: { id: 'p1', status: 'active' as const },
       send: vi.fn(),
       messages: vi.fn().mockResolvedValue([]),
       consolidate: vi.fn(),
+      setTools: vi.fn(),
       fork: vi.fn().mockResolvedValue(childSession),
     };
 
@@ -138,5 +144,30 @@ describe('session-runtime adapters', () => {
       consolidateFn,
       compressFn,
     });
+  });
+
+  it('adapter exposes tools getter and forwards setTools to underlying Session', async () => {
+    const sessionTools: Array<{ name: string; description: string; inputSchema: object }> = [{ name: 'a', description: 'd', inputSchema: {} }];
+    const setToolsSpy = vi.fn((t) => {
+      sessionTools.length = 0;
+      if (t) sessionTools.push(...t);
+    });
+    const session = {
+      meta: { id: 's1', status: 'active' as const },
+      get tools() {
+        return sessionTools;
+      },
+      setTools: setToolsSpy,
+      send: vi.fn(),
+      messages: vi.fn().mockResolvedValue([]),
+      consolidate: vi.fn(),
+    };
+
+    const adapted = await adaptSessionToEngineRuntime(session as never, {});
+    expect(adapted.tools).toEqual(sessionTools);
+
+    adapted.setTools([{ name: 'b', description: 'e', inputSchema: {} }]);
+    expect(setToolsSpy).toHaveBeenCalledOnce();
+    expect(adapted.tools).toEqual([{ name: 'b', description: 'e', inputSchema: {} }]);
   });
 });

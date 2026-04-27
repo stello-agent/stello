@@ -19,6 +19,7 @@ describe('DefaultEngineFactory', () => {
       getAll: vi.fn().mockReturnValue([]),
     } as unknown as SkillRouter,
     confirm: {} as ConfirmProtocol,
+    agent: {} as never,
     lifecycle: {
       bootstrap: vi.fn().mockResolvedValue({
         context: { core: {}, memories: [], currentMemory: null, scope: null },
@@ -38,6 +39,7 @@ describe('DefaultEngineFactory', () => {
     turnCount: 0,
     send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
     consolidate: vi.fn(),
+    setTools: vi.fn(),
   });
 
   it('会把 sessionId 解析成 runtime session，并返回对应 engine', async () => {
@@ -78,98 +80,10 @@ describe('DefaultEngineFactory', () => {
     expect(onSessionEnter).toHaveBeenCalledWith({ sessionId: 's-special' });
   });
 
-  it('固化 SessionConfig.skills 为白名单时，engine 使用过滤后的 skills', async () => {
-    const runtimeSession = makeSession()
-    const globalSkills = {
-      get: vi.fn((name: string) => ({ name, description: `${name} desc`, content: `${name} content` })),
-      register: vi.fn(),
-      getAll: vi.fn().mockReturnValue([
-        { name: 'research', description: 'research desc', content: 'research content' },
-        { name: 'coding', description: 'coding desc', content: 'coding content' },
-        { name: 'translate', description: 'translate desc', content: 'translate content' },
-      ]),
-    } as unknown as SkillRouter
-
-    const opts = baseOptions()
-    const factory = new DefaultEngineFactory({
-      ...opts,
-      skills: globalSkills,
-      sessions: {
-        ...opts.sessions,
-        getConfig: vi.fn().mockResolvedValue({ skills: ['research', 'coding'] }),
-      } as unknown as SessionTree,
-      sessionRuntimeResolver: {
-        resolve: vi.fn().mockResolvedValue(runtimeSession),
-      },
-    })
-
-    const engine = await factory.create('s1')
-    const defs = engine.getToolDefinitions()
-    const skillTool = defs.find(d => d.name === 'activate_skill')
-
-    expect(skillTool).toBeDefined()
-    expect(skillTool!.description).toContain('research')
-    expect(skillTool!.description).toContain('coding')
-    expect(skillTool!.description).not.toContain('translate')
-  })
-
-  it('固化 SessionConfig.skills: [] 时，activate_skill 工具不出现', async () => {
-    const runtimeSession = makeSession()
-    const globalSkills = {
-      get: vi.fn(),
-      register: vi.fn(),
-      getAll: vi.fn().mockReturnValue([
-        { name: 'research', description: 'research desc', content: 'research content' },
-      ]),
-    } as unknown as SkillRouter
-
-    const opts = baseOptions()
-    const factory = new DefaultEngineFactory({
-      ...opts,
-      skills: globalSkills,
-      sessions: {
-        ...opts.sessions,
-        getConfig: vi.fn().mockResolvedValue({ skills: [] }),
-      } as unknown as SessionTree,
-      sessionRuntimeResolver: {
-        resolve: vi.fn().mockResolvedValue(runtimeSession),
-      },
-    })
-
-    const engine = await factory.create('s1')
-    const defs = engine.getToolDefinitions()
-    expect(defs.find(d => d.name === 'activate_skill')).toBeUndefined()
-  })
-
-  it('固化 SessionConfig.skills 未定义（或为 null）时，使用全局 skills（不过滤）', async () => {
-    const runtimeSession = makeSession()
-    const globalSkills = {
-      get: vi.fn(),
-      register: vi.fn(),
-      getAll: vi.fn().mockReturnValue([
-        { name: 'research', description: 'research desc', content: 'research content' },
-      ]),
-    } as unknown as SkillRouter
-
-    const opts = baseOptions()
-    const factory = new DefaultEngineFactory({
-      ...opts,
-      skills: globalSkills,
-      sessions: {
-        ...opts.sessions,
-        getConfig: vi.fn().mockResolvedValue(null),
-      } as unknown as SessionTree,
-      sessionRuntimeResolver: {
-        resolve: vi.fn().mockResolvedValue(runtimeSession),
-      },
-    })
-
-    const engine = await factory.create('s1')
-    const defs = engine.getToolDefinitions()
-    const skillTool = defs.find(d => d.name === 'activate_skill')
-    expect(skillTool).toBeDefined()
-    expect(skillTool!.description).toContain('research')
-  })
+  // Skill filter / activate_skill auto-injection tests removed in Task 12:
+  // the engine no longer auto-injects activate_skill from a global SkillRouter;
+  // skill tools are now provided explicitly via createStelloAgent.tools (or the
+  // builtin-tools factory). Tests that relied on auto-injection were obsolete.
 
   const makeSessionWithTurnCount = (id = 's1', initialTurnCount = 0) => ({
     id,
@@ -177,6 +91,7 @@ describe('DefaultEngineFactory', () => {
     turnCount: initialTurnCount,
     send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
     consolidate: vi.fn().mockResolvedValue(undefined),
+    setTools: vi.fn(),
   });
 
   it('consolidateEveryNTurns 到达阈值时自动触发 consolidate', async () => {

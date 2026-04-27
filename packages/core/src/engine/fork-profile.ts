@@ -34,6 +34,8 @@ export interface ForkProfileRegistry {
   register(name: string, profile: ForkProfile): void
   /** 按名称获取 profile */
   get(name: string): ForkProfile | undefined
+  /** 是否已注册指定 profile */
+  has(name: string): boolean
   /** 列出所有已注册 profile 名 */
   listNames(): string[]
 }
@@ -48,6 +50,10 @@ export class ForkProfileRegistryImpl implements ForkProfileRegistry {
 
   get(name: string): ForkProfile | undefined {
     return this.profiles.get(name)
+  }
+
+  has(name: string): boolean {
+    return this.profiles.has(name)
   }
 
   listNames(): string[] {

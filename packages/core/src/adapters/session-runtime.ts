@@ -73,6 +73,10 @@ export interface SessionCompatible {
   consolidate(): Promise<void>;
   /** fork 子 session，返回结构兼容的子 session */
   fork?(options: SessionCompatibleForkOptions): Promise<SessionCompatible>;
+  /** Current tool list visible to LLM (mirrors underlying Session.tools) */
+  readonly tools?: LLMCompleteOptions['tools'];
+  /** Replace tool list (forwards to underlying Session.setTools) */
+  setTools(tools: LLMCompleteOptions['tools'] | undefined): void;
 }
 
 /** 结构兼容 @stello-ai/session 的 MainSession */
@@ -162,6 +166,12 @@ export async function adaptSessionToEngineRuntime(
     },
     async messages() {
       return session.messages();
+    },
+    get tools() {
+      return session.tools;
+    },
+    setTools(tools) {
+      session.setTools(tools);
     },
     ...(session.stream
       ? {

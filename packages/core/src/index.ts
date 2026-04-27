@@ -47,6 +47,8 @@ export type {
   SerializableMainSessionConfig,
 } from './types';
 
+export type { ToolExecutionContext } from './types/tool';
+
 // 导出常量
 export { MAIN_SESSION_ID } from './types/session';
 
@@ -78,7 +80,7 @@ export type {
 } from './adapters/session-runtime';
 export { ForkProfileRegistryImpl } from './engine/fork-profile';
 export type { ForkProfile, ForkProfileRegistry } from './engine/fork-profile';
-export { ToolRegistryImpl, CompositeToolRuntime, createBuiltinToolEntries, buildSessionToolList } from './tool/tool-registry';
+export { ToolRegistryImpl, buildSessionToolList } from './tool/tool-registry';
 export type { ToolRegistry, ToolRegistryEntry } from './tool/tool-registry';
 export { TurnRunner } from './engine/turn-runner';
 export type {
@@ -128,6 +130,9 @@ export type {
   StelloAgentOrchestrationConfig,
 } from './agent/stello-agent';
 
+// 内置 tool 工厂（builtin-tools redesign）
+export { createSessionTool, activateSkillTool } from './builtin-tools';
+
 // 导出 LLM 默认实现
 export {
   createDefaultConsolidateFn,
@@ -147,7 +152,8 @@ export { createGPT } from '@stello-ai/session';
 export { createOpenAICompatibleAdapter } from '@stello-ai/session';
 export { createAnthropicAdapter } from '@stello-ai/session';
 export { InMemoryStorageAdapter } from '@stello-ai/session';
-export { createSessionTool } from '@stello-ai/session';
+// Note: session 包的 createSessionTool 已被 core 的 builtin-tools 工厂替代，
+// 不再从 core 重新导出（避免与 './builtin-tools' 同名冲突）。
 export { tool } from '@stello-ai/session';
 export { SessionArchivedError, NotImplementedError } from '@stello-ai/session';
 export type {
