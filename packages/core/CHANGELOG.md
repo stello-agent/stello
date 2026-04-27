@@ -1,5 +1,13 @@
 # @stello-ai/core
 
+## 0.7.2
+
+### Added
+- `stello_create_session` tool schema: `context.enum` gains `'compress'` (surfaces existing engine capability); new `skills` field with three-state semantics (undefined=inherit / `[]`=disable / `['a','b']`=whitelist).
+
+### Changed
+- `stello_create_session` tool: parameter `vars` renamed to `profileVars` for parity with `EngineForkOptions.profileVars`. The internal `mapArgsToForkOptions` mapping helper is removed (execute now does direct conditional passthrough). Wire-level only — no consumer code references the old name.
+
 ## 0.7.1
 
 ### Patch Changes
