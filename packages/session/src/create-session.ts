@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { Session, MessageQueryOptions } from './types/session-api.js'
+import type { Session, MessageQueryOptions, SessionSendOptions } from './types/session-api.js'
 import { SessionArchivedError } from './types/session-api.js'
 import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './types/session.js'
 import type { Message } from './types/llm.js'
@@ -184,13 +184,15 @@ function buildSession(
       return currentMeta
     },
 
-    async send(content: string): Promise<SendResult> {
+    async send(content: string, sendOptions?: SessionSendOptions): Promise<SendResult> {
       if (currentMeta.status === 'archived') {
         throw new SessionArchivedError(currentMeta.id)
       }
       if (!options.llm) {
         throw new Error('LLMAdapter is required for send()')
       }
+      // pre-flight：已 abort 的 signal 立即抛出，不发起任何 LLM 请求
+      sendOptions?.signal?.throwIfAborted()
 
       // 组装上下文（自动压缩）
       const assembled = await assembleSessionContext(
@@ -227,8 +229,8 @@ function buildSession(
         }
       }
 
-      // 调 LLM
-      const result = await options.llm.complete(promptMessages, { tools })
+      // 调 LLM — adapter 抛 AbortError 时直接向上传播，下方 L3 写入分支整体跳过
+      const result = await options.llm.complete(promptMessages, { tools, signal: sendOptions?.signal })
 
       // 更新 promptTokens 基线
       if (result.usage?.promptTokens) {
@@ -252,7 +254,7 @@ function buildSession(
       }
     },
 
-    stream(content: string): StreamResult {
+    stream(content: string, sendOptions?: SessionSendOptions): StreamResult {
       if (currentMeta.status === 'archived') {
         throw new SessionArchivedError(currentMeta.id)
       }
@@ -261,6 +263,9 @@ function buildSession(
       }
 
       return createStreamResult(async (push) => {
+        // pre-flight：已 abort 的 signal 立即让 result reject，processor 不进入下游
+        sendOptions?.signal?.throwIfAborted()
+
         // 组装上下文（自动压缩）
         const assembled = await assembleSessionContext(
           currentMeta.id, storage, content,
@@ -304,7 +309,9 @@ function buildSession(
         if (options.llm.stream) {
           let accumulated = ''
           const toolCallsByIndex = new Map<number, { id?: string; name?: string; input: string }>()
-          for await (const chunk of options.llm.stream(promptMessages, { tools })) {
+          // adapter 在 abort 时抛 AbortError，这里直接向上传播给 result promise；
+          // 下方 L3 写入分支不会执行（policy: drop entirely），与非流式 send() 对称。
+          for await (const chunk of options.llm.stream(promptMessages, { tools, signal: sendOptions?.signal })) {
             accumulated += chunk.delta
             push(chunk.delta)
             for (const delta of chunk.toolCallDeltas ?? []) {
@@ -322,7 +329,7 @@ function buildSession(
           }))
           result = { content: accumulated, toolCalls }
         } else {
-          result = await options.llm.complete(promptMessages, { tools })
+          result = await options.llm.complete(promptMessages, { tools, signal: sendOptions?.signal })
           if (result.content) {
             push(result.content)
           }

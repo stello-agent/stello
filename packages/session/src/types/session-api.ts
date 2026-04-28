@@ -10,6 +10,17 @@ export interface MessageQueryOptions {
   role?: Message['role']
 }
 
+/**
+ * Session.send / Session.stream 的运行时选项
+ *
+ * 通过 signal 取消正在进行的 LLM 调用：abort 后 send() reject 为 AbortError，
+ * stream() 的 result 同样 reject。被取消的调用不写入 L3（user msg 也不持久化）。
+ */
+export interface SessionSendOptions {
+  /** AbortSignal — abort 后中断 LLM 调用并 reject 为 AbortError */
+  signal?: AbortSignal
+}
+
 /** Session 错误：操作归档中的 Session */
 export class SessionArchivedError extends Error {
   constructor(sessionId: string) {
@@ -35,10 +46,10 @@ export interface Session {
   readonly meta: Readonly<SessionMeta>
 
   /** 发送一条消息：组装上下文 → 调 LLM → 存 L3（用户消息 + LLM 响应）→ 返回结果 */
-  send(content: string): Promise<SendResult>
+  send(content: string, options?: SessionSendOptions): Promise<SendResult>
 
   /** 流式发送：同 send() 但逐 chunk 输出，流结束后自动存 L3 */
-  stream(content: string): StreamResult
+  stream(content: string, options?: SessionSendOptions): StreamResult
 
   /** 读取 L3 对话记录 */
   messages(options?: MessageQueryOptions): Promise<Message[]>

@@ -36,6 +36,12 @@ import {
   type TurnRunnerStreamResult,
 } from './turn-runner';
 
+/** Engine 调用 session.send/stream 时的运行时选项 */
+export interface EngineRuntimeSessionCallOptions {
+  /** AbortSignal — 透传给底层 session.send/stream 与 LLM 调用 */
+  signal?: AbortSignal;
+}
+
 /** 供 Engine 使用的运行时 Session 契约 */
 export interface EngineRuntimeSession {
   /** 供日志和 hooks 使用的稳定标识 */
@@ -49,9 +55,12 @@ export interface EngineRuntimeSession {
   /** 当前已完成轮次 */
   turnCount: number;
   /** 运行一次单条对话 */
-  send(input: string): Promise<string>;
+  send(input: string, options?: EngineRuntimeSessionCallOptions): Promise<string>;
   /** 可选：流式运行一次单条对话 */
-  stream?(input: string): AsyncIterable<string> & { result: Promise<string> };
+  stream?(
+    input: string,
+    options?: EngineRuntimeSessionCallOptions,
+  ): AsyncIterable<string> & { result: Promise<string> };
   /** fork 子 session，返回子 session 的 runtime */
   fork?(options: SessionCompatibleForkOptions): Promise<EngineRuntimeSession>;
   /** 由 Session 自己完成 L2/L3 -> memory 的整理 */
@@ -435,12 +444,14 @@ export class StelloEngineImpl implements StelloEngine {
     name: string,
     args: Record<string, unknown>,
     toolCallId?: string,
+    options?: { signal?: AbortSignal },
   ): Promise<ToolExecutionResult> {
     const ctx: ToolExecutionContext = {
       agent: this.agent,
       sessionId: this.session.id,
       toolCallId,
       toolName: name,
+      ...(options?.signal !== undefined && { signal: options.signal }),
     };
     return this.tools.executeTool(name, args, ctx);
   }

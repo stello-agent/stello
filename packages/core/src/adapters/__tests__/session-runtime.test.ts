@@ -49,7 +49,7 @@ describe('session-runtime adapters', () => {
     const raw = await runtime.send('hello');
     const parsed = sessionSendResultParser.parse(raw);
 
-    expect(session.send).toHaveBeenCalledWith('hello');
+    expect(session.send).toHaveBeenCalledWith('hello', undefined);
     expect(runtime.meta.turnCount).toBe(3);
     expect(parsed.toolCalls[0]).toEqual({
       id: 't1',
@@ -144,6 +144,50 @@ describe('session-runtime adapters', () => {
       consolidateFn,
       compressFn,
     });
+  });
+
+  it('adapter forwards signal to underlying SessionCompatible.send', async () => {
+    const session = {
+      meta: { id: 's1', status: 'active' as const },
+      send: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }),
+      messages: vi.fn().mockResolvedValue([]),
+      consolidate: vi.fn(),
+      setTools: vi.fn(),
+    };
+    const runtime = await adaptSessionToEngineRuntime(session, {});
+
+    const controller = new AbortController();
+    await runtime.send('hi', { signal: controller.signal });
+    expect(session.send).toHaveBeenCalledWith('hi', { signal: controller.signal });
+  });
+
+  it('adapter forwards signal to underlying SessionCompatible.stream', async () => {
+    const streamSource = {
+      result: Promise.resolve({ content: 'ok', toolCalls: [] }),
+      async *[Symbol.asyncIterator]() {
+        yield 'a';
+      },
+    };
+    const session = {
+      meta: { id: 's1', status: 'active' as const },
+      send: vi.fn(),
+      stream: vi.fn(() => streamSource),
+      messages: vi.fn().mockResolvedValue([]),
+      consolidate: vi.fn(),
+      setTools: vi.fn(),
+    };
+    const runtime = await adaptSessionToEngineRuntime(session, {});
+
+    const controller = new AbortController();
+    const stream = runtime.stream!('hi', { signal: controller.signal });
+    const drained: string[] = [];
+    for await (const chunk of stream) {
+      drained.push(chunk);
+    }
+    await stream.result;
+
+    expect(drained).toEqual(['a']);
+    expect(session.stream).toHaveBeenCalledWith('hi', { signal: controller.signal });
   });
 
   it('adapter exposes tools getter and forwards setTools to underlying Session', async () => {
