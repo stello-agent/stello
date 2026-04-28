@@ -147,11 +147,13 @@ describe('Session.stream() AbortSignal', () => {
 
     const controller = new AbortController()
     const stream = session.stream('hello', { signal: controller.signal })
-    for await (const _ of stream) {
-      // drain
+    const drained: string[] = []
+    for await (const chunk of stream) {
+      drained.push(chunk)
     }
     await stream.result
 
+    expect(drained.length).toBeGreaterThan(0)
     expect(llm.calls[0]!.signal).toBe(controller.signal)
   })
 })

@@ -180,11 +180,13 @@ describe('session-runtime adapters', () => {
 
     const controller = new AbortController();
     const stream = runtime.stream!('hi', { signal: controller.signal });
-    for await (const _ of stream) {
-      // drain
+    const drained: string[] = [];
+    for await (const chunk of stream) {
+      drained.push(chunk);
     }
     await stream.result;
 
+    expect(drained).toEqual(['a']);
     expect(session.stream).toHaveBeenCalledWith('hi', { signal: controller.signal });
   });
 
