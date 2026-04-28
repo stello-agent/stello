@@ -59,15 +59,25 @@ export interface SessionCompatibleForkOptions {
   compressFn?: SessionCompatibleCompressFn;
 }
 
+/** Session.send / Session.stream 的可选运行时参数（结构兼容 @stello-ai/session） */
+export interface SessionCompatibleSendOptions {
+  /** AbortSignal — abort 时底层 LLM 调用应被取消 */
+  signal?: AbortSignal;
+}
+
 /** 结构兼容 @stello-ai/session 的 Session */
 export interface SessionCompatible {
   meta: {
     id: string;
     status: 'active' | 'archived';
   };
-  send(content: string): Promise<SessionCompatibleSendResult>;
+  send(
+    content: string,
+    options?: SessionCompatibleSendOptions,
+  ): Promise<SessionCompatibleSendResult>;
   stream?(
-    content: string
+    content: string,
+    options?: SessionCompatibleSendOptions,
   ): AsyncIterable<string> & { result: Promise<SessionCompatibleSendResult> };
   messages(): Promise<Array<{ role: string; content: string; timestamp?: string }>>;
   consolidate(): Promise<void>;
@@ -159,8 +169,8 @@ export async function adaptSessionToEngineRuntime(
     get turnCount() {
       return turnCount;
     },
-    async send(input: string): Promise<string> {
-      const result = await session.send(input);
+    async send(input: string, sendOptions?: SessionCompatibleSendOptions): Promise<string> {
+      const result = await session.send(input, sendOptions);
       turnCount += 1;
       return (options.serializeResult ?? serializeSessionSendResult)(result);
     },
@@ -175,8 +185,8 @@ export async function adaptSessionToEngineRuntime(
     },
     ...(session.stream
       ? {
-          stream(input: string) {
-            const source = session.stream!(input);
+          stream(input: string, sendOptions?: SessionCompatibleSendOptions) {
+            const source = session.stream!(input, sendOptions);
             return {
               result: (async () => {
                 const result = await source.result;

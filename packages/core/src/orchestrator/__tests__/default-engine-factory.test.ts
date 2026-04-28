@@ -56,7 +56,7 @@ describe('DefaultEngineFactory', () => {
     const result = await engine.turn('hello');
 
     expect(engine.sessionId).toBe('s1');
-    expect(runtimeSession.send).toHaveBeenCalledWith('hello');
+    expect(runtimeSession.send).toHaveBeenCalledWith('hello', { signal: undefined });
     expect(result.turn.rawResponse).toContain('"content":"done"');
   });
 

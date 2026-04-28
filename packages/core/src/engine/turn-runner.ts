@@ -18,14 +18,29 @@ export interface ParsedTurnResponse {
   toolCalls: ToolCall[];
 }
 
+/** Session 调用的运行时选项 */
+export interface TurnRunnerSessionCallOptions {
+  /** AbortSignal — 透传给 session.send/stream，进而透传给 LLM 调用 */
+  signal?: AbortSignal;
+}
+
 /** 单个 Session 的最小运行时契约 */
 export interface TurnRunnerSession {
   /** Session 标识 */
   id: string;
   /** 执行一次单条对话 */
-  send(input: string): Promise<string>;
+  send(input: string, options?: TurnRunnerSessionCallOptions): Promise<string>;
   /** 可选：流式执行一次单条对话 */
-  stream?(input: string): AsyncIterable<string> & { result: Promise<string> };
+  stream?(
+    input: string,
+    options?: TurnRunnerSessionCallOptions,
+  ): AsyncIterable<string> & { result: Promise<string> };
+}
+
+/** Tool 调用的运行时选项 */
+export interface TurnRunnerToolCallOptions {
+  /** AbortSignal — tool 可读取以中断长任务（HTTP、subprocess 等） */
+  signal?: AbortSignal;
 }
 
 /** Tool 执行器的最小契约 */
@@ -35,6 +50,7 @@ export interface TurnRunnerToolExecutor {
     name: string,
     args: Record<string, unknown>,
     toolCallId?: string,
+    options?: TurnRunnerToolCallOptions,
   ): Promise<ToolExecutionResult>;
 }
 
@@ -52,6 +68,12 @@ export interface TurnRunnerOptions {
   onToolCall?: (toolCall: ToolCall) => Promise<void> | void;
   /** 工具调用后的观察回调 */
   onToolResult?: (result: ToolCallResult) => Promise<void> | void;
+  /**
+   * AbortSignal — abort 后下一轮边界（含 send / tool 执行前后）抛 AbortError，
+   * 同时透传给 session.send/stream 与 tools.executeTool。
+   * Tools 不消费 ctx.signal 时，runner 会等本轮 tool 自然返回，再在边界处抛。
+   */
+  signal?: AbortSignal;
 }
 
 /** 单个工具调用的执行结果 */
@@ -113,7 +135,8 @@ export class TurnRunner {
     let lastRawResponse = '';
 
     while (true) {
-      lastRawResponse = await session.send(currentInput);
+      options.signal?.throwIfAborted();
+      lastRawResponse = await session.send(currentInput, { signal: options.signal });
       const parsed = this.parser.parse(lastRawResponse);
 
       if (parsed.toolCalls.length === 0) {
@@ -131,9 +154,17 @@ export class TurnRunner {
 
       const toolResults = [];
       for (const toolCall of parsed.toolCalls) {
+        options.signal?.throwIfAborted();
         await options.onToolCall?.(toolCall);
-        const result = await tools.executeTool(toolCall.name, toolCall.args, toolCall.id);
+        const result = await tools.executeTool(
+          toolCall.name,
+          toolCall.args,
+          toolCall.id,
+          { signal: options.signal },
+        );
         toolCallsExecuted += 1;
+        // tool 结果收集后立刻检查 signal — 已 abort 时不下发 phantom onToolResult。
+        options.signal?.throwIfAborted();
         const toolResult: ToolCallResult = {
           toolCallId: toolCall.id ?? null,
           toolName: toolCall.name,
@@ -165,6 +196,19 @@ export class TurnRunner {
     tools: TurnRunnerToolExecutor,
     options: TurnRunnerOptions = {},
   ): TurnRunnerStreamResult {
+    // pre-flight：已 abort 时直接返回 reject 的 result + 立刻抛错的 iterator
+    if (options.signal?.aborted) {
+      const aborted = Promise.reject(new DOMException('aborted', 'AbortError'))
+      // 安抚 unhandledRejection：消费方通过 `result` 或 iterator 任一感知即可。
+      aborted.catch(() => {})
+      return {
+        result: aborted as Promise<TurnRunnerResult>,
+        async *[Symbol.asyncIterator]() {
+          throw new DOMException('aborted', 'AbortError')
+        },
+      }
+    }
+
     if (!session.stream) {
       const result = this.run(session, input, tools, options)
       return {
@@ -178,12 +222,13 @@ export class TurnRunner {
       }
     }
 
-    const source = session.stream(input)
+    const source = session.stream(input, { signal: options.signal })
     const result = this.finishFromStreamResult(session, source.result, tools, options)
 
     return {
       result,
       async *[Symbol.asyncIterator]() {
+        // 重新抛出 AbortError（而不是静默关闭），让调用方明确感知取消语义。
         for await (const chunk of source) {
           yield chunk
         }
@@ -201,6 +246,7 @@ export class TurnRunner {
     let toolRoundCount = 0
     let toolCallsExecuted = 0
     let lastRawResponse = await rawResult
+    options.signal?.throwIfAborted()
     let parsed = this.parser.parse(lastRawResponse)
 
     while (parsed.toolCalls.length > 0) {
@@ -210,9 +256,16 @@ export class TurnRunner {
 
       const toolResults = []
       for (const toolCall of parsed.toolCalls) {
+        options.signal?.throwIfAborted()
         await options.onToolCall?.(toolCall)
-        const result = await tools.executeTool(toolCall.name, toolCall.args, toolCall.id)
+        const result = await tools.executeTool(
+          toolCall.name,
+          toolCall.args,
+          toolCall.id,
+          { signal: options.signal },
+        )
         toolCallsExecuted += 1
+        options.signal?.throwIfAborted()
         const toolResult: ToolCallResult = {
           toolCallId: toolCall.id ?? null,
           toolName: toolCall.name,
@@ -226,7 +279,8 @@ export class TurnRunner {
       }
 
       toolRoundCount += 1
-      lastRawResponse = await session.send(JSON.stringify({ toolResults }))
+      options.signal?.throwIfAborted()
+      lastRawResponse = await session.send(JSON.stringify({ toolResults }), { signal: options.signal })
       parsed = this.parser.parse(lastRawResponse)
     }
 

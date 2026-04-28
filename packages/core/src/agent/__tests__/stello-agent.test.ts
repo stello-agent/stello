@@ -84,7 +84,7 @@ describe('StelloAgent', () => {
     const result = await agent.turn('root', 'hello');
 
     expect(agent.sessions).toBeDefined();
-    expect(runtimeSession.send).toHaveBeenCalledWith('hello');
+    expect(runtimeSession.send).toHaveBeenCalledWith('hello', { signal: undefined });
     expect(result.turn.finalContent).toContain('"content":"done"');
   });
 
@@ -117,6 +117,62 @@ describe('StelloAgent', () => {
     expect(chunks).toEqual(['do', 'ne'])
     expect(result.turn.finalContent).toContain('"content":"done"')
   });
+
+  it('agent.stream(input, { signal }) 透传到 runtime session 并在 abort 时让 result reject', async () => {
+    const controller = new AbortController()
+    const runtimeSession = {
+      id: 'root',
+      meta: { id: 'root', turnCount: 0, status: 'active' as const },
+      turnCount: 0,
+      send: vi.fn(),
+      stream: vi.fn((_input: string, opts?: { signal?: AbortSignal }) => {
+        let rejectResult: (err: unknown) => void = () => {}
+        const result = new Promise<string>((_resolve, reject) => { rejectResult = reject })
+        result.catch(() => {})
+        return {
+          result,
+          async *[Symbol.asyncIterator]() {
+            try {
+              for (const chunk of ['a', 'b', 'c']) {
+                if (opts?.signal?.aborted) {
+                  const err = new DOMException('aborted', 'AbortError')
+                  rejectResult(err)
+                  throw err
+                }
+                await new Promise((r) => setTimeout(r, 5))
+                yield chunk
+              }
+            } catch (err) {
+              rejectResult(err)
+              throw err
+            }
+          },
+        }
+      }),
+      consolidate: vi.fn(),
+      setTools: vi.fn(),
+    }
+
+    const agent = createStelloAgent(baseConfig({ runtimeSession }))
+    const stream = await agent.stream('root', 'hello', { signal: controller.signal })
+
+    const collected: string[] = []
+    const iter = (async () => {
+      try {
+        for await (const chunk of stream) {
+          collected.push(chunk)
+          if (collected.length === 1) controller.abort()
+        }
+      } catch {
+        // expected: iterator re-throws AbortError
+      }
+    })()
+
+    await expect(stream.result).rejects.toMatchObject({ name: 'AbortError' })
+    await iter
+
+    expect(runtimeSession.stream).toHaveBeenCalledWith('hello', { signal: controller.signal })
+  })
 
   it('默认树形拓扑：子节点 fork 出的新节点挂在自己下面', async () => {
     const childSession = {
@@ -400,7 +456,7 @@ describe('StelloAgent', () => {
 
     const result = await agent.turn('root', 'hello');
 
-    expect(session.send).toHaveBeenCalledWith('hello');
+    expect(session.send).toHaveBeenCalledWith('hello', { signal: undefined });
     expect(result.turn.rawResponse).toContain('"content":"done"');
     expect(result.turn.toolCallsExecuted).toBe(1);
   });
