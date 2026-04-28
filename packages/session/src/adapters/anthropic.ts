@@ -184,7 +184,22 @@ export function createAnthropicAdapter(options: AnthropicAdapterOptions): LLMAda
       )
 
       for await (const event of stream) {
-        if (event.type === 'content_block_delta') {
+        if (event.type === 'content_block_start') {
+          // tool_use 块的 id 和 name 只在 start 事件里下发，
+          // 后续的 input_json_delta 只追加参数 JSON。
+          // 不处理 start 会让下游累加器拿不到 name，
+          // fallback 到 'unknown_tool' 触发幻觉调用。
+          if (event.content_block.type === 'tool_use') {
+            yield {
+              delta: '',
+              toolCallDeltas: [{
+                index: event.index,
+                id: event.content_block.id,
+                name: event.content_block.name,
+              }],
+            }
+          }
+        } else if (event.type === 'content_block_delta') {
           if (event.delta.type === 'text_delta') {
             yield { delta: event.delta.text }
           } else if (event.delta.type === 'input_json_delta') {
