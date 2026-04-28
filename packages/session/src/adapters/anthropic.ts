@@ -135,16 +135,19 @@ export function createAnthropicAdapter(options: AnthropicAdapterOptions): LLMAda
         ? systemMessages.map((m) => m.content).join('\n\n')
         : undefined
 
-      const response = await client.messages.create({
-        model: options.model,
-        max_tokens: completeOptions?.maxTokens ?? 4096,
-        ...(completeOptions?.temperature !== undefined && { temperature: completeOptions.temperature }),
-        ...(system && { system }),
-        ...(completeOptions?.tools && completeOptions.tools.length > 0
-          ? { tools: toAnthropicTools(completeOptions.tools) }
-          : {}),
-        messages: toAnthropicMessages(nonSystemMessages),
-      })
+      const response = await client.messages.create(
+        {
+          model: options.model,
+          max_tokens: completeOptions?.maxTokens ?? 4096,
+          ...(completeOptions?.temperature !== undefined && { temperature: completeOptions.temperature }),
+          ...(system && { system }),
+          ...(completeOptions?.tools && completeOptions.tools.length > 0
+            ? { tools: toAnthropicTools(completeOptions.tools) }
+            : {}),
+          messages: toAnthropicMessages(nonSystemMessages),
+        },
+        completeOptions?.signal ? { signal: completeOptions.signal } : undefined,
+      )
 
       const toolCalls = extractToolCalls(response.content)
 
@@ -166,16 +169,19 @@ export function createAnthropicAdapter(options: AnthropicAdapterOptions): LLMAda
         ? systemMessages.map((m) => m.content).join('\n\n')
         : undefined
 
-      const stream = client.messages.stream({
-        model: options.model,
-        max_tokens: completeOptions?.maxTokens ?? 4096,
-        ...(completeOptions?.temperature !== undefined && { temperature: completeOptions.temperature }),
-        ...(system && { system }),
-        ...(completeOptions?.tools && completeOptions.tools.length > 0
-          ? { tools: toAnthropicTools(completeOptions.tools) }
-          : {}),
-        messages: toAnthropicMessages(nonSystemMessages),
-      })
+      const stream = client.messages.stream(
+        {
+          model: options.model,
+          max_tokens: completeOptions?.maxTokens ?? 4096,
+          ...(completeOptions?.temperature !== undefined && { temperature: completeOptions.temperature }),
+          ...(system && { system }),
+          ...(completeOptions?.tools && completeOptions.tools.length > 0
+            ? { tools: toAnthropicTools(completeOptions.tools) }
+            : {}),
+          messages: toAnthropicMessages(nonSystemMessages),
+        },
+        completeOptions?.signal ? { signal: completeOptions.signal } : undefined,
+      )
 
       for await (const event of stream) {
         if (event.type === 'content_block_delta') {

@@ -1,7 +1,7 @@
 import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './session.js'
 import type { Message, LLMAdapter, LLMCompleteOptions } from './llm.js'
 import type { SendResult, StreamResult, IntegrateResult } from './functions.js'
-import type { MessageQueryOptions, Session } from './session-api.js'
+import type { MessageQueryOptions, Session, SessionSendOptions } from './session-api.js'
 
 /**
  * MainSession — 全局意识层对话单元
@@ -16,10 +16,10 @@ export interface MainSession {
   readonly meta: Readonly<SessionMeta>
 
   /** 发送消息：组装上下文（system prompt + synthesis + L3 + msg）→ 调 LLM → 存 L3 */
-  send(content: string): Promise<SendResult>
+  send(content: string, options?: SessionSendOptions): Promise<SendResult>
 
   /** 流式发送：同 send 但逐 chunk 输出 */
-  stream(content: string): StreamResult
+  stream(content: string, options?: SessionSendOptions): StreamResult
 
   /** 读取 L3 对话记录 */
   messages(options?: MessageQueryOptions): Promise<Message[]>

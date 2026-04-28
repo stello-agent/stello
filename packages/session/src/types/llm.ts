@@ -25,6 +25,11 @@ export interface LLMCompleteOptions {
   temperature?: number
   /** 可用工具列表的 schema（JSON Schema 格式） */
   tools?: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
+  /**
+   * AbortSignal — adapter 应在 abort 时中断 LLM 调用并以 AbortError reject。
+   * 不支持取消的 adapter 可忽略此字段（best-effort 语义）。
+   */
+  signal?: AbortSignal
 }
 
 /** LLM 完成后的返回结果 */

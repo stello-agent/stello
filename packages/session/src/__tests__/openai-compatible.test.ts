@@ -40,14 +40,17 @@ describe('createOpenAICompatibleAdapter', () => {
     await adapter.complete(messages)
 
     expect(createCompletion).toHaveBeenCalledTimes(1)
-    expect(createCompletion).toHaveBeenCalledWith(expect.objectContaining({
-      messages: [
-        { role: 'system', content: 'system prompt\n\nsynthesis' },
-        { role: 'user', content: 'hello' },
-      ],
-      max_tokens: 4096,
-      stream: false,
-    }))
+    expect(createCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: [
+          { role: 'system', content: 'system prompt\n\nsynthesis' },
+          { role: 'user', content: 'hello' },
+        ],
+        max_tokens: 4096,
+        stream: false,
+      }),
+      undefined,
+    )
   })
 
   it('显式传入 maxTokens 时优先使用调用方配置', async () => {
@@ -60,9 +63,29 @@ describe('createOpenAICompatibleAdapter', () => {
 
     await adapter.complete([{ role: 'user', content: 'hello' }], { maxTokens: 2048 })
 
-    expect(createCompletion).toHaveBeenCalledWith(expect.objectContaining({
-      max_tokens: 2048,
-      stream: false,
-    }))
+    expect(createCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        max_tokens: 2048,
+        stream: false,
+      }),
+      undefined,
+    )
+  })
+
+  it('signal 透传到 SDK request options', async () => {
+    const adapter = createOpenAICompatibleAdapter({
+      apiKey: 'test-key',
+      baseURL: 'https://api.example.com/v1',
+      model: 'test-model',
+      maxContextTokens: 128_000,
+    })
+
+    const controller = new AbortController()
+    await adapter.complete([{ role: 'user', content: 'hello' }], { signal: controller.signal })
+
+    expect(createCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({ stream: false }),
+      { signal: controller.signal },
+    )
   })
 })

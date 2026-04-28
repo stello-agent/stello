@@ -83,11 +83,14 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleOptions):
   return {
     maxContextTokens: options.maxContextTokens,
     async complete(messages: Message[], completeOptions?: LLMCompleteOptions): Promise<LLMResult> {
-      const response = await client.chat.completions.create({
-        ...buildParams(messages, completeOptions),
-        ...(options.extraBody ?? {}),
-        stream: false,
-      } as Parameters<typeof client.chat.completions.create>[0]) as ChatCompletion
+      const response = await client.chat.completions.create(
+        {
+          ...buildParams(messages, completeOptions),
+          ...(options.extraBody ?? {}),
+          stream: false,
+        } as Parameters<typeof client.chat.completions.create>[0],
+        completeOptions?.signal ? { signal: completeOptions.signal } : undefined,
+      ) as ChatCompletion
 
       const choice = response.choices[0]
 
@@ -110,11 +113,14 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleOptions):
       }
     },
     async *stream(messages: Message[], completeOptions?: LLMCompleteOptions) {
-      const stream = await client.chat.completions.create({
-        ...buildParams(messages, completeOptions),
-        ...(options.extraBody ?? {}),
-        stream: true,
-      } as Parameters<typeof client.chat.completions.create>[0]) as Stream<ChatCompletionChunk>
+      const stream = await client.chat.completions.create(
+        {
+          ...buildParams(messages, completeOptions),
+          ...(options.extraBody ?? {}),
+          stream: true,
+        } as Parameters<typeof client.chat.completions.create>[0],
+        completeOptions?.signal ? { signal: completeOptions.signal } : undefined,
+      ) as Stream<ChatCompletionChunk>
 
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta?.content ?? ''

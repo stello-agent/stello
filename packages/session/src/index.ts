@@ -7,6 +7,7 @@ export type {
 export type {
   Session,
   MessageQueryOptions,
+  SessionSendOptions,
 } from './types/session-api.js'
 export {
   SessionArchivedError,
