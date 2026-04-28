@@ -1,5 +1,11 @@
 # @stello-ai/core
 
+## 0.8.0
+
+### Added
+
+- AbortSignal threading across the turn lifecycle (closes part B of #60). `TurnRunnerOptions.signal`, `TurnRunnerSession.send/stream` and `EngineRuntimeSession.send/stream` accept `{ signal? }`; `ToolExecutionContext.signal` lets individual tools opt-in to honoring cancellation. The runner calls `throwIfAborted()` at every round boundary, before each tool call, and after each tool result is collected (suppresses phantom `onToolResult` after cancel). `Engine.turn/stream`, `Orchestrator` and `StelloAgent` forward the signal end-to-end via `TurnRunnerOptions` spread.
+
 ## 0.7.2
 
 ### Added

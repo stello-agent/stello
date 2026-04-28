@@ -1,5 +1,15 @@
 # @stello-ai/session
 
+## 0.7.0
+
+### Added
+
+- AbortSignal support in `LLMCompleteOptions` and `Session.send/stream` (also on `MainSession`) — closes part A of #60. The signal is forwarded to `LLMAdapter.complete/stream`; built-in OpenAI and Anthropic adapters pass it to their SDK request options. Aborting cancels the in-flight LLM call with a standard `DOMException('aborted', 'AbortError')` and skips L3 persistence entirely — both user and assistant records are dropped (atomic with non-stream behavior; no partial messages pollute the context).
+
+### Fixed
+
+- Streaming Anthropic adapter now emits `tool_use` `id` / `name` from `content_block_start`. Previously only `content_block_delta` was handled; the start event (which carries the id and name for tool_use blocks) was silently dropped, so the downstream accumulator received `name=undefined` and fell back to `'unknown_tool'`, producing a phantom failed tool call before the agent loop retried with the corrected name.
+
 ## 0.6.0
 
 ### Added
