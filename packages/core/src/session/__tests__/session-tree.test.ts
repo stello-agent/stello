@@ -99,6 +99,31 @@ describe('SessionTreeImpl', () => {
     expect(b.index).toBe(1);
   });
 
+  it('createChild 并发同父节点不会丢失子引用（写锁串行化 RMW）', async () => {
+    const root = await tree.createRoot();
+    const N = 8;
+    // 模拟一轮内多个 stello_create_session 并行执行
+    const labels = Array.from({ length: N }, (_, i) => `P${i}`);
+    const children = await Promise.all(
+      labels.map((label) => tree.createChild({ parentId: root.id, label })),
+    );
+
+    // 所有子 id 唯一
+    const ids = new Set(children.map((c) => c.id));
+    expect(ids.size).toBe(N);
+
+    // 父节点的 children 列表完整记录所有子，未被 RMW 竞态丢失
+    const parentNode = await tree.getNode(root.id);
+    expect(parentNode?.children).toHaveLength(N);
+    for (const c of children) {
+      expect(parentNode?.children).toContain(c.id);
+    }
+
+    // index 单调递增（串行写入）
+    const indices = children.map((c) => c.index).sort((a, b) => a - b);
+    expect(indices).toEqual(Array.from({ length: N }, (_, i) => i));
+  });
+
   // ─── get（返回 SessionMeta，不含拓扑字段） ───
 
   it('get 返回 SessionMeta 或 null', async () => {

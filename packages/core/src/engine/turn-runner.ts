@@ -1,5 +1,66 @@
 import type { ToolExecutionResult } from '../types/lifecycle';
 
+/**
+ * 在单轮内并行执行所有 tool call，按输入顺序整理结果并按序触发事件。
+ *
+ * 协议侧（Anthropic content blocks / OpenAI tool_calls 数组）允许 LLM 在一次响应里
+ * 同时给出多个独立 tool call，原意就是 client 端并发执行。这里只把 settled 结果按
+ * 索引取回、保持外部可见的事件顺序与单 tool 时一致；并发安全由各 tool 自身保证。
+ */
+async function executeToolsParallel(
+  toolCalls: ToolCall[],
+  tools: TurnRunnerToolExecutor,
+  options: TurnRunnerOptions,
+): Promise<ToolCallResult[]> {
+  // 先按输入顺序触发 onToolCall，再统一发起执行
+  for (const toolCall of toolCalls) {
+    options.signal?.throwIfAborted();
+    await options.onToolCall?.(toolCall);
+  }
+
+  const settled = await Promise.allSettled(
+    toolCalls.map((toolCall) =>
+      tools.executeTool(toolCall.name, toolCall.args, toolCall.id, {
+        signal: options.signal,
+      }),
+    ),
+  );
+
+  // 所有 tool 自然返回后再做边界 abort 检查；与原行为一致：abort 后不下发 phantom result
+  options.signal?.throwIfAborted();
+
+  const results: ToolCallResult[] = [];
+  for (let i = 0; i < toolCalls.length; i++) {
+    const toolCall = toolCalls[i]!;
+    const settle = settled[i]!;
+    let success: boolean;
+    let data: unknown;
+    let error: string | null;
+    if (settle.status === 'fulfilled') {
+      success = settle.value.success;
+      data = settle.value.data ?? null;
+      error = settle.value.error ?? null;
+    } else {
+      // tool 抛错 → 转成失败 ToolCallResult，保留"错误回灌给 LLM 继续循环"的语义
+      success = false;
+      data = null;
+      error = settle.reason instanceof Error ? settle.reason.message : String(settle.reason);
+    }
+    const result: ToolCallResult = {
+      toolCallId: toolCall.id ?? null,
+      toolName: toolCall.name,
+      args: toolCall.args,
+      success,
+      data,
+      error,
+    };
+    results.push(result);
+    await options.onToolResult?.(result);
+  }
+
+  return results;
+}
+
 /** 单次工具调用描述 */
 export interface ToolCall {
   /** 可选调用 ID，用于在回灌结果时做关联 */
@@ -152,30 +213,8 @@ export class TurnRunner {
         throw new Error(`tool loop 超出上限：最多允许 ${maxToolRounds} 轮`);
       }
 
-      const toolResults = [];
-      for (const toolCall of parsed.toolCalls) {
-        options.signal?.throwIfAborted();
-        await options.onToolCall?.(toolCall);
-        const result = await tools.executeTool(
-          toolCall.name,
-          toolCall.args,
-          toolCall.id,
-          { signal: options.signal },
-        );
-        toolCallsExecuted += 1;
-        // tool 结果收集后立刻检查 signal — 已 abort 时不下发 phantom onToolResult。
-        options.signal?.throwIfAborted();
-        const toolResult: ToolCallResult = {
-          toolCallId: toolCall.id ?? null,
-          toolName: toolCall.name,
-          args: toolCall.args,
-          success: result.success,
-          data: result.data ?? null,
-          error: result.error ?? null,
-        };
-        toolResults.push(toolResult);
-        await options.onToolResult?.(toolResult);
-      }
+      const toolResults = await executeToolsParallel(parsed.toolCalls, tools, options);
+      toolCallsExecuted += parsed.toolCalls.length;
 
       toolRoundCount += 1;
       currentInput = JSON.stringify({ toolResults });
@@ -254,29 +293,8 @@ export class TurnRunner {
         throw new Error(`tool loop 超出上限：最多允许 ${maxToolRounds} 轮`)
       }
 
-      const toolResults = []
-      for (const toolCall of parsed.toolCalls) {
-        options.signal?.throwIfAborted()
-        await options.onToolCall?.(toolCall)
-        const result = await tools.executeTool(
-          toolCall.name,
-          toolCall.args,
-          toolCall.id,
-          { signal: options.signal },
-        )
-        toolCallsExecuted += 1
-        options.signal?.throwIfAborted()
-        const toolResult: ToolCallResult = {
-          toolCallId: toolCall.id ?? null,
-          toolName: toolCall.name,
-          args: toolCall.args,
-          success: result.success,
-          data: result.data ?? null,
-          error: result.error ?? null,
-        }
-        toolResults.push(toolResult)
-        await options.onToolResult?.(toolResult)
-      }
+      const toolResults = await executeToolsParallel(parsed.toolCalls, tools, options)
+      toolCallsExecuted += parsed.toolCalls.length
 
       toolRoundCount += 1
       options.signal?.throwIfAborted()

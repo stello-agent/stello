@@ -1,5 +1,12 @@
 # @stello-ai/core
 
+## 0.9.0
+
+### Changed
+
+- `TurnRunner` now executes all tool calls within a single turn in parallel via `Promise.allSettled` (previously sequential). Per-call `onToolCall` / `onToolResult` hooks still fire in input order so external observers see the same sequence as before; concurrency safety is delegated to each tool. A failed tool becomes `success=false` in the result payload — sibling tools are not aborted. Aligns with the protocol-level intent of multi-block tool_use responses.
+- `SessionTreeImpl.createChild` and `addRef` are now serialized through an internal write-lock to prevent parent-RMW races when multiple `stello_create_session` calls run concurrently within a single turn (lost children / lost refs were previously possible under the new parallel executor).
+
 ## 0.8.0
 
 ### Added

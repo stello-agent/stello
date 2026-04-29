@@ -92,7 +92,22 @@ function toTopologyNode(stored: StoredMeta): TopologyNode {
  * 内部以 StoredMeta 统一存储，对外按 SessionMeta / TopologyNode 分离返回。
  */
 export class SessionTreeImpl implements SessionTree {
+  /**
+   * 串行化父节点 RMW 的写锁。createChild / addRef 都需要先读父节点的 children/refs
+   * 数组、追加新元素、再整体写回；并发执行（如同一轮内多个 stello_create_session
+   * 工具调用）会因 last-write-wins 丢失先到的修改。这里用一条 Promise 链强制单线
+   * 执行。fork/ref 不是吞吐路径，串行代价可忽略。
+   */
+  private writeLock: Promise<unknown> = Promise.resolve();
+
   constructor(private readonly fs: FileSystemAdapter) {}
+
+  /** 在写锁内执行；锁失败不中断后续任务 */
+  private withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.writeLock.then(fn, fn);
+    this.writeLock = next.catch(() => undefined);
+    return next;
+  }
 
   /**
    * 创建根 Session（main），初始化配套 .md 与 core.json
@@ -134,36 +149,38 @@ export class SessionTreeImpl implements SessionTree {
 
   /** 创建子 Session，写入 meta.json 并更新父节点 children 列表 */
   async createChild(options: CreateSessionOptions): Promise<TopologyNode> {
-    const parent = await this.requireStored(options.parentId);
-    const ts = now();
-    const stored: StoredMeta = {
-      id: randomUUID(),
-      parentId: parent.id,
-      children: [],
-      refs: [],
-      label: options.label,
-      index: parent.children.length,
-      status: 'active',
-      depth: parent.depth + 1,
-      turnCount: 0,
-      createdAt: ts,
-      updatedAt: ts,
-      lastActiveAt: ts,
-    };
-    if (options.sourceSessionId !== undefined) {
-      stored.sourceSessionId = options.sourceSessionId;
-    }
-    // 写子 Session meta.json
-    await this.fs.writeJSON(metaPath(stored.id), stored);
-    // 初始化三个 .md 内容文件
-    await this.fs.writeFile(`sessions/${stored.id}/memory.md`, '');
-    await this.fs.writeFile(`sessions/${stored.id}/scope.md`, '');
-    await this.fs.writeFile(`sessions/${stored.id}/index.md`, '');
-    // 更新父的 children 列表
-    parent.children.push(stored.id);
-    parent.updatedAt = now();
-    await this.fs.writeJSON(metaPath(parent.id), parent);
-    return toTopologyNode(stored);
+    return this.withWriteLock(async () => {
+      const parent = await this.requireStored(options.parentId);
+      const ts = now();
+      const stored: StoredMeta = {
+        id: randomUUID(),
+        parentId: parent.id,
+        children: [],
+        refs: [],
+        label: options.label,
+        index: parent.children.length,
+        status: 'active',
+        depth: parent.depth + 1,
+        turnCount: 0,
+        createdAt: ts,
+        updatedAt: ts,
+        lastActiveAt: ts,
+      };
+      if (options.sourceSessionId !== undefined) {
+        stored.sourceSessionId = options.sourceSessionId;
+      }
+      // 写子 Session meta.json
+      await this.fs.writeJSON(metaPath(stored.id), stored);
+      // 初始化三个 .md 内容文件
+      await this.fs.writeFile(`sessions/${stored.id}/memory.md`, '');
+      await this.fs.writeFile(`sessions/${stored.id}/scope.md`, '');
+      await this.fs.writeFile(`sessions/${stored.id}/index.md`, '');
+      // 更新父的 children 列表
+      parent.children.push(stored.id);
+      parent.updatedAt = now();
+      await this.fs.writeJSON(metaPath(parent.id), parent);
+      return toTopologyNode(stored);
+    });
   }
 
   async get(id: string): Promise<SessionMeta | null> {
@@ -191,24 +208,26 @@ export class SessionTreeImpl implements SessionTree {
   }
 
   async addRef(fromId: string, toId: string): Promise<void> {
-    if (fromId === toId) throw new Error('不能引用自己');
-    const from = await this.requireStored(fromId);
-    await this.requireStored(toId);
-    // 校验：不能引用直系祖先
-    const ancestors = await this.getAncestors(fromId);
-    if (ancestors.some((a) => a.id === toId)) {
-      throw new Error('不能引用直系祖先');
-    }
-    // 校验：不能引用直系后代
-    const descendants = await this.getAllDescendants(fromId);
-    if (descendants.has(toId)) {
-      throw new Error('不能引用直系后代');
-    }
-    // 幂等：已存在则跳过
-    if (from.refs.includes(toId)) return;
-    from.refs.push(toId);
-    from.updatedAt = now();
-    await this.fs.writeJSON(metaPath(fromId), from);
+    return this.withWriteLock(async () => {
+      if (fromId === toId) throw new Error('不能引用自己');
+      const from = await this.requireStored(fromId);
+      await this.requireStored(toId);
+      // 校验：不能引用直系祖先
+      const ancestors = await this.getAncestors(fromId);
+      if (ancestors.some((a) => a.id === toId)) {
+        throw new Error('不能引用直系祖先');
+      }
+      // 校验：不能引用直系后代
+      const descendants = await this.getAllDescendants(fromId);
+      if (descendants.has(toId)) {
+        throw new Error('不能引用直系后代');
+      }
+      // 幂等：已存在则跳过
+      if (from.refs.includes(toId)) return;
+      from.refs.push(toId);
+      from.updatedAt = now();
+      await this.fs.writeJSON(metaPath(fromId), from);
+    });
   }
 
   /** 更新 SessionMeta 可变字段（label / turnCount） */
