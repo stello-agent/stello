@@ -4,47 +4,7 @@ import { SessionArchivedError } from './types/session-api.js'
 import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './types/session.js'
 import type { Message } from './types/llm.js'
 import type { CreateSessionOptions, LoadSessionOptions, SendResult, StreamResult } from './types/functions.js'
-import { assembleSessionContext, buildSessionIdentityMessages, createBuiltinCompressFn, type CompressionCache } from './context-utils.js'
-
-/** 裁掉尾部不完整的 tool call 组（assistant 有 toolCalls 但缺少对应 tool 结果） */
-function trimIncompleteToolCallGroup(records: Message[]): Message[] {
-  if (records.length === 0) return records
-  let end = records.length
-  while (end > 0) {
-    const last = records[end - 1]!
-    if (last.role === 'assistant' && last.toolCalls && last.toolCalls.length > 0) {
-      // assistant 有 toolCalls 但后面没有 tool 消息 → 裁掉
-      end--
-      continue
-    }
-    if (last.role === 'tool') {
-      // tool 消息，向前找到对应的 assistant
-      let assistantIdx = end - 2
-      while (assistantIdx >= 0 && records[assistantIdx]!.role === 'tool') {
-        assistantIdx--
-      }
-      if (assistantIdx >= 0) {
-        const assistant = records[assistantIdx]!
-        if (assistant.role === 'assistant' && assistant.toolCalls && assistant.toolCalls.length > 0) {
-          const expectedIds = new Set(assistant.toolCalls.map(tc => tc.id))
-          for (let j = assistantIdx + 1; j < end; j++) {
-            const rec = records[j]!
-            if (rec.role === 'tool' && rec.toolCallId) {
-              expectedIds.delete(rec.toolCallId)
-            }
-          }
-          if (expectedIds.size > 0) {
-            // 不完整 → 裁掉整个组
-            end = assistantIdx
-            continue
-          }
-        }
-      }
-    }
-    break
-  }
-  return end === records.length ? records : records.slice(0, end)
-}
+import { assembleSessionContext, buildSessionIdentityMessages, createBuiltinCompressFn, removeIncompleteToolCallGroups, type CompressionCache } from './context-utils.js'
 
 interface ToolResultEnvelope {
   toolResults: Array<{
@@ -114,6 +74,9 @@ async function assembleSessionReplayContext(
     messages.push({ role: 'system', content: memory })
   }
 
+  // 注意：此处刻意不调用 removeIncompleteToolCallGroups。
+  // replay 路径会把"assistant(toolCalls) + 由 envelope 合成的 tool 消息"拼接成完整组，
+  // 在加载阶段过早裁剪反而会把回灌目标删掉。完整组校验放在拼接后由调用方做。
   const history = await storage.listRecords(sessionId)
   messages.push(...history)
   return { messages, insightConsumed }
@@ -227,6 +190,9 @@ function buildSession(
         if (replayContext.insightConsumed) {
           await storage.clearInsight(currentMeta.id)
         }
+        // 替换为 replay 上下文后，原 assembled.messages 里的 sanitize 不再生效；
+        // 在拼好"assistant + tool 结果"完整组之后，再做一次孤儿组清理（防御中段 orphan）。
+        promptMessages = removeIncompleteToolCallGroups(promptMessages)
       }
 
       // 调 LLM — adapter 抛 AbortError 时直接向上传播，下方 L3 写入分支整体跳过
@@ -299,6 +265,8 @@ function buildSession(
           if (replayContext.insightConsumed) {
             await storage.clearInsight(currentMeta.id)
           }
+          // 拼好完整组之后再清孤儿，防御中段 orphan（与 send() 对称）
+          promptMessages = removeIncompleteToolCallGroups(promptMessages)
         }
 
         if (!options.llm) {
@@ -440,8 +408,8 @@ function buildSession(
       if (ctx !== 'none') {
         const parentRecords = await storage.listRecords(currentMeta.id)
         const selected = ctx === 'inherit' ? parentRecords : await ctx(parentRecords)
-        // 裁掉尾部不完整的 tool call 组（fork 发生在 tool 执行中，tool result 还没写入）
-        const records = trimIncompleteToolCallGroup(selected)
+        // 净化掉不完整的 tool call 组（fork 在 tool 执行中、或父历史里夹有中段 orphan 时都需要）
+        const records = removeIncompleteToolCallGroups(selected)
         for (const record of records) {
           await storage.appendRecord(childId, record)
         }

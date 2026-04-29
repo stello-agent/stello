@@ -2,6 +2,49 @@ import type { Message, LLMAdapter } from './types/llm.js'
 import type { SessionStorage } from './types/storage.js'
 import type { CompressFn } from './types/functions.js'
 
+/**
+ * 从历史中移除所有不完整的 tool call 组：
+ * 任何 `assistant(toolCalls=[A,B,...])` 后续若缺少与之 `toolCallId` 对应的 `tool` 消息，
+ * 则整组（assistant + 已写入的 tool 消息）一并丢弃；同时丢弃没有匹配 assistant 的孤立 tool 消息。
+ *
+ * 触发场景：
+ *   - tool 执行被 AbortSignal 中断 → assistant 已写入但 tool result 永远不再回灌（最常见）
+ *   - 进程崩溃 / 手动改库 / 旧版 bug 残留
+ *
+ * 这是历史→prompt 的不变量保证：送给 LLM 的 messages 必须满足 OpenAI/Anthropic 协议
+ * 对 tool call group 完整性的要求，否则 OpenAI-compat adapter 会返回 400。
+ */
+export function removeIncompleteToolCallGroups(records: Message[]): Message[] {
+  const result: Message[] = []
+  let i = 0
+  while (i < records.length) {
+    const rec = records[i]!
+    if (rec.role === 'assistant' && rec.toolCalls && rec.toolCalls.length > 0) {
+      const expectedIds = new Set(rec.toolCalls.map((tc) => tc.id))
+      let j = i + 1
+      while (j < records.length && records[j]!.role === 'tool') {
+        const t = records[j]!
+        if (t.toolCallId) expectedIds.delete(t.toolCallId)
+        j++
+      }
+      if (expectedIds.size === 0) {
+        for (let k = i; k < j; k++) result.push(records[k]!)
+      }
+      // 不完整 → 整组丢弃
+      i = j
+      continue
+    }
+    if (rec.role === 'tool') {
+      // 没有前导 assistant(toolCalls) 的孤立 tool 消息 → 丢弃
+      i++
+      continue
+    }
+    result.push(rec)
+    i++
+  }
+  return result
+}
+
 /** 内置默认压缩提示词 */
 const BUILTIN_COMPRESS_PROMPT = `你是对话压缩助手。请将以下对话历史压缩为一段简洁的摘要，保留关键上下文信息。
 要求：
@@ -155,7 +198,8 @@ export async function assembleSessionContext(
   const userTimestamp = new Date().toISOString()
   const userMessage: Message = { role: 'user', content: userContent, timestamp: userTimestamp }
 
-  const history = await storage.listRecords(sessionId)
+  // 净化历史：移除中断/崩溃残留的不完整 tool call 组，保证送给 LLM 的 prompt 协议合法
+  const history = removeIncompleteToolCallGroups(await storage.listRecords(sessionId))
 
   // 估算全量 token 数
   const fullMessages = [...prefixMessages, ...history, userMessage]
@@ -266,7 +310,8 @@ export async function assembleMainSessionContext(
   const userTimestamp = new Date().toISOString()
   const userMessage: Message = { role: 'user', content: userContent, timestamp: userTimestamp }
 
-  const history = await storage.listRecords(sessionId)
+  // 净化历史：与 assembleSessionContext 对称，避免不完整 tool call 组流入 prompt
+  const history = removeIncompleteToolCallGroups(await storage.listRecords(sessionId))
 
   // 估算全量 token 数
   const fullMessages = [...prefixMessages, ...history, userMessage]
