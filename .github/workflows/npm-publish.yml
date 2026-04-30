@@ -1,0 +1,69 @@
+name: NPM Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Which package to publish'
+        type: choice
+        options:
+          - both
+          - core
+          - session
+        default: both
+      dry_run:
+        description: 'Dry run (build & test only, no publish)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Build & Publish to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Resolve Filters
+        id: filters
+        run: |
+          case "${{ inputs.package }}" in
+            core)    echo "filters=--filter @stello-ai/core" >> "$GITHUB_OUTPUT" ;;
+            session) echo "filters=--filter @stello-ai/session" >> "$GITHUB_OUTPUT" ;;
+            both)    echo "filters=--filter @stello-ai/core --filter @stello-ai/session" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Packages
+        run: pnpm ${{ steps.filters.outputs.filters }} run build
+
+      - name: Run Tests
+        run: pnpm ${{ steps.filters.outputs.filters }} run test
+
+      - name: Publish to npm
+        if: ${{ !inputs.dry_run }}
+        run: pnpm ${{ steps.filters.outputs.filters }} publish --no-git-checks --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Dry Run Notice
+        if: ${{ inputs.dry_run }}
+        run: echo "Dry run complete — build & test passed, publish skipped."
