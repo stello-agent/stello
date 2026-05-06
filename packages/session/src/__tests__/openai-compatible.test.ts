@@ -72,6 +72,40 @@ describe('createOpenAICompatibleAdapter', () => {
     )
   })
 
+  it('options.maxOutputTokens 覆盖内建默认值', async () => {
+    const adapter = createOpenAICompatibleAdapter({
+      apiKey: 'test-key',
+      baseURL: 'https://api.example.com/v1',
+      model: 'test-model',
+      maxContextTokens: 128_000,
+      maxOutputTokens: 8192,
+    })
+
+    await adapter.complete([{ role: 'user', content: 'hello' }])
+
+    expect(createCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({ max_tokens: 8192, stream: false }),
+      undefined,
+    )
+  })
+
+  it('调用方 maxTokens 优先级最高，盖过 options.maxOutputTokens', async () => {
+    const adapter = createOpenAICompatibleAdapter({
+      apiKey: 'test-key',
+      baseURL: 'https://api.example.com/v1',
+      model: 'test-model',
+      maxContextTokens: 128_000,
+      maxOutputTokens: 8192,
+    })
+
+    await adapter.complete([{ role: 'user', content: 'hello' }], { maxTokens: 2048 })
+
+    expect(createCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({ max_tokens: 2048, stream: false }),
+      undefined,
+    )
+  })
+
   it('signal 透传到 SDK request options', async () => {
     const adapter = createOpenAICompatibleAdapter({
       apiKey: 'test-key',
