@@ -162,3 +162,80 @@ describe('createAnthropicAdapter stream()', () => {
     expect(chunks.map((c) => c.delta).join('')).toBe('hello')
   })
 })
+
+describe('createAnthropicAdapter complete() max_tokens', () => {
+  beforeEach(() => {
+    messagesStream.mockReset()
+    messagesCreate.mockReset()
+    messagesCreate.mockResolvedValue({
+      content: [{ type: 'text', text: 'ok' }],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    })
+  })
+
+  it('未配置时回落到内建默认值 4096', async () => {
+    const adapter = createAnthropicAdapter({
+      apiKey: 'k',
+      model: 'm',
+      maxContextTokens: 200_000,
+    })
+    await adapter.complete([{ role: 'user', content: 'hi' }])
+    expect(messagesCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ max_tokens: 4096 }),
+      undefined,
+    )
+  })
+
+  it('options.maxOutputTokens 覆盖内建默认值', async () => {
+    const adapter = createAnthropicAdapter({
+      apiKey: 'k',
+      model: 'm',
+      maxContextTokens: 200_000,
+      maxOutputTokens: 8192,
+    })
+    await adapter.complete([{ role: 'user', content: 'hi' }])
+    expect(messagesCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ max_tokens: 8192 }),
+      undefined,
+    )
+  })
+
+  it('调用方 maxTokens 优先级最高，盖过 options.maxOutputTokens', async () => {
+    const adapter = createAnthropicAdapter({
+      apiKey: 'k',
+      model: 'm',
+      maxContextTokens: 200_000,
+      maxOutputTokens: 8192,
+    })
+    await adapter.complete([{ role: 'user', content: 'hi' }], { maxTokens: 2048 })
+    expect(messagesCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ max_tokens: 2048 }),
+      undefined,
+    )
+  })
+})
+
+describe('createAnthropicAdapter stream() max_tokens', () => {
+  beforeEach(() => {
+    messagesStream.mockReset()
+    messagesCreate.mockReset()
+    messagesStream.mockReturnValue(asyncIterableFrom([]))
+  })
+
+  it('options.maxOutputTokens 用于 stream() 请求', async () => {
+    const adapter = createAnthropicAdapter({
+      apiKey: 'k',
+      model: 'm',
+      maxContextTokens: 200_000,
+      maxOutputTokens: 8192,
+    })
+    if (!adapter.stream) throw new Error('adapter.stream is required')
+    for await (const _ of adapter.stream([{ role: 'user', content: 'hi' }])) {
+      void _
+    }
+    expect(messagesStream).toHaveBeenCalledWith(
+      expect.objectContaining({ max_tokens: 8192 }),
+      undefined,
+    )
+  })
+})

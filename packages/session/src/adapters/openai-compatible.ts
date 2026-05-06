@@ -11,11 +11,18 @@ type ChatToolCallDelta = NonNullable<
 export interface OpenAICompatibleOptions {
   apiKey: string
   model: string
-  /** 模型上下文窗口大小（token 数） */
+  /** 模型上下文窗口大小（token 数），用于自动压缩判断 */
   maxContextTokens: number
   baseURL: string
   /** 额外的请求参数（如 MiniMax 的 reasoning_split 等） */
   extraBody?: Record<string, unknown>
+  /**
+   * 单次请求的输出 token 上限。被写入请求的 `max_tokens`。
+   * 优先级：`completeOptions.maxTokens` > `options.maxOutputTokens` > 4096。
+   * 设过低会让长输出（多个子话题的 tool call args、长 synthesis 等）
+   * 在中途被截断，引发上层 JSON 解析失败。
+   */
+  maxOutputTokens?: number
 }
 
 /** 合并连续的 system 消息，兼容只接受单条 system 的提供方。 */
@@ -46,7 +53,7 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleOptions):
     const normalizedMessages = mergeConsecutiveSystemMessages(messages)
     return {
       model: options.model,
-      max_tokens: completeOptions?.maxTokens ?? 4096,
+      max_tokens: completeOptions?.maxTokens ?? options.maxOutputTokens ?? 4096,
       ...(completeOptions?.temperature !== undefined && { temperature: completeOptions.temperature }),
       ...(completeOptions?.tools
         ? {

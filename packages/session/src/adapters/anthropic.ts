@@ -13,10 +13,17 @@ import type { LLMAdapter, LLMResult, LLMChunk, Message, ToolCall, LLMCompleteOpt
 export interface AnthropicAdapterOptions {
   apiKey: string
   model: string
-  /** 模型上下文窗口大小（token 数） */
+  /** 模型上下文窗口大小（token 数），用于自动压缩判断 */
   maxContextTokens: number
   /** 自定义 API 端点，兼容 MiniMax 等 Anthropic 协议服务 */
   baseURL?: string
+  /**
+   * 单次请求的输出 token 上限。被写入 Anthropic API 的 `max_tokens`。
+   * 优先级：`completeOptions.maxTokens` > `options.maxOutputTokens` > 4096。
+   * 设过低会让长输出（多个子话题的 tool call args、长 synthesis 等）
+   * 在中途被截断，引发上层 JSON 解析失败。建议按模型上限设置。
+   */
+  maxOutputTokens?: number
 }
 
 /** 将 Stello 内部 Message 转换为 Anthropic MessageParam 格式 */
@@ -138,7 +145,7 @@ export function createAnthropicAdapter(options: AnthropicAdapterOptions): LLMAda
       const response = await client.messages.create(
         {
           model: options.model,
-          max_tokens: completeOptions?.maxTokens ?? 4096,
+          max_tokens: completeOptions?.maxTokens ?? options.maxOutputTokens ?? 4096,
           ...(completeOptions?.temperature !== undefined && { temperature: completeOptions.temperature }),
           ...(system && { system }),
           ...(completeOptions?.tools && completeOptions.tools.length > 0
@@ -172,7 +179,7 @@ export function createAnthropicAdapter(options: AnthropicAdapterOptions): LLMAda
       const stream = client.messages.stream(
         {
           model: options.model,
-          max_tokens: completeOptions?.maxTokens ?? 4096,
+          max_tokens: completeOptions?.maxTokens ?? options.maxOutputTokens ?? 4096,
           ...(completeOptions?.temperature !== undefined && { temperature: completeOptions.temperature }),
           ...(system && { system }),
           ...(completeOptions?.tools && completeOptions.tools.length > 0
