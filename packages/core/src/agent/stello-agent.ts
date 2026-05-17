@@ -55,11 +55,6 @@ export interface StelloAgentSessionConfig {
     session: SessionCompatible;
     config: SerializableSessionConfig | null;
   }>;
-  /** 加载 MainSession 与其固化配置（可选，仅在需要 integration 时提供） */
-  mainSessionLoader?: () => Promise<{
-    session: { integrate(): Promise<unknown> };
-    config: SerializableSessionConfig | null;
-  } | null>;
   /** send() 结果序列化方式，默认 JSON 序列化 */
   serializeSendResult?: (result: SessionCompatibleSendResult) => string;
   /** TurnRunner 用的 tool call parser，默认 sessionSendResultParser */
@@ -96,8 +91,6 @@ export interface StelloAgentConfig {
   memory: MemoryEngine;
   /** Regular session 的 agent 级默认配置，fork 合成链的最低优先级 */
   sessionDefaults?: SessionConfig;
-  /** Main session 独立配置（不参与 fork 合成链） */
-  mainSessionConfig?: SessionConfig;
   session?: StelloAgentSessionConfig;
   capabilities: StelloAgentCapabilitiesConfig;
   runtime?: StelloAgentRuntimeConfig;
@@ -127,16 +120,6 @@ function resolveRuntimeResolver(config: StelloAgentConfig): SessionRuntimeResolv
   throw new Error(
     'StelloAgentConfig 缺少 runtime.resolver；若使用 session 配置接入，请提供 session.sessionLoader',
   );
-}
-
-/** 从 SessionConfig 抽取 main session 可序列化子集 */
-function serializeMainSessionConfig(
-  config: SessionConfig | undefined,
-): SerializableSessionConfig {
-  const result: SerializableSessionConfig = {};
-  if (config?.systemPrompt !== undefined) result.systemPrompt = config.systemPrompt;
-  if (config?.skills !== undefined) result.skills = config.skills;
-  return result;
 }
 
 function resolveTurnRunner(config: StelloAgentConfig): TurnRunner | undefined {
@@ -210,14 +193,22 @@ export class StelloAgent {
     );
   }
 
-  /** 创建 main session（根节点），使用 mainSessionConfig 固化其配置 */
-  async createMainSession(options?: { label?: string }): Promise<TopologyNode> {
-    const createArgs: { label?: string } = {};
-    if (options?.label !== undefined) createArgs.label = options.label;
-    const node = await this.sessions.createSession(createArgs);
-    const serialized = serializeMainSessionConfig(this.config.mainSessionConfig);
-    await this.sessions.putConfig(node.id, serialized);
-    return node;
+  /**
+   * 创建一个新的 Session 拓扑节点。
+   *
+   * - `parentId` 为空：建 root（parentId === null）
+   * - 非空：挂在该节点下作为子节点（**不**继承父 Session 上下文 / 配置）
+   *
+   * 需要继承上下文（systemPrompt / L3 / 合成配置）应走 `forkSession`。
+   */
+  async createSession(options?: {
+    parentId?: string;
+    label?: string;
+  }): Promise<TopologyNode> {
+    const treeOptions: { parentId?: string; label?: string } = {};
+    if (options?.parentId !== undefined) treeOptions.parentId = options.parentId;
+    if (options?.label !== undefined) treeOptions.label = options.label;
+    return this.sessions.createSession(treeOptions);
   }
 
   /** 进入指定 session 的整轮对话 */
@@ -284,19 +275,6 @@ export class StelloAgent {
   /** 对指定 session 执行 consolidation */
   consolidateSession(sessionId: string): Promise<void> {
     return this.orchestrator.consolidateSession(sessionId);
-  }
-
-  /** 对 main session 执行 integration */
-  async integrate(): Promise<unknown> {
-    const mainSessionLoader = this.config.session?.mainSessionLoader;
-    if (!mainSessionLoader) {
-      throw new Error('No mainSessionLoader configured');
-    }
-    const loaded = await mainSessionLoader();
-    if (!loaded) {
-      throw new Error('MainSession not found');
-    }
-    return loaded.session.integrate();
   }
 
   /** 热更新运行时配置（仅支持值类型字段） */

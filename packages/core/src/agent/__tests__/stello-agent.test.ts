@@ -327,20 +327,6 @@ describe('StelloAgent', () => {
     expect(agent.config.sessionDefaults?.skills).toEqual(['read_file']);
   });
 
-  it('会保留 mainSessionConfig 独立配置（不参与 fork 合成链）', () => {
-    const consolidateFn = vi.fn();
-    const agent = createStelloAgent({
-      ...baseConfig(),
-      mainSessionConfig: {
-        systemPrompt: 'main prompt',
-        consolidateFn,
-      },
-    });
-
-    expect(agent.config.mainSessionConfig?.systemPrompt).toBe('main prompt');
-    expect(agent.config.mainSessionConfig?.consolidateFn).toBe(consolidateFn);
-  });
-
   it('updateConfig 可热更新 runtime 配置', async () => {
     vi.useFakeTimers();
 
@@ -380,24 +366,6 @@ describe('StelloAgent', () => {
     const agent = createStelloAgent(baseConfig({ runtimeSession }));
     await agent.consolidateSession('root');
     expect(runtimeSession.consolidate).toHaveBeenCalledTimes(1);
-  });
-
-  it('integrate 调用 mainSession.integrate', async () => {
-    const integrateFn = vi.fn().mockResolvedValue({ synthesis: 's', insights: [] });
-    const mainSession = { integrate: integrateFn };
-    const agent = createStelloAgent({
-      ...baseConfig(),
-      session: {
-        mainSessionLoader: vi.fn().mockResolvedValue({ session: mainSession, config: null }),
-      },
-    });
-    await agent.integrate();
-    expect(integrateFn).toHaveBeenCalledTimes(1);
-  });
-
-  it('integrate 未配置 mainSessionLoader 时抛错', async () => {
-    const agent = createStelloAgent(baseConfig());
-    await expect(agent.integrate()).rejects.toThrow('No mainSessionLoader configured');
   });
 
   it('支持通过 session.sessionLoader 正式接入 Session 配置', async () => {
@@ -461,135 +429,58 @@ describe('StelloAgent', () => {
     expect(result.turn.toolCallsExecuted).toBe(1);
   });
 
-  describe('createMainSession', () => {
-    /** 构建带 createSession/putConfig/getConfig 能力的 sessions mock */
-    function sessionsMock() {
-      const store = new Map<string, unknown>();
-      const createSession = vi.fn().mockImplementation(async (opts?: { label?: string }) => ({
-        id: 'root',
+  describe('createSession', () => {
+    it('createSession 无 parentId 时建 root', async () => {
+      const createSession = vi.fn().mockResolvedValue({
+        id: 'root-id',
         parentId: null,
         children: [],
         refs: [],
         depth: 0,
         index: 0,
-        label: opts?.label ?? 'Root',
-      }));
-      const putConfig = vi.fn().mockImplementation(async (id: string, config: unknown) => {
-        store.set(id, config);
+        label: 'My Root',
       });
-      const getConfig = vi.fn().mockImplementation(async (id: string) => store.get(id) ?? null);
-      return { createSession, putConfig, getConfig, store };
-    }
-
-    it('createMainSession 返回根拓扑节点（指定 label）', async () => {
-      const sessions = sessionsMock();
       const agent = createStelloAgent(
-        baseConfig({
-          sessions: {
-            createSession: sessions.createSession,
-            putConfig: sessions.putConfig,
-            getConfig: sessions.getConfig,
-          },
-        }),
+        baseConfig({ sessions: { createSession } as unknown as SessionTree }),
       );
-
-      const node = await agent.createMainSession({ label: 'Main' });
-
-      expect(sessions.createSession).toHaveBeenCalledWith({ label: 'Main' });
-      expect(node.id).toBe('root');
+      const node = await agent.createSession({ label: 'My Root' });
+      expect(createSession).toHaveBeenCalledWith({ label: 'My Root' });
       expect(node.parentId).toBeNull();
-      expect(node.depth).toBe(0);
-      expect(node.label).toBe('Main');
     });
 
-    it('createMainSession 无 label 时走 createSession 默认值', async () => {
-      const sessions = sessionsMock();
+    it('createSession 带 parentId 时挂在父下', async () => {
+      const createSession = vi.fn().mockResolvedValue({
+        id: 'child-id',
+        parentId: 'root-id',
+        children: [],
+        refs: [],
+        depth: 1,
+        index: 0,
+        label: 'Child',
+      });
       const agent = createStelloAgent(
-        baseConfig({
-          sessions: {
-            createSession: sessions.createSession,
-            putConfig: sessions.putConfig,
-            getConfig: sessions.getConfig,
-          },
-        }),
+        baseConfig({ sessions: { createSession } as unknown as SessionTree }),
       );
-
-      const node = await agent.createMainSession();
-
-      expect(sessions.createSession).toHaveBeenCalledWith({});
-      expect(node.label).toBe('Root');
+      const node = await agent.createSession({ parentId: 'root-id', label: 'Child' });
+      expect(createSession).toHaveBeenCalledWith({ parentId: 'root-id', label: 'Child' });
+      expect(node.parentId).toBe('root-id');
     });
 
-    it('createMainSession 将 mainSessionConfig 的可序列化字段写入 putConfig', async () => {
-      const sessions = sessionsMock();
-      const agent = createStelloAgent({
-        ...baseConfig({
-          sessions: {
-            createSession: sessions.createSession,
-            putConfig: sessions.putConfig,
-            getConfig: sessions.getConfig,
-          },
-        }),
-        mainSessionConfig: {
-          systemPrompt: 'P',
-          skills: ['a'],
-        },
+    it('createSession 不传参数时调用 sessions.createSession({})', async () => {
+      const createSession = vi.fn().mockResolvedValue({
+        id: 'r',
+        parentId: null,
+        children: [],
+        refs: [],
+        depth: 0,
+        index: 0,
+        label: 'Root',
       });
-
-      await agent.createMainSession({ label: 'Main' });
-
-      expect(sessions.putConfig).toHaveBeenCalledWith('root', {
-        systemPrompt: 'P',
-        skills: ['a'],
-      });
-      expect(await agent.sessions.getConfig('root')).toEqual({
-        systemPrompt: 'P',
-        skills: ['a'],
-      });
-    });
-
-    it('createMainSession 剔除非可序列化字段（llm/consolidateFn 等）', async () => {
-      const sessions = sessionsMock();
-      const dummyLlm = { complete: vi.fn() } as never;
-      const dummyFn = vi.fn();
-      const agent = createStelloAgent({
-        ...baseConfig({
-          sessions: {
-            createSession: sessions.createSession,
-            putConfig: sessions.putConfig,
-            getConfig: sessions.getConfig,
-          },
-        }),
-        mainSessionConfig: {
-          systemPrompt: 'P',
-          llm: dummyLlm,
-          consolidateFn: dummyFn,
-        },
-      });
-
-      await agent.createMainSession({ label: 'Main' });
-
-      expect(sessions.putConfig).toHaveBeenCalledWith('root', { systemPrompt: 'P' });
-      const stored = sessions.store.get('root') as Record<string, unknown>;
-      expect(stored).not.toHaveProperty('llm');
-      expect(stored).not.toHaveProperty('consolidateFn');
-    });
-
-    it('createMainSession 无 mainSessionConfig 时写入空对象', async () => {
-      const sessions = sessionsMock();
       const agent = createStelloAgent(
-        baseConfig({
-          sessions: {
-            createSession: sessions.createSession,
-            putConfig: sessions.putConfig,
-            getConfig: sessions.getConfig,
-          },
-        }),
+        baseConfig({ sessions: { createSession } as unknown as SessionTree }),
       );
-
-      await agent.createMainSession({ label: 'Main' });
-
-      expect(sessions.putConfig).toHaveBeenCalledWith('root', {});
+      await agent.createSession();
+      expect(createSession).toHaveBeenCalledWith({});
     });
   });
 });
