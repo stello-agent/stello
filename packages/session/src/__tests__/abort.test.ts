@@ -176,10 +176,7 @@ describe('orphaned tool_calls sanitization (abort recovery)', () => {
     await storage.putSession({
       id: sessionId,
       label: 'Test',
-      role: 'standard',
       status: 'active',
-      tags: [],
-      metadata: {},
       createdAt: now,
       updatedAt: now,
     })

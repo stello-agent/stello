@@ -40,10 +40,6 @@ export interface CreateSessionOptions {
   label?: string
   /** 系统提示词 */
   systemPrompt?: string
-  /** 初始标签 */
-  tags?: string[]
-  /** 初始元数据 */
-  metadata?: Record<string, unknown>
   /** 可用工具定义 */
   tools?: LLMCompleteOptions['tools']
   /** 上下文压缩函数（超阈值时调用） */
@@ -80,10 +76,6 @@ export interface CreateMainSessionOptions {
   label?: string
   /** 系统提示词 */
   systemPrompt?: string
-  /** 初始标签 */
-  tags?: string[]
-  /** 初始元数据 */
-  metadata?: Record<string, unknown>
   /** 可用工具定义 */
   tools?: LLMCompleteOptions['tools']
   /** 上下文压缩函数（超阈值时调用） */

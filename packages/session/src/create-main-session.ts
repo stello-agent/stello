@@ -357,8 +357,6 @@ function buildMainSession(
       const updatedMeta: SessionMeta = {
         ...currentMeta,
         ...(updates.label !== undefined && { label: updates.label }),
-        ...(updates.tags !== undefined && { tags: updates.tags }),
-        ...(updates.metadata !== undefined && { metadata: updates.metadata }),
         updatedAt: new Date().toISOString(),
       }
       await storage.putSession(updatedMeta)
@@ -377,8 +375,6 @@ function buildMainSession(
         label: forkOptions.label,
         systemPrompt: forkOptions.systemPrompt ?? await storage.getSystemPrompt(currentMeta.id) ?? undefined,
         tools: forkOptions.tools ?? options.tools,
-        tags: forkOptions.tags,
-        metadata: forkOptions.metadata,
         consolidateFn: forkOptions.consolidateFn,
         compressFn: forkOptions.compressFn,
       })
@@ -439,10 +435,7 @@ export async function createMainSession(options: CreateMainSessionOptions): Prom
   const meta: SessionMeta = {
     id,
     label: options.label ?? 'Main Session',
-    role: 'main',
     status: 'active',
-    tags: options.tags ?? [],
-    metadata: options.metadata ?? {},
     createdAt: now,
     updatedAt: now,
   }
@@ -462,6 +455,6 @@ export async function loadMainSession(
   options: LoadMainSessionOptions
 ): Promise<MainSession | null> {
   const meta = await options.storage.getSession(id)
-  if (!meta || meta.role !== 'main') return null
+  if (!meta) return null
   return buildMainSession(meta, options)
 }

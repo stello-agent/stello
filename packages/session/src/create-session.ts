@@ -387,10 +387,7 @@ function buildSession(
       const childMeta: SessionMeta = {
         id: childId,
         label: forkOptions.label,
-        role: 'standard',
         status: 'active',
-        tags: forkOptions.tags ?? [],
-        metadata: forkOptions.metadata ?? {},
         createdAt: now,
         updatedAt: now,
       }
@@ -442,8 +439,6 @@ function buildSession(
       const updatedMeta: SessionMeta = {
         ...currentMeta,
         ...(updates.label !== undefined && { label: updates.label }),
-        ...(updates.tags !== undefined && { tags: updates.tags }),
-        ...(updates.metadata !== undefined && { metadata: updates.metadata }),
         updatedAt: new Date().toISOString(),
       }
       await storage.putSession(updatedMeta)
@@ -484,10 +479,7 @@ export async function createSession(options: CreateSessionOptions): Promise<Sess
   const meta: SessionMeta = {
     id,
     label: options.label ?? 'New Session',
-    role: 'standard',
     status: 'active',
-    tags: options.tags ?? [],
-    metadata: options.metadata ?? {},
     createdAt: now,
     updatedAt: now,
   }

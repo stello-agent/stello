@@ -10,22 +10,10 @@ describe('updateMeta() + archive() + fork()', () => {
       expect(session.meta.label).toBe('Updated')
     })
 
-    it('更新 tags', async () => {
+    it('重命名 label', async () => {
       const { session } = await makeSession()
-      await session.updateMeta({ tags: ['tag1', 'tag2'] })
-      expect(session.meta.tags).toEqual(['tag1', 'tag2'])
-    })
-
-    it('更新 metadata', async () => {
-      const { session } = await makeSession()
-      await session.updateMeta({ metadata: { key: 'value' } })
-      expect(session.meta.metadata).toEqual({ key: 'value' })
-    })
-
-    it('部分更新不影响其他字段', async () => {
-      const { session } = await makeSession({ label: 'Keep', tags: ['keep'] })
-      await session.updateMeta({ label: 'New' })
-      expect(session.meta.tags).toEqual(['keep'])
+      await session.updateMeta({ label: 'Renamed' })
+      expect(session.meta.label).toBe('Renamed')
     })
 
     it('持久化到 storage', async () => {
@@ -65,7 +53,6 @@ describe('updateMeta() + archive() + fork()', () => {
       const { session } = await makeSession({ label: 'Parent' })
       const child = await session.fork({ label: 'Child' })
       expect(child.meta.label).toBe('Child')
-      expect(child.meta.role).toBe('standard')
       expect(child.meta.status).toBe('active')
     })
 
@@ -74,17 +61,6 @@ describe('updateMeta() + archive() + fork()', () => {
       await storage.putMemory(session.meta.id, 'parent memory')
       const child = await session.fork({ label: 'Child' })
       expect(await child.memory()).toBeNull()
-    })
-
-    it('fork 支持传入 tags 和 metadata', async () => {
-      const { session } = await makeSession()
-      const child = await session.fork({
-        label: 'Child',
-        tags: ['forked'],
-        metadata: { source: 'fork' },
-      })
-      expect(child.meta.tags).toEqual(['forked'])
-      expect(child.meta.metadata).toEqual({ source: 'fork' })
     })
 
     it('fork 持久化子 Session 到 storage', async () => {

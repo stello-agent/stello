@@ -30,11 +30,6 @@ export class InMemoryStorageAdapter implements MainStorage {
 
     return all.filter((s) => {
       if (filter.status !== undefined && s.status !== filter.status) return false
-      if (filter.role !== undefined && s.role !== filter.role) return false
-      if (filter.tags && filter.tags.length > 0) {
-        const sessionTags = new Set(s.tags)
-        if (!filter.tags.every((t) => sessionTags.has(t))) return false
-      }
       return true
     })
   }
@@ -103,11 +98,11 @@ export class InMemoryStorageAdapter implements MainStorage {
     this.memories.set(sessionId, content)
   }
 
-  /** 扁平收集所有 standard session 的 L2 */
+  /** 扁平收集所有 active session 的 L2 */
   async getAllSessionL2s(): Promise<ChildL2Summary[]> {
     const result: ChildL2Summary[] = []
     for (const session of this.sessions.values()) {
-      if (session.role !== 'standard' || session.status !== 'active') continue
+      if (session.status !== 'active') continue
       const l2 = this.memories.get(session.id)
       if (l2 === undefined) continue
       result.push({ sessionId: session.id, label: session.label, l2 })
