@@ -476,112 +476,54 @@ describe('StelloEngineImpl', () => {
     });
   });
 
-  // FIXME: Task 10 will replace this with proper root-fork tests
-  describe.skip('forkSession from main session (issue #55)', () => {
-    it('从 main fork 时不读 getConfig，parent 层不参与合成链', async () => {
-      const getConfig = vi.fn().mockResolvedValue({ systemPrompt: 'main sys', skills: ['a'] });
+  describe('forkSession from root session', () => {
+    it('从 root session fork 时正常读取 root 的 getConfig 并继承 systemPrompt', async () => {
+      const getConfig = vi.fn().mockResolvedValue({ systemPrompt: 'root sys' });
       const putConfig = vi.fn().mockResolvedValue(undefined);
-      const createSession = vi.fn().mockResolvedValue({
-        id: 'child-1', parentId: 'root', children: [], refs: [],
-        depth: 1, index: 0, label: 'UI',
+      const createSessionFn = vi.fn().mockResolvedValue({
+        id: 'child-1',
+        parentId: 'root-id',
+        children: [],
+        refs: [],
+        depth: 1,
+        index: 0,
+        label: 'UI',
       });
       const sessionFork = vi.fn().mockResolvedValue({
-        id: 'child-1', meta: { id: 'child-1', turnCount: 0, status: 'active' },
-        turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
+        id: 'child-1',
+        meta: { id: 'child-1', turnCount: 0, status: 'active' as const },
+        turnCount: 0,
+        send: vi.fn(),
+        consolidate: vi.fn(),
+        setTools: vi.fn(),
       });
 
       const engine = new StelloEngineImpl({
         session: {
-          id: 'root',
-          meta: { id: 'root', turnCount: 0, status: 'active' as const },
-          turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+          id: 'root-id',
+          meta: { id: 'root-id', turnCount: 0, status: 'active' as const },
+          turnCount: 0,
+          send: vi.fn(),
+          consolidate: vi.fn(),
           messages: vi.fn().mockResolvedValue([]),
           setTools: vi.fn(),
           fork: sessionFork,
         },
-        sessions: { ...sessions, createSession, getConfig, putConfig } as unknown as SessionTree,
-        memory, skills, confirm, agent: {} as never,
+        sessions: { ...sessions, createSession: createSessionFn, getConfig, putConfig } as unknown as SessionTree,
+        memory,
+        skills,
+        confirm,
+        agent: {} as never,
         lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
         tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
       });
 
       await engine.forkSession({ label: 'UI' });
 
-      expect(getConfig).not.toHaveBeenCalled();
-    });
-
-    it('从 main fork 时子 session 的 putConfig 不继承 main 的 systemPrompt/skills', async () => {
-      // 模拟宿主把 SerializableMainSessionConfig 存在同一 putConfig 槽位（issue #55 场景）
-      const getConfig = vi.fn().mockResolvedValue({ systemPrompt: 'main sys', skills: ['a'] });
-      const putConfig = vi.fn().mockResolvedValue(undefined);
-      const createSession = vi.fn().mockResolvedValue({
-        id: 'child-1', parentId: 'root', children: [], refs: [],
-        depth: 1, index: 0, label: 'UI',
-      });
-      const sessionFork = vi.fn().mockResolvedValue({
-        id: 'child-1', meta: { id: 'child-1', turnCount: 0, status: 'active' },
-        turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
-      });
-
-      const engine = new StelloEngineImpl({
-        session: {
-          id: 'root',
-          meta: { id: 'root', turnCount: 0, status: 'active' as const },
-          turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
-          messages: vi.fn().mockResolvedValue([]),
-          setTools: vi.fn(),
-          fork: sessionFork,
-        },
-        sessions: { ...sessions, createSession, getConfig, putConfig } as unknown as SessionTree,
-        memory, skills, confirm, agent: {} as never,
-        lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
-        tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
-      });
-
-      await engine.forkSession({ label: 'UI' });
-
-      // 子 session 的 putConfig 要么未被调用（合成结果为空），要么不含 main 的值
-      for (const [, cfg] of putConfig.mock.calls) {
-        expect(cfg.systemPrompt).toBeUndefined();
-        expect(cfg.skills).toBeUndefined();
-      }
-      // session.fork 传给子 session 的也不应包含 main 的 systemPrompt
-      expect(sessionFork).toHaveBeenCalledWith(expect.not.objectContaining({
-        systemPrompt: 'main sys',
-      }));
-    });
-
-    it('从非 main session fork 时仍然正常读取 parent config', async () => {
-      const getConfig = vi.fn().mockResolvedValue({ systemPrompt: 'parent sys' });
-      const createSession = vi.fn().mockResolvedValue({
-        id: 'child-1', parentId: 's1', children: [], refs: [],
-        depth: 2, index: 0, label: 'UI',
-      });
-      const sessionFork = vi.fn().mockResolvedValue({
-        id: 'child-1', meta: { id: 'child-1', turnCount: 0, status: 'active' },
-        turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
-      });
-
-      const engine = new StelloEngineImpl({
-        session: {
-          id: 's1', meta: { id: 's1', turnCount: 0, status: 'active' as const },
-          turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
-          messages: vi.fn().mockResolvedValue([]),
-          setTools: vi.fn(),
-          fork: sessionFork,
-        },
-        sessions: { ...sessions, createSession, getConfig } as unknown as SessionTree,
-        memory, skills, confirm, agent: {} as never,
-        lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
-        tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
-      });
-
-      await engine.forkSession({ label: 'UI' });
-
-      expect(getConfig).toHaveBeenCalledWith('s1');
-      expect(sessionFork).toHaveBeenCalledWith(expect.objectContaining({
-        systemPrompt: 'parent sys',
-      }));
+      expect(getConfig).toHaveBeenCalledWith('root-id');
+      expect(sessionFork).toHaveBeenCalledWith(
+        expect.objectContaining({ systemPrompt: 'root sys' }),
+      );
     });
   });
 
