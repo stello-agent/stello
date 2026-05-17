@@ -483,4 +483,56 @@ describe('StelloAgent', () => {
       expect(createSession).toHaveBeenCalledWith({});
     });
   });
+
+  describe('orchestrator-facing topology SDK', () => {
+    it('listSessions 代理 sessions.listAll', async () => {
+      const listAll = vi.fn().mockResolvedValue([
+        { id: 'a', label: 'A', status: 'active', turnCount: 0, createdAt: '', updatedAt: '', lastActiveAt: '' },
+        { id: 'b', label: 'B', status: 'archived', turnCount: 0, createdAt: '', updatedAt: '', lastActiveAt: '' },
+      ]);
+      const agent = createStelloAgent(
+        baseConfig({ sessions: { listAll } as unknown as SessionTree }),
+      );
+      expect(await agent.listSessions()).toHaveLength(2);
+      const activeOnly = await agent.listSessions({ status: 'active' });
+      expect(activeOnly).toHaveLength(1);
+      expect(activeOnly[0]?.id).toBe('a');
+    });
+
+    it('listRoots 代理 sessions.listRoots', async () => {
+      const listRoots = vi.fn().mockResolvedValue([
+        { id: 'r1', parentId: null, children: [], refs: [], depth: 0, index: 0, label: 'R1' },
+      ]);
+      const agent = createStelloAgent(
+        baseConfig({ sessions: { listRoots } as unknown as SessionTree }),
+      );
+      const roots = await agent.listRoots();
+      expect(roots).toHaveLength(1);
+      expect(roots[0]?.parentId).toBeNull();
+    });
+
+    it('getTopology 代理 sessions.getTree 并返回森林', async () => {
+      const getTree = vi.fn().mockResolvedValue([
+        { id: 'r1', label: 'R1', status: 'active', turnCount: 0, children: [] },
+        { id: 'r2', label: 'R2', status: 'active', turnCount: 0, children: [] },
+      ]);
+      const agent = createStelloAgent(
+        baseConfig({ sessions: { getTree } as unknown as SessionTree }),
+      );
+      const forest = await agent.getTopology();
+      expect(forest).toHaveLength(2);
+      expect(forest.map((n) => n.id).sort()).toEqual(['r1', 'r2']);
+    });
+
+    it('getTopologyNode 代理 sessions.getNode', async () => {
+      const getNode = vi.fn().mockResolvedValue({
+        id: 'x', parentId: null, children: [], refs: [], depth: 0, index: 0, label: 'X',
+      });
+      const agent = createStelloAgent(
+        baseConfig({ sessions: { getNode } as unknown as SessionTree }),
+      );
+      const node = await agent.getTopologyNode('x');
+      expect(node?.id).toBe('x');
+    });
+  });
 });

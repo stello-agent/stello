@@ -21,7 +21,7 @@ import {
   type SessionCompatible,
   type SessionCompatibleSendResult,
 } from '../adapters/session-runtime';
-import type { SessionTree, TopologyNode } from '../types/session';
+import type { SessionMeta, SessionTree, SessionTreeNode, TopologyNode } from '../types/session';
 import type { MemoryEngine } from '../types/memory';
 import type { ConfirmProtocol, SkillRouter } from '../types/lifecycle';
 import type { EngineLifecycleAdapter, EngineToolRuntime } from '../engine/stello-engine';
@@ -209,6 +209,32 @@ export class StelloAgent {
     if (options?.parentId !== undefined) treeOptions.parentId = options.parentId;
     if (options?.label !== undefined) treeOptions.label = options.label;
     return this.sessions.createSession(treeOptions);
+  }
+
+  /**
+   * 列出所有 Session（可按状态过滤）。
+   *
+   * 这是 orchestrator-facing SDK 的拓扑入口之一，代理给 SessionTree.listAll。
+   */
+  async listSessions(filter?: { status?: 'active' | 'archived' }): Promise<SessionMeta[]> {
+    const all = await this.sessions.listAll();
+    if (!filter || filter.status === undefined) return all;
+    return all.filter((s) => s.status === filter.status);
+  }
+
+  /** 列出所有 root（parentId === null） */
+  listRoots(): Promise<TopologyNode[]> {
+    return this.sessions.listRoots();
+  }
+
+  /** 获取完整拓扑（森林） */
+  getTopology(): Promise<SessionTreeNode[]> {
+    return this.sessions.getTree();
+  }
+
+  /** 获取单个拓扑节点 */
+  getTopologyNode(id: string): Promise<TopologyNode | null> {
+    return this.sessions.getNode(id);
   }
 
   /** 进入指定 session 的整轮对话 */
