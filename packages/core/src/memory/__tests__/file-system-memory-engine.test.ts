@@ -96,7 +96,7 @@ describe('FileSystemMemoryEngine', () => {
     });
 
     it('writeMemory / readMemory round-trip', async () => {
-      const node = await sessions.createRoot('Test Root');
+      const node = await sessions.createSession({ label: 'Test Root' });
       await engine.writeMemory(node.id, '# Memory\nSome content');
       const result = await engine.readMemory(node.id);
       expect(result).toBe('# Memory\nSome content');
@@ -107,7 +107,7 @@ describe('FileSystemMemoryEngine', () => {
     });
 
     it('writeScope / readScope round-trip', async () => {
-      const node = await sessions.createRoot('Root');
+      const node = await sessions.createSession({ label: 'Root' });
       await engine.writeScope(node.id, '# Scope');
       expect(await engine.readScope(node.id)).toBe('# Scope');
     });
@@ -117,7 +117,7 @@ describe('FileSystemMemoryEngine', () => {
     });
 
     it('writeIndex / readIndex round-trip', async () => {
-      const node = await sessions.createRoot('Root');
+      const node = await sessions.createSession({ label: 'Root' });
       await engine.writeIndex(node.id, '# Index');
       expect(await engine.readIndex(node.id)).toBe('# Index');
     });
@@ -139,7 +139,7 @@ describe('FileSystemMemoryEngine', () => {
     });
 
     it('appendRecord / readRecords round-trip', async () => {
-      const node = await sessions.createRoot('Root');
+      const node = await sessions.createSession({ label: 'Root' });
       const record = makeRecord('user', 'Hello');
       await engine.appendRecord(node.id, record);
       const records = await engine.readRecords(node.id);
@@ -148,7 +148,7 @@ describe('FileSystemMemoryEngine', () => {
     });
 
     it('appendRecord preserves insertion order', async () => {
-      const node = await sessions.createRoot('Root');
+      const node = await sessions.createSession({ label: 'Root' });
       await engine.appendRecord(node.id, makeRecord('user', 'first'));
       await engine.appendRecord(node.id, makeRecord('assistant', 'second'));
       await engine.appendRecord(node.id, makeRecord('user', 'third'));
@@ -160,7 +160,7 @@ describe('FileSystemMemoryEngine', () => {
     });
 
     it('replaceRecords overwrites all records', async () => {
-      const node = await sessions.createRoot('Root');
+      const node = await sessions.createSession({ label: 'Root' });
       await engine.appendRecord(node.id, makeRecord('user', 'old'));
       const newRecords: TurnRecord[] = [
         makeRecord('user', 'new1'),
@@ -174,7 +174,7 @@ describe('FileSystemMemoryEngine', () => {
     });
 
     it('replaceRecords with empty array clears records', async () => {
-      const node = await sessions.createRoot('Root');
+      const node = await sessions.createSession({ label: 'Root' });
       await engine.appendRecord(node.id, makeRecord('user', 'data'));
       await engine.replaceRecords(node.id, []);
       const records = await engine.readRecords(node.id);
@@ -182,7 +182,7 @@ describe('FileSystemMemoryEngine', () => {
     });
 
     it('appendRecord preserves metadata field', async () => {
-      const node = await sessions.createRoot('Root');
+      const node = await sessions.createSession({ label: 'Root' });
       const record: TurnRecord = {
         role: 'tool',
         content: 'result',
@@ -195,7 +195,7 @@ describe('FileSystemMemoryEngine', () => {
     });
 
     it('readRecords skips corrupt lines', async () => {
-      const node = await (sessions as SessionTreeImpl).createRoot('test')
+      const node = await (sessions as SessionTreeImpl).createSession({ label: 'test' })
       const good: TurnRecord = { role: 'user', content: 'hi', timestamp: '2026-01-01T00:00:00Z' }
       await engine.appendRecord(node.id, good)
       // Manually inject a corrupt line
@@ -210,8 +210,8 @@ describe('FileSystemMemoryEngine', () => {
 
   describe('assembleContext', () => {
     it('returns empty core and no memories for root with no data', async () => {
-      const root = await sessions.createRoot('Root');
-      // Need core.json to exist (createRoot does this)
+      const root = await sessions.createSession({ label: 'Root' });
+      // Need core.json to exist (createSession does this for roots)
       const ctx = await engine.assembleContext(root.id);
       expect(ctx.core).toEqual({});
       expect(ctx.memories).toEqual([]);
@@ -220,7 +220,7 @@ describe('FileSystemMemoryEngine', () => {
     });
 
     it('includes currentMemory and scope for session', async () => {
-      const root = await sessions.createRoot('Root');
+      const root = await sessions.createSession({ label: 'Root' });
       await engine.writeMemory(root.id, '# Root Memory');
       await engine.writeScope(root.id, '# Root Scope');
       const ctx = await engine.assembleContext(root.id);
@@ -229,11 +229,11 @@ describe('FileSystemMemoryEngine', () => {
     });
 
     it('collects ancestor memories from parent to root', async () => {
-      const root = await sessions.createRoot('Root');
+      const root = await sessions.createSession({ label: 'Root' });
       await engine.writeMemory(root.id, '# Root Memory');
-      const child = await sessions.createChild({ parentId: root.id, label: 'Child' });
+      const child = await sessions.createSession({ parentId: root.id, label: 'Child' });
       await engine.writeMemory(child.id, '# Child Memory');
-      const grandchild = await sessions.createChild({ parentId: child.id, label: 'Grandchild' });
+      const grandchild = await sessions.createSession({ parentId: child.id, label: 'Grandchild' });
 
       const ctx = await engine.assembleContext(grandchild.id);
       // ancestors from parent to root: [child, root]
@@ -244,16 +244,16 @@ describe('FileSystemMemoryEngine', () => {
     });
 
     it('includes L1 core data in context', async () => {
-      const root = await sessions.createRoot('Root');
+      const root = await sessions.createSession({ label: 'Root' });
       await engine.writeCore('user', 'Bob');
       const ctx = await engine.assembleContext(root.id);
       expect(ctx.core).toEqual({ user: 'Bob' });
     });
 
     it('skips ancestors with no memory', async () => {
-      const root = await sessions.createRoot('Root');
+      const root = await sessions.createSession({ label: 'Root' });
       // no memory written to root
-      const child = await sessions.createChild({ parentId: root.id, label: 'Child' });
+      const child = await sessions.createSession({ parentId: root.id, label: 'Child' });
       const ctx = await engine.assembleContext(child.id);
       expect(ctx.memories).toEqual([]);
     });

@@ -370,7 +370,7 @@ export class StelloEngineImpl implements StelloEngine {
       forkOptions: options,
     });
 
-    // 解析有效 context 并按需执行压缩。必须在 createChild 之前运行：
+    // 解析有效 context 并按需执行压缩。必须在 createSession 之前运行：
     // 若 compress 缺少 compressFn/llm 而抛错，避免产生孤儿拓扑节点。
     const effectiveContext = options.context ?? profile?.context;
     const llmCallFn: LLMCallFn | undefined = merged.llm

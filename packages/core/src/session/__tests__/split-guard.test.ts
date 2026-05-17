@@ -17,7 +17,7 @@ describe('SplitGuard — 拆分保护机制', () => {
     const fs = new NodeFileSystemAdapter(tmpDir);
     tree = new SessionTreeImpl(fs);
     guard = new SplitGuard(tree, { minTurns: 3, cooldownTurns: 5 });
-    const root = await tree.createRoot('根');
+    const root = await tree.createSession({ label: '根' });
     rootId = root.id;
   });
 
@@ -102,7 +102,7 @@ describe('SplitGuard — 拆分保护机制', () => {
   });
 
   it('不同 Session 的冷却期独立', async () => {
-    const child = await tree.createChild({ parentId: rootId, label: '子' });
+    const child = await tree.createSession({ parentId: rootId, label: '子' });
     await tree.updateMeta(rootId, { turnCount: 5 });
     guard.recordSplit(rootId, 5);
     await tree.updateMeta(child.id, { turnCount: 5 });

@@ -19,109 +19,150 @@ describe('SessionTreeImpl', () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
-  // ─── createRoot ───
+  // ─── createSession（无 parentId 即 root） ───
 
-  it('createRoot 返回 TopologyNode', async () => {
-    const root = await tree.createRoot('我的根');
-    expect(root.parentId).toBeNull();
-    expect(root.depth).toBe(0);
-    expect(root.index).toBe(0);
-    expect(root.label).toBe('我的根');
-    expect(root.children).toEqual([]);
-    expect(root.refs).toEqual([]);
-    // core.json 已初始化
-    const fs = new NodeFileSystemAdapter(tmpDir);
-    const core = await fs.readJSON('core.json');
-    expect(core).toEqual({});
-  });
+  describe('createSession (multi-root)', () => {
+    it('createSession 无 parentId 时建 root，parentId 为 null，depth=0', async () => {
+      const root = await tree.createSession({ label: '我的根' });
+      expect(root.parentId).toBeNull();
+      expect(root.depth).toBe(0);
+      expect(root.index).toBe(0);
+      expect(root.label).toBe('我的根');
+      expect(root.children).toEqual([]);
+      expect(root.refs).toEqual([]);
+      // core.json 已初始化
+      const fs = new NodeFileSystemAdapter(tmpDir);
+      const core = await fs.readJSON('core.json');
+      expect(core).toEqual({});
+    });
 
-  it('createRoot 后 memory.md / scope.md / index.md 存在', async () => {
-    const fs = new NodeFileSystemAdapter(tmpDir);
-    const root = await tree.createRoot();
-    expect(await fs.exists(`sessions/${root.id}/memory.md`)).toBe(true);
-    expect(await fs.exists(`sessions/${root.id}/scope.md`)).toBe(true);
-    expect(await fs.exists(`sessions/${root.id}/index.md`)).toBe(true);
-  });
+    it('createSession 无 label 时 root 默认 "Root"', async () => {
+      const root = await tree.createSession();
+      expect(root.label).toBe('Root');
+    });
 
-  it('createRoot 幂等：第二次调用返回现有节点，不覆写 label 与已写入的内容', async () => {
-    const fs = new NodeFileSystemAdapter(tmpDir);
-    const first = await tree.createRoot('Original');
-    // 模拟用户在 memory.md 写入内容，确认后续 createRoot 不覆写
-    await fs.writeFile(`sessions/${first.id}/memory.md`, 'user content');
+    it('createSession 后 root 的 memory.md / scope.md / index.md 存在', async () => {
+      const fs = new NodeFileSystemAdapter(tmpDir);
+      const root = await tree.createSession();
+      expect(await fs.exists(`sessions/${root.id}/memory.md`)).toBe(true);
+      expect(await fs.exists(`sessions/${root.id}/scope.md`)).toBe(true);
+      expect(await fs.exists(`sessions/${root.id}/index.md`)).toBe(true);
+    });
 
-    const second = await tree.createRoot('Ignored');
-    expect(second.id).toBe(first.id);
-    expect(second.label).toBe('Original');
-    expect(await fs.readFile(`sessions/${first.id}/memory.md`)).toBe('user content');
-  });
+    it('多 root 合法：每次调用产生新 UUID，listRoots 返回所有 root', async () => {
+      const r1 = await tree.createSession({ label: 'R1' });
+      const r2 = await tree.createSession({ label: 'R2' });
+      expect(r1.id).not.toBe(r2.id);
+      const roots = await tree.listRoots();
+      expect(roots.map((r) => r.id).sort()).toEqual([r1.id, r2.id].sort());
+      for (const r of roots) {
+        expect(r.parentId).toBeNull();
+        expect(r.depth).toBe(0);
+      }
+    });
 
-  // ─── createChild ───
+    it('listRoots 在没有 root 时返回空数组', async () => {
+      const roots = await tree.listRoots();
+      expect(roots).toEqual([]);
+    });
 
-  it('createChild 返回 TopologyNode', async () => {
-    const root = await tree.createRoot();
-    const child = await tree.createChild({ parentId: root.id, label: '子节点' });
-    expect(child.parentId).toBe(root.id);
-    expect(child.depth).toBe(1);
-    expect(child.index).toBe(0);
-    expect(child.children).toEqual([]);
-    expect(child.refs).toEqual([]);
-    // 父的 children 已更新（通过 getNode 验证）
-    const updatedRoot = await tree.getNode(root.id);
-    expect(updatedRoot?.children).toContain(child.id);
-  });
+    it('createSession 带 parentId 时挂在父下，depth = parent.depth + 1', async () => {
+      const root = await tree.createSession({ label: '根' });
+      const child = await tree.createSession({ parentId: root.id, label: '子节点' });
+      expect(child.parentId).toBe(root.id);
+      expect(child.depth).toBe(1);
+      expect(child.index).toBe(0);
+      expect(child.children).toEqual([]);
+      expect(child.refs).toEqual([]);
+      // 父的 children 已更新
+      const updatedRoot = await tree.getNode(root.id);
+      expect(updatedRoot?.children).toContain(child.id);
+    });
 
-  it('createChild 后 memory.md / scope.md / index.md 存在', async () => {
-    const fs = new NodeFileSystemAdapter(tmpDir);
-    const root = await tree.createRoot();
-    const child = await tree.createChild({ parentId: root.id, label: '子' });
-    expect(await fs.exists(`sessions/${child.id}/memory.md`)).toBe(true);
-    expect(await fs.exists(`sessions/${child.id}/scope.md`)).toBe(true);
-    expect(await fs.exists(`sessions/${child.id}/index.md`)).toBe(true);
-  });
+    it('createSession 无 label 时 child 默认 "Session"', async () => {
+      const root = await tree.createSession();
+      const child = await tree.createSession({ parentId: root.id });
+      expect(child.label).toBe('Session');
+    });
 
-  it('createChild 父不存在抛错', async () => {
-    await expect(tree.createChild({ parentId: 'fake-id', label: 'test' })).rejects.toThrow(
-      'Session 不存在',
-    );
-  });
+    it('createSession 后 child 的 memory.md / scope.md / index.md 存在', async () => {
+      const fs = new NodeFileSystemAdapter(tmpDir);
+      const root = await tree.createSession();
+      const child = await tree.createSession({ parentId: root.id, label: '子' });
+      expect(await fs.exists(`sessions/${child.id}/memory.md`)).toBe(true);
+      expect(await fs.exists(`sessions/${child.id}/scope.md`)).toBe(true);
+      expect(await fs.exists(`sessions/${child.id}/index.md`)).toBe(true);
+    });
 
-  it('createChild 多个子节点 index 递增', async () => {
-    const root = await tree.createRoot();
-    const a = await tree.createChild({ parentId: root.id, label: 'A' });
-    const b = await tree.createChild({ parentId: root.id, label: 'B' });
-    expect(a.index).toBe(0);
-    expect(b.index).toBe(1);
-  });
+    it('createSession 父不存在抛错', async () => {
+      await expect(
+        tree.createSession({ parentId: 'fake-id', label: 'test' }),
+      ).rejects.toThrow('Session 不存在');
+    });
 
-  it('createChild 并发同父节点不会丢失子引用（写锁串行化 RMW）', async () => {
-    const root = await tree.createRoot();
-    const N = 8;
-    // 模拟一轮内多个 stello_create_session 并行执行
-    const labels = Array.from({ length: N }, (_, i) => `P${i}`);
-    const children = await Promise.all(
-      labels.map((label) => tree.createChild({ parentId: root.id, label })),
-    );
+    it('createSession 多个子节点 index 递增', async () => {
+      const root = await tree.createSession();
+      const a = await tree.createSession({ parentId: root.id, label: 'A' });
+      const b = await tree.createSession({ parentId: root.id, label: 'B' });
+      expect(a.index).toBe(0);
+      expect(b.index).toBe(1);
+    });
 
-    // 所有子 id 唯一
-    const ids = new Set(children.map((c) => c.id));
-    expect(ids.size).toBe(N);
+    it('createSession 并发同父节点不会丢失子引用（写锁串行化 RMW）', async () => {
+      const root = await tree.createSession();
+      const N = 8;
+      // 模拟一轮内多个 stello_create_session 并行执行
+      const labels = Array.from({ length: N }, (_, i) => `P${i}`);
+      const children = await Promise.all(
+        labels.map((label) => tree.createSession({ parentId: root.id, label })),
+      );
 
-    // 父节点的 children 列表完整记录所有子，未被 RMW 竞态丢失
-    const parentNode = await tree.getNode(root.id);
-    expect(parentNode?.children).toHaveLength(N);
-    for (const c of children) {
-      expect(parentNode?.children).toContain(c.id);
-    }
+      // 所有子 id 唯一
+      const ids = new Set(children.map((c) => c.id));
+      expect(ids.size).toBe(N);
 
-    // index 单调递增（串行写入）
-    const indices = children.map((c) => c.index).sort((a, b) => a - b);
-    expect(indices).toEqual(Array.from({ length: N }, (_, i) => i));
+      // 父节点的 children 列表完整记录所有子，未被 RMW 竞态丢失
+      const parentNode = await tree.getNode(root.id);
+      expect(parentNode?.children).toHaveLength(N);
+      for (const c of children) {
+        expect(parentNode?.children).toContain(c.id);
+      }
+
+      // index 单调递增（串行写入）
+      const indices = children.map((c) => c.index).sort((a, b) => a - b);
+      expect(indices).toEqual(Array.from({ length: N }, (_, i) => i));
+    });
+
+    it('createSession 持久化 sourceSessionId 字段（子节点）', async () => {
+      const root = await tree.createSession();
+      const a = await tree.createSession({ parentId: root.id, label: 'A' });
+      const b = await tree.createSession({
+        parentId: root.id,
+        label: 'B',
+        sourceSessionId: a.id,
+      });
+
+      // createSession 返回值直接带 sourceSessionId
+      expect(b.sourceSessionId).toBe(a.id);
+
+      // 持久化后 getNode 仍能读到
+      const node = await tree.getNode(b.id);
+      expect(node?.sourceSessionId).toBe(a.id);
+    });
+
+    it('createSession 未传 sourceSessionId 时拓扑节点该字段为 undefined', async () => {
+      const root = await tree.createSession();
+      const child = await tree.createSession({ parentId: root.id, label: 'C' });
+      expect(child.sourceSessionId).toBeUndefined();
+      const node = await tree.getNode(child.id);
+      expect(node?.sourceSessionId).toBeUndefined();
+    });
   });
 
   // ─── get（返回 SessionMeta，不含拓扑字段） ───
 
   it('get 返回 SessionMeta 或 null', async () => {
-    const root = await tree.createRoot('测试');
+    const root = await tree.createSession({ label: '测试' });
     const found = await tree.get(root.id);
     expect(found).not.toBeNull();
     expect(found?.id).toBe(root.id);
@@ -143,24 +184,12 @@ describe('SessionTreeImpl', () => {
     expect(notFound).toBeNull();
   });
 
-  // ─── getRoot（返回 SessionMeta） ───
-
-  it('getRoot 返回根节点的 SessionMeta', async () => {
-    const root = await tree.createRoot('根');
-    await tree.createChild({ parentId: root.id, label: 'A' });
-    const foundRoot = await tree.getRoot();
-    expect(foundRoot.id).toBe(root.id);
-    expect(foundRoot.label).toBe('根');
-    // SessionMeta 不含 parentId
-    expect(foundRoot).not.toHaveProperty('parentId');
-  });
-
   // ─── listAll（返回 SessionMeta[]） ───
 
   it('listAll 列出所有 Session 的 SessionMeta', async () => {
-    const root = await tree.createRoot();
-    await tree.createChild({ parentId: root.id, label: 'A' });
-    await tree.createChild({ parentId: root.id, label: 'B' });
+    const root = await tree.createSession();
+    await tree.createSession({ parentId: root.id, label: 'A' });
+    await tree.createSession({ parentId: root.id, label: 'B' });
     const all = await tree.listAll();
     expect(all).toHaveLength(3);
     // 每个元素都是 SessionMeta，不含拓扑字段
@@ -174,8 +203,8 @@ describe('SessionTreeImpl', () => {
   // ─── getNode ───
 
   it('getNode 返回 TopologyNode 或 null', async () => {
-    const root = await tree.createRoot('根');
-    const child = await tree.createChild({ parentId: root.id, label: '子' });
+    const root = await tree.createSession({ label: '根' });
+    const child = await tree.createSession({ parentId: root.id, label: '子' });
 
     const rootNode = await tree.getNode(root.id);
     expect(rootNode).not.toBeNull();
@@ -196,32 +225,7 @@ describe('SessionTreeImpl', () => {
     expect(notFound).toBeNull();
   });
 
-  // ─── getNode.sourceSessionId（一等字段） ───
-
-  it('createChild 写入 sourceSessionId 后 getNode 暴露该字段', async () => {
-    const root = await tree.createRoot();
-    const a = await tree.createChild({ parentId: root.id, label: 'A' });
-    const b = await tree.createChild({
-      parentId: root.id,
-      label: 'B',
-      sourceSessionId: a.id,
-    });
-
-    // createChild 返回值直接带 sourceSessionId
-    expect(b.sourceSessionId).toBe(a.id);
-
-    // 持久化后 getNode 仍能读到
-    const node = await tree.getNode(b.id);
-    expect(node?.sourceSessionId).toBe(a.id);
-  });
-
-  it('createChild 未传 sourceSessionId 时拓扑节点该字段为 undefined', async () => {
-    const root = await tree.createRoot();
-    const child = await tree.createChild({ parentId: root.id, label: 'C' });
-    expect(child.sourceSessionId).toBeUndefined();
-    const node = await tree.getNode(child.id);
-    expect(node?.sourceSessionId).toBeUndefined();
-  });
+  // ─── getNode.sourceSessionId（legacy 回填） ───
 
   it('回填读取：顶层 sourceSessionId 缺失时从 legacy metadata.sourceSessionId 取', async () => {
     // 直接写一份 legacy 格式的 meta.json（仅含 metadata.sourceSessionId）
@@ -267,44 +271,56 @@ describe('SessionTreeImpl', () => {
     expect(forest[0]?.children[0]?.sourceSessionId).toBe(rootId);
   });
 
-  // ─── getTree ───
+  // ─── getTree（森林） ───
 
-  it('getTree 返回递归树结构', async () => {
-    const root = await tree.createRoot('根');
-    const a = await tree.createChild({ parentId: root.id, label: 'A' });
-    const b = await tree.createChild({ parentId: root.id, label: 'B' });
-    await tree.createChild({ parentId: a.id, label: 'A1', sourceSessionId: a.id });
+  describe('getTree (forest)', () => {
+    it('getTree 返回递归树结构', async () => {
+      const root = await tree.createSession({ label: '根' });
+      const a = await tree.createSession({ parentId: root.id, label: 'A' });
+      const b = await tree.createSession({ parentId: root.id, label: 'B' });
+      await tree.createSession({ parentId: a.id, label: 'A1', sourceSessionId: a.id });
 
-    const forest = await tree.getTree();
-    expect(forest).toHaveLength(1);
-    const treeData = forest[0]!;
-    expect(treeData.id).toBe(root.id);
-    expect(treeData.label).toBe('根');
-    expect(treeData.status).toBe('active');
-    expect(treeData.children).toHaveLength(2);
+      const forest = await tree.getTree();
+      expect(forest).toHaveLength(1);
+      const treeData = forest[0]!;
+      expect(treeData.id).toBe(root.id);
+      expect(treeData.label).toBe('根');
+      expect(treeData.status).toBe('active');
+      expect(treeData.children).toHaveLength(2);
 
-    const childA = treeData.children.find((c) => c.id === a.id);
-    expect(childA?.label).toBe('A');
-    expect(childA?.children).toHaveLength(1);
-    expect(childA?.children[0]?.label).toBe('A1');
-    expect(childA?.children[0]?.sourceSessionId).toBe(a.id);
+      const childA = treeData.children.find((c) => c.id === a.id);
+      expect(childA?.label).toBe('A');
+      expect(childA?.children).toHaveLength(1);
+      expect(childA?.children[0]?.label).toBe('A1');
+      expect(childA?.children[0]?.sourceSessionId).toBe(a.id);
 
-    const childB = treeData.children.find((c) => c.id === b.id);
-    expect(childB?.label).toBe('B');
-    expect(childB?.children).toHaveLength(0);
-  });
+      const childB = treeData.children.find((c) => c.id === b.id);
+      expect(childB?.label).toBe('B');
+      expect(childB?.children).toHaveLength(0);
+    });
 
-  it('getTree 在没有 root 时返回空数组', async () => {
-    const forest = await tree.getTree();
-    expect(forest).toEqual([]);
+    it('getTree 返回多 root 的森林', async () => {
+      const r1 = await tree.createSession({ label: 'R1' });
+      const r2 = await tree.createSession({ label: 'R2' });
+      await tree.createSession({ parentId: r1.id, label: 'C1' });
+      const forest = await tree.getTree();
+      expect(forest).toHaveLength(2);
+      expect(forest.find((n) => n.id === r1.id)?.children).toHaveLength(1);
+      expect(forest.find((n) => n.id === r2.id)?.children).toHaveLength(0);
+    });
+
+    it('getTree 在没有 root 时返回空数组', async () => {
+      const forest = await tree.getTree();
+      expect(forest).toEqual([]);
+    });
   });
 
   // ─── getAncestors（返回 TopologyNode[]） ───
 
   it('getAncestors 返回祖先拓扑节点链', async () => {
-    const root = await tree.createRoot('根');
-    const child = await tree.createChild({ parentId: root.id, label: '子' });
-    const grandchild = await tree.createChild({ parentId: child.id, label: '孙' });
+    const root = await tree.createSession({ label: '根' });
+    const child = await tree.createSession({ parentId: root.id, label: '子' });
+    const grandchild = await tree.createSession({ parentId: child.id, label: '孙' });
     const ancestors = await tree.getAncestors(grandchild.id);
     expect(ancestors).toHaveLength(2);
     expect(ancestors[0]?.id).toBe(child.id);
@@ -317,7 +333,7 @@ describe('SessionTreeImpl', () => {
   });
 
   it('getAncestors 根节点无祖先', async () => {
-    const root = await tree.createRoot();
+    const root = await tree.createSession();
     const ancestors = await tree.getAncestors(root.id);
     expect(ancestors).toHaveLength(0);
   });
@@ -325,10 +341,10 @@ describe('SessionTreeImpl', () => {
   // ─── getSiblings（返回 TopologyNode[]） ───
 
   it('getSiblings 返回兄弟拓扑节点', async () => {
-    const root = await tree.createRoot();
-    const a = await tree.createChild({ parentId: root.id, label: 'A' });
-    const b = await tree.createChild({ parentId: root.id, label: 'B' });
-    const c = await tree.createChild({ parentId: root.id, label: 'C' });
+    const root = await tree.createSession();
+    const a = await tree.createSession({ parentId: root.id, label: 'A' });
+    const b = await tree.createSession({ parentId: root.id, label: 'B' });
+    const c = await tree.createSession({ parentId: root.id, label: 'C' });
     const siblings = await tree.getSiblings(b.id);
     const siblingIds = siblings.map((s) => s.id).sort();
     expect(siblingIds).toEqual([a.id, c.id].sort());
@@ -342,7 +358,7 @@ describe('SessionTreeImpl', () => {
   });
 
   it('getSiblings 根节点无兄弟', async () => {
-    const root = await tree.createRoot();
+    const root = await tree.createSession();
     const siblings = await tree.getSiblings(root.id);
     expect(siblings).toHaveLength(0);
   });
@@ -350,8 +366,8 @@ describe('SessionTreeImpl', () => {
   // ─── archive ───
 
   it('archive 归档不连带子节点', async () => {
-    const root = await tree.createRoot();
-    const child = await tree.createChild({ parentId: root.id, label: '子' });
+    const root = await tree.createSession();
+    const child = await tree.createSession({ parentId: root.id, label: '子' });
     await tree.archive(root.id);
     const archivedRoot = await tree.get(root.id);
     expect(archivedRoot?.status).toBe('archived');
@@ -362,9 +378,9 @@ describe('SessionTreeImpl', () => {
   // ─── addRef ───
 
   it('addRef 正常创建引用', async () => {
-    const root = await tree.createRoot();
-    const a = await tree.createChild({ parentId: root.id, label: 'A' });
-    const b = await tree.createChild({ parentId: root.id, label: 'B' });
+    const root = await tree.createSession();
+    const a = await tree.createSession({ parentId: root.id, label: 'A' });
+    const b = await tree.createSession({ parentId: root.id, label: 'B' });
     await tree.addRef(a.id, b.id);
     // 通过 getNode 验证 refs（TopologyNode 包含 refs）
     const node = await tree.getNode(a.id);
@@ -372,26 +388,26 @@ describe('SessionTreeImpl', () => {
   });
 
   it('addRef 不能引用自己', async () => {
-    const root = await tree.createRoot();
+    const root = await tree.createSession();
     await expect(tree.addRef(root.id, root.id)).rejects.toThrow('不能引用自己');
   });
 
   it('addRef 不能引用直系祖先', async () => {
-    const root = await tree.createRoot();
-    const child = await tree.createChild({ parentId: root.id, label: '子' });
+    const root = await tree.createSession();
+    const child = await tree.createSession({ parentId: root.id, label: '子' });
     await expect(tree.addRef(child.id, root.id)).rejects.toThrow('不能引用直系祖先');
   });
 
   it('addRef 不能引用直系后代', async () => {
-    const root = await tree.createRoot();
-    const child = await tree.createChild({ parentId: root.id, label: '子' });
+    const root = await tree.createSession();
+    const child = await tree.createSession({ parentId: root.id, label: '子' });
     await expect(tree.addRef(root.id, child.id)).rejects.toThrow('不能引用直系后代');
   });
 
   it('addRef 重复引用幂等', async () => {
-    const root = await tree.createRoot();
-    const a = await tree.createChild({ parentId: root.id, label: 'A' });
-    const b = await tree.createChild({ parentId: root.id, label: 'B' });
+    const root = await tree.createSession();
+    const a = await tree.createSession({ parentId: root.id, label: 'A' });
+    const b = await tree.createSession({ parentId: root.id, label: 'B' });
     await tree.addRef(a.id, b.id);
     await tree.addRef(a.id, b.id);
     const node = await tree.getNode(a.id);
@@ -401,7 +417,7 @@ describe('SessionTreeImpl', () => {
   // ─── updateMeta（返回 SessionMeta） ───
 
   it('updateMeta 更新 label/turnCount 并返回 SessionMeta', async () => {
-    const root = await tree.createRoot();
+    const root = await tree.createSession();
     const updated = await tree.updateMeta(root.id, {
       label: '新名称',
       turnCount: 3,
@@ -424,7 +440,7 @@ describe('SessionTreeImpl', () => {
   // ─── getConfig / putConfig（固化 SessionConfig 可序列化子集） ───
 
   it('putConfig → getConfig 往返读取相同内容', async () => {
-    const root = await tree.createRoot();
+    const root = await tree.createSession();
     const config = { systemPrompt: '你是一个助手', skills: ['math', 'code'] };
     await tree.putConfig(root.id, config);
     const read = await tree.getConfig(root.id);
@@ -432,13 +448,13 @@ describe('SessionTreeImpl', () => {
   });
 
   it('getConfig 在未写入配置时返回 null', async () => {
-    const root = await tree.createRoot();
+    const root = await tree.createSession();
     const read = await tree.getConfig(root.id);
     expect(read).toBeNull();
   });
 
   it('putConfig 覆盖已有配置', async () => {
-    const root = await tree.createRoot();
+    const root = await tree.createSession();
     await tree.putConfig(root.id, { systemPrompt: 'A', skills: ['a'] });
     await tree.putConfig(root.id, { systemPrompt: 'B', skills: ['b', 'c'] });
     const read = await tree.getConfig(root.id);
@@ -446,7 +462,7 @@ describe('SessionTreeImpl', () => {
   });
 
   it('putConfig 仅含 systemPrompt 的部分配置', async () => {
-    const root = await tree.createRoot();
+    const root = await tree.createSession();
     await tree.putConfig(root.id, { systemPrompt: '只有 prompt' });
     const read = await tree.getConfig(root.id);
     expect(read).toEqual({ systemPrompt: '只有 prompt' });
@@ -454,7 +470,7 @@ describe('SessionTreeImpl', () => {
   });
 
   it('putConfig 仅含 skills 的部分配置', async () => {
-    const root = await tree.createRoot();
+    const root = await tree.createSession();
     await tree.putConfig(root.id, { skills: ['only-skills'] });
     const read = await tree.getConfig(root.id);
     expect(read).toEqual({ skills: ['only-skills'] });
@@ -462,14 +478,14 @@ describe('SessionTreeImpl', () => {
   });
 
   it('putConfig 空对象也能存读', async () => {
-    const root = await tree.createRoot();
+    const root = await tree.createSession();
     await tree.putConfig(root.id, {});
     const read = await tree.getConfig(root.id);
     expect(read).toEqual({});
   });
 
   it('putConfig 与 updateMeta 互不干扰', async () => {
-    const root = await tree.createRoot('初始');
+    const root = await tree.createSession({ label: '初始' });
     await tree.putConfig(root.id, { systemPrompt: '固化 prompt', skills: ['s'] });
     // 更新 meta 不应影响 config
     await tree.updateMeta(root.id, { label: '新名称', turnCount: 5 });
