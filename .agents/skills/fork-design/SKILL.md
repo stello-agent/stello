@@ -145,8 +145,8 @@ sessionDefaults → parent（固化 config） → profile → forkOptions
 
 | 场景 | 合成链贡献 |
 |------|----------|
-| 从 main session fork | parent 层 = undefined（main 不参与合成链） |
-| 从 regular session fork | parent 层 = 该 session 的 `SerializableSessionConfig`（只有 systemPrompt/skills） |
+| 从 root session fork | parent 层 = root 的 `SerializableSessionConfig`（root 是普通 session，正常参与合成链） |
+| 从非 root session fork | parent 层 = 该 session 的 `SerializableSessionConfig`（只有 systemPrompt/skills） |
 | 无 profile 的普通 fork | profile 层 = undefined |
 | Profile + options 都提供 llm | 结果取 options 的 llm |
 | Profile 提供 llm，options 不提供 | 结果取 profile 的 llm |
@@ -267,5 +267,5 @@ LLM 在 prepend 模式下可通过 `systemPrompt` 参数补充具体任务约束
 3. **undefined 不覆盖** — 保证"某层不传"等价于"使用下层值"的直觉
 4. **skills 显式 `[]` 能生效** — 与 undefined 区分，让"禁用"成为可表达的意图
 5. **只固化 systemPrompt + skills** — 可序列化字段有限，其余字段每次 fork 现场合成
-6. **从 main session fork 不继承 main 的配置** — main 不参与 regular session 的合成链
+6. **root 是普通 session** — root 的固化 systemPrompt/skills 通过 parent 层正常进入子 session 的合成链，没有任何特殊豁免
 7. **topologyParentId 与 sourceSessionId 分离** — 编排层的拓扑策略和上下文继承是两个独立维度

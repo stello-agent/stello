@@ -34,11 +34,9 @@ Ever feel your AI conversations trapped in a single thread? Your thinking diverg
 
 ## 🌟 What is Stello?
 
-**The first Agent Cognitive Topology Engine.**
+**An Agent Cognitive Topology Engine.**
 
-Stello is an open-source cognitive topology engine for AI Agent and AI application developers. It provides four core capabilities: auto-splitting conversations, three-layer hierarchical memory, global consciousness integration, and topology visualization.
-
-Conversations auto-split into independent Sessions by semantics, forming tree-structured topologies. The three-layer memory system inherits hierarchically across Sessions. The global consciousness layer (Main Session) perceives conflicts and dependencies across all branches, pushing targeted insights. The entire cognitive topology renders as a growable, conversable star-node graph.
+Stello is an open-source conversation topology engine for AI Agent and AI application developers. It splits conversations into a forest of branchable Sessions—each Session has its own L3 history and also exposes an external description (`memory`) for reflection; cross-branch synthesis runs in *your* application layer with any LLM you choose, then writes targeted `insight` back to specific Sessions through the SDK. The whole topology renders as a growable, conversable star-node graph.
 
 Linear chat doesn't fit workflows that branch, recurse, or need context isolation. Common problems include:
 
@@ -49,53 +47,56 @@ Linear chat doesn't fit workflows that branch, recurse, or need context isolatio
 
 Stello's approach explicitly separates three things:
 
-- **Branch Execution:** Child Sessions hold their own L3 history
-- **External Description:** Child Sessions distill L3 into L2 for external consumption
-- **Global Integration:** Main Session reads all L2s, producing synthesis and insights
+- **Branch Execution:** Each Session holds its own L3 history
+- **External Description:** Each Session distills its conversation into `memory` for external consumption
+- **Global Synthesis:** An orchestrator-facing data SDK lets your app batch-collect every Session's memory, run any reflection logic, and write targeted `insight` back
 
 ---
 
 ## Core Capabilities
 
 - **Auto-splitting Conversations** — AI detects topic branches and creates child Sessions via tool calling, each with clear scope
-- **Three-layer Memory** — L3 raw records / L2 skill descriptions / L1 global cognition, memory flows between layers
-- **Global Synthesis** — Main Session collects all child Session L2s, generates synthesis and pushes insights
+- **Single Session Model** — root and child are runtime-isomorphic; the only difference is topology position. Multi-root (forest) is a first-class case
+- **Three content slots** — `systemPrompt` (persistent), `insight` (one-shot inbox), `memory` (external description; never injected into Session's own context)
+- **Orchestrator-facing Data SDK** — `listSessionDigests` / `putInsight` etc. exposed to external reflection layers (your app / Claude Code / Codex / ...). Cross-branch synthesis is your application's choice of LLM and prompt
 - **Zero Overhead in Dialogue** — All memory consolidation executes async (fire-and-forget), never blocks conversation flow
 - **Star Map Visualization** — Each star is a thought direction, connections show relationships, size maps depth, brightness maps activity
-- **Fully Decoupled Architecture** — No LLM / storage / UI lock-in, Session and Topology are separate
+- **Fully Decoupled Architecture** — No LLM / storage / UI lock-in; Session content and Topology structure are injected independently
 
 ---
 
 ## Core Concepts
 
-### The Skill Metaphor
+### Single Session + Application-Level Orchestrator
 
-Each child Session can be seen as a skill with a private implementation and a public description.
+Every Session is a conversation unit with a private implementation and a public description.
 
 ```text
-Child Session
-  L3 = The session's raw conversation history
-  L2 = External summary consumed by Main Session
+Session (root or child — runtime-isomorphic)
+  L3      = raw conversation history (consumed by itself)
+  memory  = external description (consumed by your app / orchestrator)
+  insight = one-shot inbox (injected then cleared at next send)
 
-Main Session
-  synthesis = Integrated view of all child Session L2s
-  insights = Targeted suggestions pushed to specific child Sessions
+Application-Level Orchestrator (lives outside the framework)
+  batch read    = listSessionDigests({ status: 'active' })
+  reflection    = any LLM synthesizes all Sessions' memory
+  targeted push = putInsight(targetSessionId, content)
 ```
 
-### Three-layer Memory
+### Three content slots
 
-| Layer | Meaning | Consumer |
-| --- | --- | --- |
-| L3 | Raw conversation history | The session's own LLM |
-| L2 | Session's external summary | Main Session |
-| L1 | Global structured state and synthesis | Application layer / Main Session |
+| Slot | Writer | Reader | Lifecycle |
+|------|--------|--------|-----------|
+| `systemPrompt` | fork chain / app | injected into every Session.send() | persistent |
+| `insight` | app (`putInsight`) | consumed once, then `clearInsight` | one-shot inbox |
+| `memory` | app / `consolidateFn` output | external reflection layer (`listSessionDigests`) | persistent (NOT injected into send) |
 
 ### Architectural Constraints
 
-- Child Sessions do not read their own L2.
-- Main Session reads L2, not child Sessions' L3.
-- Child Sessions do not communicate directly.
-- Cross-Session information propagates through Main Session insights.
+- A Session never reads its own `memory` (memory is the *external* view).
+- Sessions don't see each other.
+- Cross-Session signal travels through the `insight` one-shot inbox.
+- Global reflection is implemented by the application on top of the SDK — the framework holds no cross-Session state.
 
 ## Packages
 
@@ -109,8 +110,8 @@ Handles Session-level capabilities:
 
 - Assemble prompt context
 - Store and replay L3 records
-- Consolidate L3 into L2
-- Handle LLM adapters with streaming and tool call support
+- Consolidate the conversation into `memory`
+- LLM adapters with streaming and tool call support
 
 If you only need a single Session abstraction with memory, start here.
 
@@ -119,14 +120,15 @@ If you only need a single Session abstraction with memory, start here.
 
 ### `@stello-ai/core`
 
-Handles core orchestration:
+Handles core orchestration and the orchestrator-facing data SDK:
 
+- StelloAgent top-level entry (create / enter / turn / stream / fork / data SDK)
 - Turn execution with tool-call loops
-- Fork orchestration
-- Consolidation / integration scheduling
-- Runtime management and lifecycle
+- Fork orchestration (topology + Session, two-step)
+- Consolidation scheduling
+- Runtime ref-counting and lifecycle
 
-If you need a Session topology with Main Session coordinating everything, start here.
+If you need a Session topology plus an orchestrator-facing data SDK, start here.
 
 </td>
 </tr>
@@ -181,15 +183,23 @@ import { createStelloAgent } from '@stello-ai/core'
 
 const agent = createStelloAgent({
   sessions: /* SessionTree implementation */,
+  storage:  /* SessionStorage implementation (enables orchestrator-facing data SDK) */,
+  memory:   /* MemoryEngine implementation */,
+  capabilities: {
+    lifecycle, tools, skills, confirm,
+  },
   session: {
-    llm: /* LLM adapter */,
-    sessionResolver: async (id) => {
-      /* return session-compatible runtime */
+    sessionLoader: async (id) => {
+      /* return a Session instance and its serializable config for the given id */
     },
   },
 })
 
-const result = await agent.turn('main-session-id', 'Help me plan a product strategy')
+// Create the conversation entry point (no parentId == new root)
+const root = await agent.createSession({ label: 'Main' })
+
+await agent.enterSession(root.id)
+const result = await agent.turn(root.id, 'Help me plan a product strategy')
 ```
 
 ### Launch Devtools

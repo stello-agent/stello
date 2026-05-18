@@ -51,12 +51,14 @@ connectionId → { userId, spaceId, sessionId | null }
 
 ## AgentPool 默认 fn 注入
 
-AgentPool 支持内置默认 consolidateFn / integrateFn：
+AgentPool 支持内置默认 consolidateFn：
 
 - `AgentPoolOptions.llm` 提供最小 LLM 调用接口
-- Space 表存 `consolidatePrompt` / `integratePrompt`
+- Space 表存 `consolidatePrompt`
 - 如果 buildConfig 未提供显式 fn，且 Space 有 prompt 且 llm 可用 → 自动注入默认实现
 - buildConfig 提供的显式 fn 始终优先
+
+跨 Session 的 reflection / 全局综合不由 Server 框架承担——服务端只暴露 `StelloAgent` 的 orchestrator-facing 数据 SDK（`listSessionDigests` / `putInsight` 等），应用层基于这些原语自行实现。
 
 ---
 
