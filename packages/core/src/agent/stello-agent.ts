@@ -34,6 +34,7 @@ import type {
 import type {
   SessionStorage, ListRecordsOptions, Message,
 } from '@stello-ai/session';
+import type { SharedMemoryEntry, SharedMemoryStore } from '../shared-memory/types';
 
 /** Session 能力相关配置 */
 export interface StelloAgentCapabilitiesConfig {
@@ -99,6 +100,13 @@ export interface StelloAgentConfig {
    * 应用层应保证 sessions（拓扑）与 storage（内容）指向同一份持久化后端。
    */
   storage?: SessionStorage;
+  /**
+   * Agent 级共享 memory 存储。
+   *
+   * 注入后：四个 SDK 方法可用，索引段每次 send 前由 adapter 自动渲染并注入。
+   * 未注入：四个 SDK 方法和三个内置 tool 抛 "sharedMemory not configured"，索引段不进入上下文。
+   */
+  sharedMemory?: SharedMemoryStore;
   /** Regular session 的 agent 级默认配置，fork 合成链的最低优先级 */
   sessionDefaults?: SessionConfig;
   session?: StelloAgentSessionConfig;
@@ -183,6 +191,9 @@ export class StelloAgent {
   /** 注入的数据存储；data-IO SDK 方法依赖该字段 */
   readonly storage?: SessionStorage;
 
+  /** 暴露 SharedMemoryStore，供 builtin tool / adapter / SDK 使用 */
+  readonly sharedMemory?: SharedMemoryStore;
+
   /** 暴露 ForkProfileRegistry，供 tool 在运行时校验 profile 名称 */
   get profiles(): ForkProfileRegistry | undefined {
     return this.config.capabilities.profiles;
@@ -196,6 +207,7 @@ export class StelloAgent {
     this.sessions = config.sessions;
     this.memory = config.memory;
     this.storage = config.storage;
+    this.sharedMemory = config.sharedMemory;
     const engineFactory = new DefaultEngineFactory({
       sessions: config.sessions,
       memory: config.memory,
@@ -341,6 +353,36 @@ export class StelloAgent {
       );
     }
     return this.storage;
+  }
+
+  // 校验 sharedMemory 已注入，否则抛出 "sharedMemory not configured" 错误
+  private requireSharedMemory(method: string): SharedMemoryStore {
+    if (!this.sharedMemory) {
+      throw new Error(
+        `StelloAgent.${method}: sharedMemory not configured; inject SharedMemoryStore in StelloAgentConfig`,
+      );
+    }
+    return this.sharedMemory;
+  }
+
+  /** 列举全部共享 memory entries（按插入顺序） */
+  async listSharedMemory(): Promise<SharedMemoryEntry[]> {
+    return this.requireSharedMemory('listSharedMemory').list()
+  }
+
+  /** 读取一条共享 memory entry；不存在返回 null */
+  async getSharedMemoryEntry(slug: string): Promise<SharedMemoryEntry | null> {
+    return this.requireSharedMemory('getSharedMemoryEntry').get(slug)
+  }
+
+  /** 写入或覆盖一条共享 memory entry */
+  async upsertSharedMemoryEntry(slug: string, summary: string, body: string): Promise<void> {
+    return this.requireSharedMemory('upsertSharedMemoryEntry').upsert(slug, summary, body)
+  }
+
+  /** 删除一条共享 memory entry；slug 不存在为 no-op */
+  async removeSharedMemoryEntry(slug: string): Promise<void> {
+    return this.requireSharedMemory('removeSharedMemoryEntry').remove(slug)
   }
 
   /** 进入指定 session 的整轮对话 */
