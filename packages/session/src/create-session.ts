@@ -52,6 +52,7 @@ async function assembleSessionReplayContext(
   sessionId: string,
   storage: CreateSessionOptions['storage'] | LoadSessionOptions['storage'],
   label?: string,
+  sharedMemoryIndex?: string,
 ): Promise<{ messages: Message[]; insightConsumed: boolean }> {
   const messages: Message[] = []
   let insightConsumed = false
@@ -59,6 +60,10 @@ async function assembleSessionReplayContext(
   const sysPrompt = await storage.getSystemPrompt(sessionId)
   if (sysPrompt) {
     messages.push({ role: 'system', content: sysPrompt })
+  }
+
+  if (sharedMemoryIndex) {
+    messages.push({ role: 'system', content: sharedMemoryIndex })
   }
 
   messages.push(...buildSessionIdentityMessages(label))
@@ -162,6 +167,7 @@ function buildSession(
         currentMeta.id, storage, content,
         { maxContextTokens: options.llm.maxContextTokens, lastPromptTokens, compressFn: resolveCompressFn(), compressionCache },
         currentMeta.label,
+        sendOptions?.sharedMemoryIndex,
       )
       if (assembled.compressionCache !== undefined) {
         compressionCache = assembled.compressionCache
@@ -176,7 +182,7 @@ function buildSession(
       let recordsToPersist: Message[] = [{ role: 'user', content, timestamp: assembled.userTimestamp }]
       const toolEnvelope = parseToolResultEnvelope(content)
       if (toolEnvelope) {
-        const replayContext = await assembleSessionReplayContext(currentMeta.id, storage, currentMeta.label)
+        const replayContext = await assembleSessionReplayContext(currentMeta.id, storage, currentMeta.label, sendOptions?.sharedMemoryIndex)
         promptMessages = [
           ...replayContext.messages,
           ...toolEnvelope.toolResults.map((result) => ({
@@ -237,6 +243,7 @@ function buildSession(
           currentMeta.id, storage, content,
           { maxContextTokens: options.llm!.maxContextTokens, lastPromptTokens, compressFn: resolveCompressFn(), compressionCache },
           currentMeta.label,
+          sendOptions?.sharedMemoryIndex,
         )
         if (assembled.compressionCache !== undefined) {
           compressionCache = assembled.compressionCache
@@ -251,7 +258,7 @@ function buildSession(
         let recordsToPersist: Message[] = [{ role: 'user', content, timestamp: assembled.userTimestamp }]
         const toolEnvelope = parseToolResultEnvelope(content)
         if (toolEnvelope) {
-          const replayContext = await assembleSessionReplayContext(currentMeta.id, storage, currentMeta.label)
+          const replayContext = await assembleSessionReplayContext(currentMeta.id, storage, currentMeta.label, sendOptions?.sharedMemoryIndex)
           promptMessages = [
             ...replayContext.messages,
             ...toolEnvelope.toolResults.map((result) => ({

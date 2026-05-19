@@ -175,6 +175,7 @@ export async function assembleSessionContext(
   userContent: string,
   compress: CompressContext,
   label?: string,
+  sharedMemoryIndex?: string,
 ): Promise<AssembleResult> {
   const prefixMessages: Message[] = []
   let insightConsumed = false
@@ -185,10 +186,15 @@ export async function assembleSessionContext(
     prefixMessages.push({ role: 'system', content: sysPrompt })
   }
 
-  // 2. session identity (label)
+  // 2. shared memory index (agent-level)
+  if (sharedMemoryIndex) {
+    prefixMessages.push({ role: 'system', content: sharedMemoryIndex })
+  }
+
+  // 3. session identity (label)
   prefixMessages.push(...buildSessionIdentityMessages(label))
 
-  // 3. insight
+  // 4. insight
   const insightContent = await storage.getInsight(sessionId)
   if (insightContent) {
     prefixMessages.push({ role: 'system', content: insightContent })

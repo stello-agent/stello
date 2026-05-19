@@ -19,6 +19,11 @@ export interface MessageQueryOptions {
 export interface SessionSendOptions {
   /** AbortSignal — abort 后中断 LLM 调用并 reject 为 AbortError */
   signal?: AbortSignal
+  /**
+   * Agent 级共享 memory 索引段（已由编排层渲染好）。
+   * 非空时插入到 systemPrompt 之后、session_identity 之前；为空 / undefined 时不注入。
+   */
+  sharedMemoryIndex?: string
 }
 
 /** Session 错误：操作归档中的 Session */
