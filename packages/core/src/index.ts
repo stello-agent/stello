@@ -117,8 +117,19 @@ export type {
   SessionDigest,
 } from './agent/stello-agent';
 
+// 共享 memory
+export { InMemorySharedMemoryStore } from './shared-memory/in-memory-shared-memory-store';
+export { renderSharedMemoryIndex } from './shared-memory/render-index';
+export type { SharedMemoryEntry, SharedMemoryStore } from './shared-memory/types';
+
 // 内置 tool 工厂（builtin-tools redesign）
-export { createSessionTool, activateSkillTool } from './builtin-tools';
+export {
+  createSessionTool,
+  activateSkillTool,
+  memoryRecallTool,
+  memoryRememberTool,
+  memoryForgetTool,
+} from './builtin-tools';
 
 // 导出 LLM 默认实现
 export {
