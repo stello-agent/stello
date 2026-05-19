@@ -39,6 +39,9 @@ export type {
 } from './types';
 
 export type { ToolExecutionContext } from './types/tool';
+// Re-export internal types that appear in public interfaces (BootstrapResult,
+// StelloEngine) so consumers can type their lifecycle implementations.
+export type { TurnRecord, AssembledContext } from './types/memory';
 
 // 导出实现
 export { NodeFileSystemAdapter } from './fs';
