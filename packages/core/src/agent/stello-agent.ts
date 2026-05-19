@@ -359,7 +359,7 @@ export class StelloAgent {
   private requireSharedMemory(method: string): SharedMemoryStore {
     if (!this.sharedMemory) {
       throw new Error(
-        `StelloAgent.${method}: sharedMemory not configured; inject SharedMemoryStore in StelloAgentConfig`,
+        `StelloAgent.${method} 需要 StelloAgentConfig.sharedMemory；请在创建 agent 时注入 SharedMemoryStore (sharedMemory not configured)`,
       );
     }
     return this.sharedMemory;
@@ -367,22 +367,22 @@ export class StelloAgent {
 
   /** 列举全部共享 memory entries（按插入顺序） */
   async listSharedMemory(): Promise<SharedMemoryEntry[]> {
-    return this.requireSharedMemory('listSharedMemory').list()
+    return this.requireSharedMemory('listSharedMemory').list();
   }
 
   /** 读取一条共享 memory entry；不存在返回 null */
   async getSharedMemoryEntry(slug: string): Promise<SharedMemoryEntry | null> {
-    return this.requireSharedMemory('getSharedMemoryEntry').get(slug)
+    return this.requireSharedMemory('getSharedMemoryEntry').get(slug);
   }
 
   /** 写入或覆盖一条共享 memory entry */
   async upsertSharedMemoryEntry(slug: string, summary: string, body: string): Promise<void> {
-    return this.requireSharedMemory('upsertSharedMemoryEntry').upsert(slug, summary, body)
+    return this.requireSharedMemory('upsertSharedMemoryEntry').upsert(slug, summary, body);
   }
 
   /** 删除一条共享 memory entry；slug 不存在为 no-op */
   async removeSharedMemoryEntry(slug: string): Promise<void> {
-    return this.requireSharedMemory('removeSharedMemoryEntry').remove(slug)
+    return this.requireSharedMemory('removeSharedMemoryEntry').remove(slug);
   }
 
   /** 进入指定 session 的整轮对话 */
