@@ -332,9 +332,7 @@ CHANGELOG 列入 breaking。
 
 ### 11.4 版本与发布
 
-- 直接发 minor，不发 deprecated alias
-- `core` 单独发 minor（session 仅扩 context，可并发或独立发）
-- CHANGELOG 集中列：新增 SharedMemory 全套 + 删除 MemoryEngine 全套
+前一次 main-session decouple 的 release commit 尚未推到 npm，本次改动直接并入同一个未发布版本，无需考虑 deprecated alias / 跨版本兼容。CHANGELOG 在最终 npm 发布前一并整理。
 
 ### 11.5 已知未决问题（spec 不解决，备忘）
 
