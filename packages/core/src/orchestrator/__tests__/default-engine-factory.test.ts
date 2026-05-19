@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SessionTree } from '../../types/session';
-import type { MemoryEngine } from '../../types/memory';
 import type { ConfirmProtocol, SkillRouter } from '../../types/lifecycle';
 import { DefaultEngineFactory } from '../default-engine-factory';
 
@@ -12,7 +11,6 @@ describe('DefaultEngineFactory', () => {
       getTree: vi.fn(),
       updateMeta: vi.fn().mockResolvedValue(undefined),
     } as unknown as SessionTree,
-    memory: {} as MemoryEngine,
     skills: {
       get: vi.fn().mockReturnValue(undefined),
       register: vi.fn(),

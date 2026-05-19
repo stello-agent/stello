@@ -1,5 +1,5 @@
 import type { SessionTree } from '../types/session';
-import type { MemoryEngine, TurnRecord } from '../types/memory';
+import type { TurnRecord } from '../types/memory';
 import type { LLMCompleteOptions } from '@stello-ai/session';
 import type {
   BootstrapResult,
@@ -94,7 +94,6 @@ export interface EngineToolRuntime {
 export interface StelloEngineOptions {
   session: EngineRuntimeSession;
   sessions: SessionTree;
-  memory: MemoryEngine;
   skills: SkillRouter;
   confirm: ConfirmProtocol;
   lifecycle: EngineLifecycleAdapter;
@@ -162,7 +161,6 @@ export interface EngineHooks {
  */
 export class StelloEngineImpl implements StelloEngine {
   readonly sessions: SessionTree;
-  readonly memory: MemoryEngine;
   readonly skills: SkillRouter;
   readonly confirm: ConfirmProtocol;
 
@@ -180,7 +178,6 @@ export class StelloEngineImpl implements StelloEngine {
   constructor(options: StelloEngineOptions) {
     this.session = options.session;
     this.sessions = options.sessions;
-    this.memory = options.memory;
     this.skills = options.skills;
     this.confirm = options.confirm;
     this.lifecycle = options.lifecycle;

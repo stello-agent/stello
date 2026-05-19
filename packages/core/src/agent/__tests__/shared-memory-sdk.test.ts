@@ -7,7 +7,6 @@ import type { StelloAgentConfig } from '../stello-agent'
 import type { SessionTree } from '../../types/session'
 import type { EngineLifecycleAdapter } from '../../engine/stello-engine'
 import type { ConfirmProtocol } from '../../types/lifecycle'
-import type { MemoryEngine } from '../../types/memory'
 
 function makeAgent(sharedMemory?: InMemorySharedMemoryStore): StelloAgent {
   const config: StelloAgentConfig = {
@@ -26,7 +25,6 @@ function makeAgent(sharedMemory?: InMemorySharedMemoryStore): StelloAgent {
       getConfig:     async () => null,
       putConfig:     async () => undefined,
     } as unknown as SessionTree,
-    memory: {} as MemoryEngine,
     capabilities: {
       lifecycle: {} as EngineLifecycleAdapter,
       tools: new ToolRegistryImpl(),

@@ -1,10 +1,7 @@
 // ─── 引擎主接口 + 事件 + 策略类型定义 ───
 
 import type { SessionTree } from './session';
-import type {
-  TurnRecord,
-  MemoryEngine,
-} from './memory';
+import type { TurnRecord } from './memory';
 import type {
   BootstrapResult,
   AfterTurnResult,
@@ -76,8 +73,6 @@ export interface StelloEngine {
   readonly sessionId: string;
   /** Session 树操作 */
   readonly sessions: SessionTree;
-  /** 记忆系统 */
-  readonly memory: MemoryEngine;
   /** Skill 路由 */
   readonly skills: SkillRouter;
   /** 确认协议 */

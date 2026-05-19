@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { SessionTree } from '../types/session'
-import type { MemoryEngine } from '../types/memory'
 import type { ConfirmProtocol } from '../types/lifecycle'
 import type { StelloAgent } from '../agent/stello-agent'
 import type { LLMAdapter, LLMResult } from '@stello-ai/session'
@@ -77,7 +76,6 @@ describe('Built-in tool LLM exposure (bug regression)', () => {
         getConfig: vi.fn().mockResolvedValue(null),
         putConfig: vi.fn().mockResolvedValue(undefined),
       } as unknown as SessionTree,
-      memory: {} as MemoryEngine,
       skills,
       confirm: {} as ConfirmProtocol,
       agent: {} as StelloAgent,

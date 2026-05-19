@@ -4,7 +4,6 @@ import type { LLMCallFn } from '../../llm/defaults'
 import { StelloEngineImpl } from '../stello-engine'
 import { ForkProfileRegistryImpl, type ForkProfile } from '../fork-profile'
 import type { SessionTree } from '../../types/session'
-import type { MemoryEngine } from '../../types/memory'
 import type { ConfirmProtocol, SkillRouter } from '../../types/lifecycle'
 import type { SessionConfig } from '../../types/session-config'
 
@@ -152,7 +151,6 @@ describe('forkSession compress integration', () => {
         label: 'x',
       }),
     }
-    const memory = {} as MemoryEngine
     const skills = {
       get: vi.fn().mockReturnValue(undefined),
       register: vi.fn(),
@@ -171,7 +169,6 @@ describe('forkSession compress integration', () => {
     const engine = new StelloEngineImpl({
       session: fakeSession,
       sessions: fakeSessions as unknown as SessionTree,
-      memory,
       skills,
       confirm,
       agent: {} as never,

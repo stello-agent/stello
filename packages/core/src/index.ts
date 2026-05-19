@@ -10,13 +10,6 @@ export type {
   SessionTreeNode,
   CreateSessionOptions,
   SessionTree,
-  // 记忆系统
-  InheritancePolicy,
-  CoreSchemaField,
-  CoreSchema,
-  TurnRecord,
-  AssembledContext,
-  MemoryEngine,
   // 文件系统适配器
   FileSystemAdapter,
   // 生命周期钩子
@@ -50,7 +43,6 @@ export type { ToolExecutionContext } from './types/tool';
 // 导出实现
 export { NodeFileSystemAdapter } from './fs';
 export { SessionTreeImpl } from './session';
-export { FileSystemMemoryEngine } from './memory/file-system-memory-engine';
 export { SplitGuard } from './session/split-guard';
 export type { SplitCheckResult } from './session/split-guard';
 export { SkillRouterImpl } from './skill/skill-router';

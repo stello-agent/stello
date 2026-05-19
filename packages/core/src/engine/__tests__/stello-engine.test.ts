@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SessionTree } from '../../types/session';
-import type { MemoryEngine } from '../../types/memory';
 import type { ConfirmProtocol, SkillRouter } from '../../types/lifecycle';
 import { StelloEngineImpl } from '../stello-engine';
 import { TurnRunner, type ToolCallParser } from '../turn-runner';
@@ -24,7 +23,6 @@ describe('StelloEngineImpl', () => {
     putConfig: vi.fn().mockResolvedValue(undefined),
   } as unknown as SessionTree;
 
-  const memory = {} as MemoryEngine;
   const skills = {
     get: vi.fn().mockReturnValue(undefined),
     register: vi.fn(),
@@ -61,7 +59,6 @@ describe('StelloEngineImpl', () => {
     const engine = new StelloEngineImpl({
       session,
       sessions,
-      memory,
       skills,
       confirm,
       agent: {} as never,
@@ -130,7 +127,6 @@ describe('StelloEngineImpl', () => {
     const engine = new StelloEngineImpl({
       session,
       sessions,
-      memory,
       skills,
       confirm,
       agent: {} as never,
@@ -188,7 +184,6 @@ describe('StelloEngineImpl', () => {
         setTools: vi.fn(),
       },
       sessions,
-      memory,
       skills,
       confirm,
       agent: {} as never,
@@ -241,7 +236,6 @@ describe('StelloEngineImpl', () => {
         setTools: vi.fn(),
       },
       sessions,
-      memory,
       skills,
       confirm,
       agent: {} as never,
@@ -275,7 +269,6 @@ describe('StelloEngineImpl', () => {
     const engine = new StelloEngineImpl({
       session,
       sessions,
-      memory,
       skills,
       confirm,
       agent: {} as never,
@@ -313,7 +306,6 @@ describe('StelloEngineImpl', () => {
     const engine = new StelloEngineImpl({
       session,
       sessions: { archive, getNode: vi.fn(), getTree: vi.fn() } as unknown as SessionTree,
-      memory,
       skills,
       confirm,
       agent: {} as never,
@@ -362,7 +354,6 @@ describe('StelloEngineImpl', () => {
         fork: sessionFork,
       },
       sessions: { ...sessions, createSession } as unknown as SessionTree,
-      memory,
       skills,
       confirm,
       agent: {} as never,
@@ -411,7 +402,7 @@ describe('StelloEngineImpl', () => {
         fork: sessionFork,
       },
       sessions: { ...sessions, createSession } as unknown as SessionTree,
-      memory, skills, confirm, agent: {} as never,
+      skills, confirm, agent: {} as never,
       lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
       tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
       splitGuard: splitGuard as never,
@@ -441,7 +432,7 @@ describe('StelloEngineImpl', () => {
           fork: sessionFork,
         },
         sessions: { ...sessions, createSession } as unknown as SessionTree,
-        memory, skills, confirm, agent: {} as never,
+        skills, confirm, agent: {} as never,
         lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
         tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
       });
@@ -467,7 +458,7 @@ describe('StelloEngineImpl', () => {
           messages: vi.fn().mockResolvedValue([]),
           setTools: vi.fn(),
         },
-        sessions, memory, skills, confirm, agent: {} as never,
+        sessions, skills, confirm, agent: {} as never,
         lifecycle: { bootstrap: vi.fn(), afterTurn: vi.fn() },
         tools: { getToolDefinitions: vi.fn().mockReturnValue([]), executeTool: vi.fn() },
       });
@@ -510,7 +501,6 @@ describe('StelloEngineImpl', () => {
           fork: sessionFork,
         },
         sessions: { ...sessions, createSession: createSessionFn, getConfig, putConfig } as unknown as SessionTree,
-        memory,
         skills,
         confirm,
         agent: {} as never,
@@ -562,7 +552,6 @@ describe('StelloEngineImpl', () => {
       new StelloEngineImpl({
         session,
         sessions,
-        memory,
         skills,
         confirm,
         agent: {} as never,
@@ -615,7 +604,6 @@ describe('StelloEngineImpl', () => {
           fork: sessionFork,
         },
         sessions: { ...sessions, createSession } as unknown as SessionTree,
-        memory,
         skills,
         confirm,
         agent: {} as never,

@@ -1,5 +1,4 @@
 import type { SessionTree } from '../types/session';
-import type { MemoryEngine } from '../types/memory';
 import type { ConfirmProtocol, SkillRouter } from '../types/lifecycle';
 import { FilteredSkillRouter } from '../skill/filtered-skill-router';
 import {
@@ -25,7 +24,6 @@ export type EngineHookProvider =
 /** 默认 EngineFactory 的构造参数 */
 export interface DefaultEngineFactoryOptions {
   sessions: SessionTree;
-  memory: MemoryEngine;
   skills: SkillRouter;
   confirm: ConfirmProtocol;
   lifecycle: EngineLifecycleAdapter;
@@ -61,7 +59,6 @@ export class DefaultEngineFactory implements EngineFactory {
     return new StelloEngineImpl({
       session,
       sessions: this.options.sessions,
-      memory: this.options.memory,
       skills,
       confirm: this.options.confirm,
       lifecycle: this.options.lifecycle,

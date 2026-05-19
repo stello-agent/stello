@@ -3,16 +3,6 @@
 // Session 系统
 export type { SessionStatus, SessionMeta, TopologyNode, SessionTreeNode, CreateSessionOptions, SessionTree } from './types/session';
 
-// 记忆系统
-export type {
-  InheritancePolicy,
-  CoreSchemaField,
-  CoreSchema,
-  TurnRecord,
-  AssembledContext,
-  MemoryEngine,
-} from './types/memory';
-
 // 文件系统适配器
 export type { FileSystemAdapter } from './types/fs';
 

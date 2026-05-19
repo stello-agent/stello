@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SessionStorage } from '@stello-ai/session';
 import type { SessionTree } from '../../types/session';
-import type { MemoryEngine } from '../../types/memory';
 import type { ConfirmProtocol, SkillRouter } from '../../types/lifecycle';
 import { createStelloAgent, type StelloAgentConfig } from '../stello-agent';
 
@@ -40,7 +39,6 @@ describe('StelloAgent', () => {
         archive: vi.fn(),
         ...overrides?.sessions,
       } as unknown as SessionTree,
-      memory: {} as MemoryEngine,
       capabilities: {
         lifecycle: {
           bootstrap: vi.fn().mockResolvedValue({
@@ -214,7 +212,6 @@ describe('StelloAgent', () => {
         getConfig: vi.fn().mockResolvedValue(null),
         putConfig: vi.fn().mockResolvedValue(undefined),
       } as unknown as SessionTree,
-      memory: {} as MemoryEngine,
       capabilities: {
         lifecycle: {
           bootstrap: vi.fn(),
@@ -397,7 +394,6 @@ describe('StelloAgent', () => {
         get: vi.fn().mockResolvedValue(rootSession),
         archive: vi.fn(),
       } as unknown as SessionTree,
-      memory: {} as MemoryEngine,
       session: {
         sessionLoader: vi.fn().mockResolvedValue({ session, config: null }),
       },

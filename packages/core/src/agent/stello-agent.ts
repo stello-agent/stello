@@ -22,7 +22,6 @@ import {
   type SessionCompatibleSendResult,
 } from '../adapters/session-runtime';
 import type { SessionMeta, SessionTree, SessionTreeNode, TopologyNode } from '../types/session';
-import type { MemoryEngine } from '../types/memory';
 import type { ConfirmProtocol, SkillRouter } from '../types/lifecycle';
 import type { EngineLifecycleAdapter, EngineToolRuntime } from '../engine/stello-engine';
 import type { ForkProfileRegistry } from '../engine/fork-profile';
@@ -93,7 +92,6 @@ export interface StelloAgentOrchestrationConfig {
  */
 export interface StelloAgentConfig {
   sessions: SessionTree;
-  memory: MemoryEngine;
   /**
    * Session 数据存储（L3 / system prompt / insight / memory）。
    *
@@ -187,9 +185,6 @@ export class StelloAgent {
   /** 暴露 SessionTree，方便调用方做拓扑查询 */
   readonly sessions: StelloAgentConfig['sessions'];
 
-  /** 暴露 MemoryEngine，方便调用方做数据读写 */
-  readonly memory: StelloAgentConfig['memory'];
-
   /** 注入的数据存储；data-IO SDK 方法依赖该字段 */
   readonly storage?: SessionStorage;
 
@@ -207,12 +202,10 @@ export class StelloAgent {
   constructor(config: StelloAgentConfig) {
     this.config = config;
     this.sessions = config.sessions;
-    this.memory = config.memory;
     this.storage = config.storage;
     this.sharedMemory = config.sharedMemory;
     const engineFactory = new DefaultEngineFactory({
       sessions: config.sessions,
-      memory: config.memory,
       lifecycle: config.capabilities.lifecycle,
       tools: config.capabilities.tools,
       skills: config.capabilities.skills,
