@@ -15,13 +15,11 @@ import {
   type EngineLifecycleAdapter,
   type ConfirmProtocol,
   type SessionTree,
-  type MemoryEngine,
 } from '@stello-ai/core'
 import type { SessionStorage } from '@stello-ai/session'
 
 const agent = createStelloAgent({
   sessions,                       // SessionTree 实例（拓扑）
-  memory,                         // MemoryEngine 实例
   storage: sessionStorage,        // SessionStorage 实例（内容；orchestrator-facing SDK 依赖）
   capabilities: {
     lifecycle,                    // EngineLifecycleAdapter
@@ -42,8 +40,8 @@ const agent = createStelloAgent({
 ```typescript
 interface StelloAgentConfig {
   sessions: SessionTree                          // 拓扑树（必填）
-  memory: MemoryEngine                           // 记忆引擎（必填）
   storage?: SessionStorage                       // 内容存储（orchestrator-facing 数据 SDK 依赖）
+  sharedMemory?: SharedMemoryStore               // Agent 级共享 memory；注入后索引每 send 前由 adapter 自动注入
   sessionDefaults?: SessionConfig                // 所有 session 的 agent 级默认（fork 合成链最低优先级）
   capabilities: {                                // 能力注入（必填）
     lifecycle: EngineLifecycleAdapter
@@ -325,9 +323,12 @@ import {
   SplitGuard,
   SessionTreeImpl,
   NodeFileSystemAdapter,
-  FileSystemMemoryEngine,
+  InMemorySharedMemoryStore,
   createSessionTool,
   activateSkillTool,
+  memoryRecallTool,
+  memoryRememberTool,
+  memoryForgetTool,
 } from '@stello-ai/core'
 import {
   loadSession,
@@ -338,8 +339,8 @@ import {
 // ─── 基础设施 ───
 const fs = new NodeFileSystemAdapter('./data')
 const sessions = new SessionTreeImpl(fs)
-const memory = new FileSystemMemoryEngine(fs, sessions)
 const sessionStorage = new InMemoryStorageAdapter()
+const sharedMemory = new InMemorySharedMemoryStore()
 const llm = createOpenAICompatibleAdapter({
   apiKey: process.env.OPENAI_API_KEY!,
   model: 'gpt-4o',
@@ -356,6 +357,9 @@ skills.register({
 const toolRegistry = new ToolRegistryImpl([
   createSessionTool(),                  // 内置 fork tool（opt-in）
   activateSkillTool(skills),            // 内置 skill 激活 tool（opt-in）
+  memoryRecallTool(),                   // 共享 memory 读取 tool（opt-in）
+  memoryRememberTool(),                 // 共享 memory 写入 tool（opt-in）
+  memoryForgetTool(),                   // 共享 memory 删除 tool（opt-in）
 ])
 toolRegistry.register({
   name: 'search_knowledge',
@@ -384,8 +388,8 @@ profiles.register('researcher', {
 let agent: ReturnType<typeof createStelloAgent>
 agent = createStelloAgent({
   sessions,
-  memory,
   storage: sessionStorage,            // 注入内容存储，启用 orchestrator-facing SDK
+  sharedMemory,                       // 注入共享 memory，启用 4 个 SDK 方法 + 索引自动注入
 
   sessionDefaults: {
     llm,
@@ -404,14 +408,10 @@ agent = createStelloAgent({
   capabilities: {
     lifecycle: {
       bootstrap: async (sessionId) => ({
-        context: await memory.assembleContext(sessionId),
+        context: { core: {}, memories: [], currentMemory: null, scope: null },
         session: await sessions.get(sessionId),
       }),
-      afterTurn: async (sessionId, userMsg, assistantMsg) => {
-        await memory.appendRecord(sessionId, userMsg)
-        await memory.appendRecord(sessionId, assistantMsg)
-        return { coreUpdated: false, memoryUpdated: false, recordAppended: true }
-      },
+      afterTurn: async () => ({ coreUpdated: false, memoryUpdated: false, recordAppended: true }),
     },
     tools: toolRegistry,
     skills,

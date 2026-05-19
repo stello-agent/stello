@@ -102,8 +102,14 @@ export interface StelloAgentConfig {
   /**
    * Agent 级共享 memory 存储。
    *
-   * 注入后：四个 SDK 方法可用，索引段每次 send 前由 adapter 自动渲染并注入。
+   * 注入后：四个 SDK 方法可用；当 agent 走默认 `session.sessionLoader` 路径时，
+   * 索引段每次 send 前由内置 adapter 自动渲染并注入到上下文。
+   *
    * 未注入：四个 SDK 方法和三个内置 tool 抛 "sharedMemory not configured"，索引段不进入上下文。
+   *
+   * 注意：如果调用方提供自定义 `runtime.resolver` 而非 `session.sessionLoader`，
+   * 自动注入不会发生 —— 调用方需要自行把 `renderSharedMemoryIndex(agent.sharedMemory)`
+   * 接入到自己构造的 EngineRuntimeSession 的 send/stream 调用上。
    */
   sharedMemory?: SharedMemoryStore;
   /** Regular session 的 agent 级默认配置，fork 合成链的最低优先级 */
