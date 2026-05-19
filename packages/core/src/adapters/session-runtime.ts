@@ -54,6 +54,8 @@ export interface SessionCompatibleForkOptions {
 export interface SessionCompatibleSendOptions {
   /** AbortSignal — abort 时底层 LLM 调用应被取消 */
   signal?: AbortSignal;
+  /** Agent 级共享 memory 索引段（已由编排层渲染） */
+  sharedMemoryIndex?: string;
 }
 
 /** 结构兼容 @stello-ai/session 的 Session */
@@ -86,6 +88,11 @@ export interface SessionRuntimeAdapterOptions {
   compressFn?: SessionCompatibleCompressFn;
   /** 自定义 send() 结果序列化方式，默认转成 JSON 字符串 */
   serializeResult?: (result: SessionCompatibleSendResult) => string;
+  /**
+   * 每次 send/stream 前调用，返回当前 agent 的共享 memory 索引段。
+   * 返回 undefined / 空字符串则不注入。adapter 把结果合并进 sendOptions.sharedMemoryIndex。
+   */
+  sharedMemoryIndexProvider?: () => Promise<string | undefined>;
 }
 
 /** 默认的 Session send() 结果序列化 */
@@ -156,7 +163,12 @@ export async function adaptSessionToEngineRuntime(
       return turnCount;
     },
     async send(input: string, sendOptions?: SessionCompatibleSendOptions): Promise<string> {
-      const result = await session.send(input, sendOptions);
+      const sharedMemoryIndex = await options.sharedMemoryIndexProvider?.();
+      const mergedOptions: SessionCompatibleSendOptions = {
+        ...sendOptions,
+        ...(sharedMemoryIndex ? { sharedMemoryIndex } : {}),
+      };
+      const result = await session.send(input, mergedOptions);
       turnCount += 1;
       return (options.serializeResult ?? serializeSessionSendResult)(result);
     },
@@ -172,17 +184,25 @@ export async function adaptSessionToEngineRuntime(
     ...(session.stream
       ? {
           stream(input: string, sendOptions?: SessionCompatibleSendOptions) {
-            const source = session.stream!(input, sendOptions);
+            const indexPromise = options.sharedMemoryIndexProvider?.() ?? Promise.resolve(undefined);
+            const source = (async () => {
+              const sharedMemoryIndex = await indexPromise;
+              const mergedOptions: SessionCompatibleSendOptions = {
+                ...sendOptions,
+                ...(sharedMemoryIndex ? { sharedMemoryIndex } : {}),
+              };
+              return session.stream!(input, mergedOptions);
+            })();
             return {
               result: (async () => {
-                const result = await source.result;
+                const stream = await source;
+                const result = await stream.result;
                 turnCount += 1;
                 return (options.serializeResult ?? serializeSessionSendResult)(result);
               })(),
               async *[Symbol.asyncIterator]() {
-                for await (const chunk of source) {
-                  yield chunk;
-                }
+                const stream = await source;
+                for await (const chunk of stream) yield chunk;
               },
             };
           },

@@ -35,6 +35,7 @@ import type {
   SessionStorage, ListRecordsOptions, Message,
 } from '@stello-ai/session';
 import type { SharedMemoryEntry, SharedMemoryStore } from '../shared-memory/types';
+import { renderSharedMemoryIndex } from '../shared-memory/render-index';
 
 /** Session 能力相关配置 */
 export interface StelloAgentCapabilitiesConfig {
@@ -131,7 +132,7 @@ export interface SessionDigest {
 }
 
 
-function resolveRuntimeResolver(config: StelloAgentConfig): SessionRuntimeResolver {
+function resolveRuntimeResolver(config: StelloAgentConfig, agent: StelloAgent): SessionRuntimeResolver {
   if (config.runtime?.resolver) {
     return config.runtime.resolver;
   }
@@ -141,6 +142,7 @@ function resolveRuntimeResolver(config: StelloAgentConfig): SessionRuntimeResolv
       // TODO(unified-session-config): 接入 fork 合成链后，compressFn 应来自合成配置而非 sessionDefaults
       compressFn: config.sessionDefaults?.compressFn,
       serializeResult: config.session!.serializeSendResult ?? serializeSessionSendResult,
+      sharedMemoryIndexProvider: () => renderSharedMemoryIndex(agent.sharedMemory),
     };
     return {
       resolve: async (sessionId: string) => {
@@ -215,7 +217,7 @@ export class StelloAgent {
       tools: config.capabilities.tools,
       skills: config.capabilities.skills,
       confirm: config.capabilities.confirm,
-      sessionRuntimeResolver: resolveRuntimeResolver(config),
+      sessionRuntimeResolver: resolveRuntimeResolver(config, this),
       profiles: config.capabilities.profiles,
       splitGuard: config.orchestration?.splitGuard,
       turnRunner: resolveTurnRunner(config),

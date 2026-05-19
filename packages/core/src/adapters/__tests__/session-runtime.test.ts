@@ -49,7 +49,7 @@ describe('session-runtime adapters', () => {
     const raw = await runtime.send('hello');
     const parsed = sessionSendResultParser.parse(raw);
 
-    expect(session.send).toHaveBeenCalledWith('hello', undefined);
+    expect(session.send).toHaveBeenCalledWith('hello', {});
     expect(runtime.meta.turnCount).toBe(3);
     expect(parsed.toolCalls[0]).toEqual({
       id: 't1',
