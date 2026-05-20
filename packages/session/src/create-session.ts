@@ -4,7 +4,7 @@ import { SessionArchivedError } from './types/session-api.js'
 import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './types/session.js'
 import type { Message } from './types/llm.js'
 import type { CreateSessionOptions, LoadSessionOptions, SendResult, StreamResult } from './types/functions.js'
-import { assembleSessionContext, buildSessionIdentityMessages, createBuiltinCompressFn, removeIncompleteToolCallGroups, type CompressionCache } from './context-utils.js'
+import { assembleSessionContext, buildSessionIdentityMessages, createBuiltinCompressFn, hydrateCompressionCache, removeIncompleteToolCallGroups, type CompressionCache } from './context-utils.js'
 
 interface ToolResultEnvelope {
   toolResults: Array<{
@@ -142,6 +142,12 @@ function buildSession(
   let tools = options.tools
   let lastPromptTokens: number | null = null
   let compressionCache: CompressionCache | null = null
+  // Hydrate from storage backend if supported. Fire-and-forget; if hydrate completes
+  // before the first compress, the cached summary is reused. Errors are warned by the
+  // helper itself — the caller (this) never throws.
+  void hydrateCompressionCache(storage, currentMeta.id).then((cache) => {
+    if (cache && !compressionCache) compressionCache = cache
+  })
   /** 解析 compressFn：用户提供 > 内置 LLM 压缩 */
   function resolveCompressFn() {
     return options.compressFn ?? createBuiltinCompressFn(options.llm!)
