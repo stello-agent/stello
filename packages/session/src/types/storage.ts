@@ -48,30 +48,35 @@ export interface SessionStorage {
   putMemory(sessionId: string, content: string): Promise<void>
 
   /**
-   * (Optional) Load the persisted compression cache for a session.
-   * Storage backends that don't implement this leave the cache transient
-   * (in-memory only). Returns null if no snapshot exists.
+   * (可选)读取 session 的已持久化压缩缓存。
+   * 未实现该方法的 storage 后端,压缩缓存仅保留在内存(进程重启即丢)。
+   * 无快照时返回 null。
    */
   getCompressionCache?(sessionId: string): Promise<CompressionCacheSnapshot | null>
 
   /**
-   * (Optional) Persist a compression cache snapshot for a session.
-   * Called after each compress operation. Failures should be logged
-   * but must not block the current LLM turn.
+   * (可选)持久化压缩缓存快照。
+   * 每次压缩成功后被调用。失败应记录日志但不得阻塞当前 LLM 轮次。
    */
   putCompressionCache?(sessionId: string, snapshot: CompressionCacheSnapshot): Promise<void>
+
+  /**
+   * (可选)清除已持久化的压缩缓存。
+   * 通常在 session reset / 分支 fork / 历史回滚时调用,避免 stale 摘要。
+   */
+  clearCompressionCache?(sessionId: string): Promise<void>
 
   /** 事务（内存实现可直接执行 fn） */
   transaction<T>(fn: (tx: SessionStorage) => Promise<T>): Promise<T>
 }
 
 /**
- * Snapshot of an in-memory CompressionCache, persistable via SessionStorage.
- * Mirrors the shape of CompressionCache in context-utils.ts.
+ * 压缩缓存快照,可通过 SessionStorage 持久化。
+ * 形态与 context-utils.ts 中的 CompressionCache 保持一致。
  */
 export interface CompressionCacheSnapshot {
-  /** The latest compressed summary text. */
+  /** 最新的压缩摘要文本 */
   summary: string
-  /** Number of messages from the start of history that this summary covers. */
+  /** 该摘要覆盖的历史消息起始条数 */
   compressedCount: number
 }

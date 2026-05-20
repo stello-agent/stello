@@ -1,34 +1,23 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expectTypeOf } from 'vitest'
 import type { SessionStorage, CompressionCacheSnapshot } from '../types/storage'
 
 describe('SessionStorage compression cache extension', () => {
-  it('CompressionCacheSnapshot has summary and compressedCount fields', () => {
-    const snapshot: CompressionCacheSnapshot = {
-      summary: 'previously discussed X',
-      compressedCount: 12,
-    }
-    expect(snapshot.summary).toBe('previously discussed X')
-    expect(snapshot.compressedCount).toBe(12)
+  it('CompressionCacheSnapshot has the expected shape', () => {
+    expectTypeOf<CompressionCacheSnapshot>().toEqualTypeOf<{
+      summary: string
+      compressedCount: number
+    }>()
   })
 
-  it('SessionStorage methods are optional (storage without them still satisfies interface)', () => {
-    const storage: SessionStorage = {
-      getSession: async () => null,
-      putSession: async () => {},
-      listSessions: async () => [],
-      appendRecord: async () => {},
-      listRecords: async () => [],
-      trimRecords: async () => {},
-      getSystemPrompt: async () => null,
-      putSystemPrompt: async () => {},
-      getInsight: async () => null,
-      putInsight: async () => {},
-      clearInsight: async () => {},
-      getMemory: async () => null,
-      putMemory: async () => {},
-      transaction: async (fn) => fn({} as SessionStorage),
-    }
-    expect(storage.getCompressionCache).toBeUndefined()
-    expect(storage.putCompressionCache).toBeUndefined()
+  it('get/put/clearCompressionCache are optional on SessionStorage', () => {
+    expectTypeOf<SessionStorage['getCompressionCache']>().toEqualTypeOf<
+      ((sessionId: string) => Promise<CompressionCacheSnapshot | null>) | undefined
+    >()
+    expectTypeOf<SessionStorage['putCompressionCache']>().toEqualTypeOf<
+      ((sessionId: string, snapshot: CompressionCacheSnapshot) => Promise<void>) | undefined
+    >()
+    expectTypeOf<SessionStorage['clearCompressionCache']>().toEqualTypeOf<
+      ((sessionId: string) => Promise<void>) | undefined
+    >()
   })
 })
