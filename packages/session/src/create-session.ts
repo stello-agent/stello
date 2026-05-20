@@ -158,6 +158,30 @@ function buildSession(
     return options.compressFn ?? createBuiltinCompressFn(options.llm!)
   }
 
+  /**
+   * 在一次 turn 结束后同步内存压缩缓存,并在确实有新压缩快照产生时把它
+   * 持久化到 storage(fire-and-forget;失败由 helper 内部 warn 记录)。
+   *
+   * 行为:
+   * - assembledCache === undefined:本轮 compress 未运行,直接返回。
+   * - assembledCache 为真值且与当前内存引用不同:产生了新压缩快照,flush。
+   * - assembledCache 为真值且与当前内存引用相同:compressWithFn 在缓存命中
+   *   时会返回同一引用,跳过 flush,避免重复写入。
+   *
+   * TODO: AssembleResult.compressionCache 类型包含 `| null`,但
+   * compressWithFn 实际不会返回 null。可在独立清理中收紧该类型,使下方
+   * truthy 检查变得多余。
+   */
+  function persistAndApplyCompressionCache(
+    assembledCache: CompressionCache | null | undefined,
+  ): void {
+    if (assembledCache === undefined) return
+    if (assembledCache && assembledCache !== compressionCache) {
+      flushCompressionCache(storage, currentMeta.id, assembledCache)
+    }
+    compressionCache = assembledCache
+  }
+
   const session: Session = {
     get meta(): Readonly<SessionMeta> {
       return currentMeta
@@ -180,16 +204,7 @@ function buildSession(
         currentMeta.label,
         sendOptions?.sharedMemoryIndex,
       )
-      if (assembled.compressionCache !== undefined) {
-        compressionCache = assembled.compressionCache
-        // 压缩成功后持久化快照(fire-and-forget;失败由 helper 内部 warn 记录)。
-        // compressFn 抛错时 assembleSessionContext 会向上传播,本行不会到达,
-        // 因而失败的 compress 不会污染持久化层。
-        // 类型上 compressionCache 允许 null,实际运行时只在 compressed=true 时为真值快照。
-        if (assembled.compressionCache) {
-          flushCompressionCache(storage, currentMeta.id, assembled.compressionCache)
-        }
-      }
+      persistAndApplyCompressionCache(assembled.compressionCache)
 
       // 消费 insight
       if (assembled.insightConsumed) {
@@ -263,16 +278,7 @@ function buildSession(
           currentMeta.label,
           sendOptions?.sharedMemoryIndex,
         )
-        if (assembled.compressionCache !== undefined) {
-          compressionCache = assembled.compressionCache
-          // 压缩成功后持久化快照(fire-and-forget;失败由 helper 内部 warn 记录)。
-          // compressFn 抛错时 assembleSessionContext 会向上传播,本行不会到达,
-          // 因而失败的 compress 不会污染持久化层。
-          // 类型上 compressionCache 允许 null,实际运行时只在 compressed=true 时为真值快照。
-          if (assembled.compressionCache) {
-            flushCompressionCache(storage, currentMeta.id, assembled.compressionCache)
-          }
-        }
+        persistAndApplyCompressionCache(assembled.compressionCache)
 
         // 消费 insight
         if (assembled.insightConsumed) {

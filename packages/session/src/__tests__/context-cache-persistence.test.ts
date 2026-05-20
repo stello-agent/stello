@@ -238,6 +238,66 @@ describe('compress persistence — flush after success', () => {
     expect(puts).toHaveLength(0)
   })
 
+  it('does NOT re-flush on cache hits (same reference returned)', async () => {
+    const { createSession } = await import('../create-session')
+    const { InMemoryStorageAdapter } = await import('../mocks/in-memory-storage')
+    const { createMockLLM } = await import('./helpers')
+
+    const baseStorage = new InMemoryStorageAdapter()
+    const puts: Array<[string, { summary: string; compressedCount: number }]> = []
+    const storage: any = baseStorage
+    storage.putCompressionCache = async (sid: string, snap: { summary: string; compressedCount: number }) => {
+      puts.push([sid, snap])
+    }
+
+    // 用统一长度的 user / assistant 消息(包括 send 时的输入和 mock LLM 的回复),
+    // 这样每轮 send 后历史增长的 token 量与旧消息一致,recentMessages 选择窗口
+    // 会等量右移,history.length - recentMessages.length 保持稳定 → 触发缓存命中。
+    const UNIFORM = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' // 44 chars ≈ 11 tokens
+    const llm = {
+      ...createMockLLM([
+        { content: UNIFORM, usage: { promptTokens: 100, completionTokens: 10 } },
+        { content: UNIFORM, usage: { promptTokens: 100, completionTokens: 10 } },
+      ]),
+      maxContextTokens: 200,
+    }
+
+    // 计数 compressFn 实际被调用的次数;返回稳定摘要
+    let compressFnCalls = 0
+    const compressFn = async () => {
+      compressFnCalls++
+      return 'stable'
+    }
+
+    const session = await createSession({
+      id: 'sid-cachehit',
+      storage,
+      llm,
+      compressFn,
+      label: 'Test',
+    })
+
+    // 预填充足量历史,确保第一次 send 时超阈触发 compress
+    for (let i = 0; i < 30; i++) {
+      await storage.appendRecord(session.meta.id, { role: 'user', content: UNIFORM })
+      await storage.appendRecord(session.meta.id, { role: 'assistant', content: UNIFORM })
+    }
+
+    // 第一次 send → 产生新压缩快照,flush 一次
+    await session.send(UNIFORM)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    // 第二次 send → 缓存命中(compressedCount 不变),compressWithFn 返回同引用,
+    // persistAndApplyCompressionCache 跳过 flush
+    await session.send(UNIFORM)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    // 关键断言:flush 只发生一次,即使两次 send 都走 compress 路径
+    expect(puts).toHaveLength(1)
+    // 同时验证 compressFn 也只被实际调用一次(进一步佐证第二次是缓存命中)
+    expect(compressFnCalls).toBe(1)
+  })
+
   it('does NOT flush when compressFn throws (failed compress)', async () => {
     const { createSession } = await import('../create-session')
     const { InMemoryStorageAdapter } = await import('../mocks/in-memory-storage')
