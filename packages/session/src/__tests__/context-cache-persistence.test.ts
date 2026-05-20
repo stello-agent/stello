@@ -298,7 +298,53 @@ describe('compress persistence — flush after success', () => {
     expect(compressFnCalls).toBe(1)
   })
 
-  it('end-to-end: flushed snapshot from one session is hydrated by the next', async () => {
+  it('does NOT flush when compressFn throws (failed compress)', async () => {
+    const { createSession } = await import('../create-session')
+    const { InMemoryStorageAdapter } = await import('../mocks/in-memory-storage')
+    const { createMockLLM } = await import('./helpers')
+
+    const baseStorage = new InMemoryStorageAdapter()
+    const puts: Array<[string, unknown]> = []
+    const storage: any = baseStorage
+    storage.putCompressionCache = async (sid: string, snap: unknown) => {
+      puts.push([sid, snap])
+    }
+
+    const llm = { ...createMockLLM([{ content: 'OK', usage: { promptTokens: 100, completionTokens: 10 } }]), maxContextTokens: 50 }
+    const compressFn = async () => { throw new Error('compress boom') }
+
+    const session = await createSession({
+      id: 'sid-failcompress',
+      storage,
+      llm,
+      compressFn,
+      label: 'Test',
+    })
+
+    for (let i = 0; i < 20; i++) {
+      await storage.appendRecord(session.meta.id, { role: 'user', content: `message number ${i} with some padding text` })
+      await storage.appendRecord(session.meta.id, { role: 'assistant', content: `reply number ${i} with some padding text` })
+    }
+
+    await expect(session.send('trigger')).rejects.toThrow('compress boom')
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    expect(puts).toHaveLength(0)
+  })
+})
+
+describe('end-to-end: flush ↔ hydrate cycle', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    warnSpy.mockRestore()
+  })
+
+  it('flushed snapshot from one session is hydrated by the next', async () => {
     const { createSession } = await import('../create-session')
     const { InMemoryStorageAdapter } = await import('../mocks/in-memory-storage')
     const { hydrateCompressionCache } = await import('../context-utils')
@@ -373,43 +419,24 @@ describe('compress persistence — flush after success', () => {
       compressedCount: persisted.compressedCount,
     })
 
-    // 3) sanity:session B 能正常工作(不验证 cache-hit 与否,因为 compressedCount /
-    //    history.length 对齐取决于 compressWithFn 内部判定,作为 end-to-end 烟雾测试,
-    //    只确认 session B 仍然可以 send 而不崩)
-    await expect(sessionB.send(UNIFORM)).resolves.toBeDefined()
-  })
-
-  it('does NOT flush when compressFn throws (failed compress)', async () => {
-    const { createSession } = await import('../create-session')
-    const { InMemoryStorageAdapter } = await import('../mocks/in-memory-storage')
-    const { createMockLLM } = await import('./helpers')
-
-    const baseStorage = new InMemoryStorageAdapter()
-    const puts: Array<[string, unknown]> = []
-    const storage: any = baseStorage
-    storage.putCompressionCache = async (sid: string, snap: unknown) => {
-      puts.push([sid, snap])
-    }
-
-    const llm = { ...createMockLLM([{ content: 'OK', usage: { promptTokens: 100, completionTokens: 10 } }]), maxContextTokens: 50 }
-    const compressFn = async () => { throw new Error('compress boom') }
-
-    const session = await createSession({
-      id: 'sid-failcompress',
-      storage,
-      llm,
-      compressFn,
-      label: 'Test',
-    })
-
-    for (let i = 0; i < 20; i++) {
-      await storage.appendRecord(session.meta.id, { role: 'user', content: `message number ${i} with some padding text` })
-      await storage.appendRecord(session.meta.id, { role: 'assistant', content: `reply number ${i} with some padding text` })
-    }
-
-    await expect(session.send('trigger')).rejects.toThrow('compress boom')
+    // 3) Session B 应该用 hydrated cache,至少不应产生"重压全部历史"的爆炸。
+    //
+    //    理想断言是 compressFnB 完全 NOT called(即 cache 直接命中、复用 hydrated
+    //    summary),但当前 cache hit 判定是 `compressedCount === compressCount`:
+    //    - Session A 首次 compress 时 compressionCache=null,
+    //      recentBudget 用 ESTIMATED_SUMMARY_TOKENS(500)估算,
+    //      在 maxContextTokens=200 / 60 条 UNIFORM 历史下产出 compressedCount=C_A。
+    //    - Session B 启动后 hydrate 装入真实 summary(很短),
+    //      recentBudget 用实际 summary token 数(~8)估算,
+    //      在 62 条历史下产出的 compressedCount=C_B ≠ C_A → cache miss,
+    //      compressFnB 会被调用一次。
+    //
+    //    这并非 wiring bug,而是 cache key(compressedCount)对预算估算敏感的
+    //    固有属性。作为 end-to-end 烟雾测试,我们退一步断言"至多一次":
+    //    若不消费 hydrated summary,Session B 会在多个内部步骤上重复压缩
+    //    /爆炸性调用 compressFn;at-most-once 已经能挡住该回归。
+    await sessionB.send(UNIFORM)
     await new Promise<void>((resolve) => setImmediate(resolve))
-
-    expect(puts).toHaveLength(0)
+    expect(compressFnB.mock.calls.length).toBeLessThanOrEqual(1)
   })
 })
