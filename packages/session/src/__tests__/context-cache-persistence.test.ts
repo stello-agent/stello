@@ -32,34 +32,34 @@ describe('hydrateCompressionCache', () => {
 
   it('returns null when storage has no method', async () => {
     const { hydrateCompressionCache } = await import('../context-utils')
-    const storage = {} as any
+    const storage = {} as unknown as SessionStorage
     const result = await hydrateCompressionCache(storage, 'sid-1')
     expect(result).toBeNull()
   })
 
   it('returns null when storage returns null', async () => {
     const { hydrateCompressionCache } = await import('../context-utils')
-    const storage: any = {
+    const storage = {
       getCompressionCache: async () => null,
-    }
+    } as unknown as SessionStorage
     const result = await hydrateCompressionCache(storage, 'sid-1')
     expect(result).toBeNull()
   })
 
   it('returns CompressionCache mirroring snapshot', async () => {
     const { hydrateCompressionCache } = await import('../context-utils')
-    const storage: any = {
+    const storage = {
       getCompressionCache: async () => ({ summary: 's', compressedCount: 7 }),
-    }
+    } as unknown as SessionStorage
     const result = await hydrateCompressionCache(storage, 'sid-1')
     expect(result).toEqual({ summary: 's', compressedCount: 7 })
   })
 
   it('swallows errors and returns null', async () => {
     const { hydrateCompressionCache } = await import('../context-utils')
-    const storage: any = {
+    const storage = {
       getCompressionCache: async () => { throw new Error('db down') },
-    }
+    } as unknown as SessionStorage
     const result = await hydrateCompressionCache(storage, 'sid-1')
     expect(result).toBeNull()
     expect(warnSpy).toHaveBeenCalledWith(
@@ -82,16 +82,16 @@ describe('flushCompressionCache', () => {
 
   it('is a no-op when storage has no putCompressionCache method', async () => {
     const { flushCompressionCache } = await import('../context-utils')
-    const storage = {} as any
+    const storage = {} as unknown as SessionStorage
     expect(() => flushCompressionCache(storage, 'sid-1', { summary: 's', compressedCount: 3 })).not.toThrow()
   })
 
   it('calls putCompressionCache when present', async () => {
     const { flushCompressionCache } = await import('../context-utils')
-    const calls: any[] = []
-    const storage: any = {
-      putCompressionCache: async (sid: string, snap: any) => { calls.push([sid, snap]) },
-    }
+    const calls: Array<[string, CompressionCacheSnapshot]> = []
+    const storage = {
+      putCompressionCache: async (sid: string, snap: CompressionCacheSnapshot) => { calls.push([sid, snap]) },
+    } as unknown as SessionStorage
     flushCompressionCache(storage, 'sid-1', { summary: 's', compressedCount: 3 })
     // 等待 microtask queue flush
     await new Promise<void>((resolve) => setImmediate(resolve))
@@ -100,9 +100,9 @@ describe('flushCompressionCache', () => {
 
   it('swallows put errors (must not block caller)', async () => {
     const { flushCompressionCache } = await import('../context-utils')
-    const storage: any = {
+    const storage = {
       putCompressionCache: async () => { throw new Error('disk full') },
-    }
+    } as unknown as SessionStorage
     expect(() => flushCompressionCache(storage, 'sid-1', { summary: 's', compressedCount: 1 })).not.toThrow()
     // 让 microtask 跑完;不应产生 unhandled rejection
     await new Promise<void>((resolve) => setImmediate(resolve))
@@ -117,7 +117,7 @@ describe('createSession compressionCache hydration', () => {
   it('hydrates compressionCache from storage on creation when getCompressionCache returns a snapshot', async () => {
     const { createSession } = await import('../create-session')
     const calls: string[] = []
-    const fakeStorage: any = {
+    const fakeStorage: SessionStorage = {
       getSession: async (id: string) => ({ id, label: 'test', status: 'active', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
       putSession: async () => {},
       listSessions: async () => [],
@@ -131,7 +131,7 @@ describe('createSession compressionCache hydration', () => {
       clearInsight: async () => {},
       getMemory: async () => null,
       putMemory: async () => {},
-      transaction: async (fn: any) => fn(fakeStorage),
+      transaction: async <T,>(fn: (tx: SessionStorage) => Promise<T>) => fn(fakeStorage),
       getCompressionCache: async (sid: string) => {
         calls.push(sid)
         return { summary: 'hydrated', compressedCount: 5 }
@@ -170,9 +170,9 @@ describe('compress persistence — flush after success', () => {
 
     // 基于 InMemoryStorageAdapter,但额外捕获 putCompressionCache 调用
     const baseStorage = new InMemoryStorageAdapter()
-    const puts: Array<[string, { summary: string; compressedCount: number }]> = []
-    const storage: any = baseStorage
-    storage.putCompressionCache = async (sid: string, snap: { summary: string; compressedCount: number }) => {
+    const puts: Array<[string, CompressionCacheSnapshot]> = []
+    const storage: SessionStorage = baseStorage
+    storage.putCompressionCache = async (sid, snap) => {
       puts.push([sid, snap])
     }
 
@@ -211,9 +211,9 @@ describe('compress persistence — flush after success', () => {
     const { createMockLLM } = await import('./helpers')
 
     const baseStorage = new InMemoryStorageAdapter()
-    const puts: Array<[string, unknown]> = []
-    const storage: any = baseStorage
-    storage.putCompressionCache = async (sid: string, snap: unknown) => {
+    const puts: Array<[string, CompressionCacheSnapshot]> = []
+    const storage: SessionStorage = baseStorage
+    storage.putCompressionCache = async (sid, snap) => {
       puts.push([sid, snap])
     }
 
@@ -241,9 +241,9 @@ describe('compress persistence — flush after success', () => {
     const { createMockLLM } = await import('./helpers')
 
     const baseStorage = new InMemoryStorageAdapter()
-    const puts: Array<[string, { summary: string; compressedCount: number }]> = []
-    const storage: any = baseStorage
-    storage.putCompressionCache = async (sid: string, snap: { summary: string; compressedCount: number }) => {
+    const puts: Array<[string, CompressionCacheSnapshot]> = []
+    const storage: SessionStorage = baseStorage
+    storage.putCompressionCache = async (sid, snap) => {
       puts.push([sid, snap])
     }
 
@@ -301,9 +301,9 @@ describe('compress persistence — flush after success', () => {
     const { createMockLLM } = await import('./helpers')
 
     const baseStorage = new InMemoryStorageAdapter()
-    const puts: Array<[string, unknown]> = []
-    const storage: any = baseStorage
-    storage.putCompressionCache = async (sid: string, snap: unknown) => {
+    const puts: Array<[string, CompressionCacheSnapshot]> = []
+    const storage: SessionStorage = baseStorage
+    storage.putCompressionCache = async (sid, snap) => {
       puts.push([sid, snap])
     }
 
@@ -349,13 +349,10 @@ describe('end-to-end: flush ↔ hydrate cycle', () => {
 
     // 单一 storage 实例,跨两个 session 生命周期共享(模拟"重启后同 sid 再起")
     const baseStorage = new InMemoryStorageAdapter()
-    const persistedCaches = new Map<string, { summary: string; compressedCount: number }>()
-    const storage: any = baseStorage
-    storage.getCompressionCache = async (sid: string) => persistedCaches.get(sid) ?? null
-    storage.putCompressionCache = async (
-      sid: string,
-      snap: { summary: string; compressedCount: number },
-    ) => {
+    const persistedCaches = new Map<string, CompressionCacheSnapshot>()
+    const storage: SessionStorage = baseStorage
+    storage.getCompressionCache = async (sid) => persistedCaches.get(sid) ?? null
+    storage.putCompressionCache = async (sid, snap) => {
       persistedCaches.set(sid, { summary: snap.summary, compressedCount: snap.compressedCount })
     }
 
@@ -396,7 +393,8 @@ describe('end-to-end: flush ↔ hydrate cycle', () => {
     expect(persisted.compressedCount).toBeGreaterThan(0)
 
     // —— Session B:同 sid + 同 storage(模拟进程重启 / 新 session 实例)
-    const sessionB = await createSession({
+    // 仅为触发 createSession 内部的 fire-and-forget hydrate 副作用,session 实例本身不参与断言
+    await createSession({
       id: SHARED_SID,
       storage,
       llm: makeLLM(),
