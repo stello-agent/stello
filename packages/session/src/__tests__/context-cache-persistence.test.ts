@@ -141,18 +141,16 @@ describe('createSession compressionCache hydration', () => {
       },
     }
 
-    try {
-      await createSession({
-        id: 'sid-1',
-        storage: fakeStorage,
-      } as any)
-    } catch {
-      // 即使 createSession 因不完整的 stub 抛错,只要 getCompressionCache 已经被调用,我们就 PASS
-    }
+    const session = await createSession({
+      id: 'sid-1',
+      storage: fakeStorage,
+    })
 
     // 等待 microtask + I/O 跑完(fire-and-forget hydrate)
     await new Promise<void>((resolve) => setImmediate(resolve))
 
     expect(calls).toEqual(['sid-1'])
+    expect(session).toBeDefined()
+    expect(session.meta.id).toBe('sid-1')
   })
 })

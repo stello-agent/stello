@@ -142,9 +142,14 @@ function buildSession(
   let tools = options.tools
   let lastPromptTokens: number | null = null
   let compressionCache: CompressionCache | null = null
-  // Hydrate from storage backend if supported. Fire-and-forget; if hydrate completes
-  // before the first compress, the cached summary is reused. Errors are warned by the
-  // helper itself — the caller (this) never throws.
+  // 从 storage 后端加载持久化压缩缓存(若支持);fire-and-forget。
+  // 若 hydrate 在首次 compress 之前到达,缓存命中,跳过一次 compress 调用。
+  // helper 内部已 console.warn 错误,此处永不抛错。
+  //
+  // 边界:如果 hydrate Promise 完成前发生 "compress → reset" 序列
+  //(compressionCache 被显式置 null),迟到的 hydrate 会按此 guard 把
+  // stale snapshot 重新装入。在实践中该窗口极窄(hydrate 是亚秒级 DB 读,
+  // reset 通常是用户动作),且会被下一次 compress 自然纠正。
   void hydrateCompressionCache(storage, currentMeta.id).then((cache) => {
     if (cache && !compressionCache) compressionCache = cache
   })
