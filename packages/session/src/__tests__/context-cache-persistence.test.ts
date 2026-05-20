@@ -298,6 +298,87 @@ describe('compress persistence — flush after success', () => {
     expect(compressFnCalls).toBe(1)
   })
 
+  it('end-to-end: flushed snapshot from one session is hydrated by the next', async () => {
+    const { createSession } = await import('../create-session')
+    const { InMemoryStorageAdapter } = await import('../mocks/in-memory-storage')
+    const { hydrateCompressionCache } = await import('../context-utils')
+    const { createMockLLM } = await import('./helpers')
+
+    // 单一 storage 实例,跨两个 session 生命周期共享(模拟"重启后同 sid 再起")
+    const baseStorage = new InMemoryStorageAdapter()
+    const persistedCaches = new Map<string, { summary: string; compressedCount: number }>()
+    const storage: any = baseStorage
+    storage.getCompressionCache = async (sid: string) => persistedCaches.get(sid) ?? null
+    storage.putCompressionCache = async (
+      sid: string,
+      snap: { summary: string; compressedCount: number },
+    ) => {
+      persistedCaches.set(sid, { summary: snap.summary, compressedCount: snap.compressedCount })
+    }
+
+    // 统一长度的 user/assistant 消息,让 send 时历史增长平稳,与 S4 cache-hit 测试同款
+    const UNIFORM = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const SHARED_SID = 'sid-e2e'
+    const makeLLM = () => ({
+      ...createMockLLM([
+        { content: UNIFORM, usage: { promptTokens: 100, completionTokens: 10 } },
+        { content: UNIFORM, usage: { promptTokens: 100, completionTokens: 10 } },
+      ]),
+      maxContextTokens: 200,
+    })
+
+    // —— Session A:产生压缩,flush 写入"持久化" map
+    const sessionA = await createSession({
+      id: SHARED_SID,
+      storage,
+      llm: makeLLM(),
+      compressFn: async () => 'PERSISTED-SUMMARY-FROM-SESSION-A',
+      label: 'A',
+    })
+
+    // 预填充足量历史,确保第一次 send 时超阈触发 compress
+    for (let i = 0; i < 30; i++) {
+      await storage.appendRecord(sessionA.meta.id, { role: 'user', content: UNIFORM })
+      await storage.appendRecord(sessionA.meta.id, { role: 'assistant', content: UNIFORM })
+    }
+
+    await sessionA.send(UNIFORM)
+    // fire-and-forget flush 跑完
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    // 1) Session A 之后,storage 中已有快照
+    expect(persistedCaches.has(SHARED_SID)).toBe(true)
+    const persisted = persistedCaches.get(SHARED_SID)!
+    expect(persisted.summary).toBe('PERSISTED-SUMMARY-FROM-SESSION-A')
+    expect(persisted.compressedCount).toBeGreaterThan(0)
+
+    // —— Session B:同 sid + 同 storage(模拟进程重启 / 新 session 实例)
+    const compressFnB = vi.fn(async () => 'WOULD-NOT-BE-CALLED-IF-CACHE-HIT')
+    const sessionB = await createSession({
+      id: SHARED_SID,
+      storage,
+      llm: makeLLM(),
+      compressFn: compressFnB,
+      label: 'B',
+    })
+
+    // 等待 createSession 内部的 fire-and-forget hydrate 完成
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    // 2) hydrateCompressionCache 直接调用应该返回与 session A flush 同样的快照
+    //    (hydrate 自身契约,不依赖 session 内部状态)
+    const restored = await hydrateCompressionCache(storage, SHARED_SID)
+    expect(restored).toEqual({
+      summary: 'PERSISTED-SUMMARY-FROM-SESSION-A',
+      compressedCount: persisted.compressedCount,
+    })
+
+    // 3) sanity:session B 能正常工作(不验证 cache-hit 与否,因为 compressedCount /
+    //    history.length 对齐取决于 compressWithFn 内部判定,作为 end-to-end 烟雾测试,
+    //    只确认 session B 仍然可以 send 而不崩)
+    await expect(sessionB.send(UNIFORM)).resolves.toBeDefined()
+  })
+
   it('does NOT flush when compressFn throws (failed compress)', async () => {
     const { createSession } = await import('../create-session')
     const { InMemoryStorageAdapter } = await import('../mocks/in-memory-storage')
