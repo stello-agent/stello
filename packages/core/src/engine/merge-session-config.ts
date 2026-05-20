@@ -45,6 +45,7 @@ export function mergeSessionConfig(input: MergeSessionConfigInput): SessionConfi
     if (layer.skills !== undefined) result.skills = layer.skills
     if (layer.consolidateFn !== undefined) result.consolidateFn = layer.consolidateFn
     if (layer.compressFn !== undefined) result.compressFn = layer.compressFn
+    if (layer.forkCompressFn !== undefined) result.forkCompressFn = layer.forkCompressFn
   }
 
   // systemPrompt 合成：profile 存在时走 mode 规则，缺省时退化为普通覆盖链

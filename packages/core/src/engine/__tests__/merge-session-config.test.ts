@@ -264,4 +264,41 @@ describe('mergeSessionConfig', () => {
     })
     expect(result.systemPrompt).toBe('P')
   })
+
+  it('forkCompressFn: defaults → parent → profile → forkOptions later-wins', () => {
+    const fnDefaults = makeCompressFn('defaults')
+    const fnParent = makeCompressFn('parent')
+    const fnProfile = makeCompressFn('profile')
+    const fnFork = makeCompressFn('fork')
+
+    const result = mergeSessionConfig({
+      defaults: { forkCompressFn: fnDefaults },
+      parent: { forkCompressFn: fnParent },
+      profile: { forkCompressFn: fnProfile, systemPromptMode: 'preset' },
+      forkOptions: { label: 't', forkCompressFn: fnFork },
+    })
+    expect(result.forkCompressFn).toBe(fnFork)
+  })
+
+  it('forkCompressFn: undefined 不覆盖下层值', () => {
+    const fnDefaults = makeCompressFn('defaults')
+    const result = mergeSessionConfig({
+      defaults: { forkCompressFn: fnDefaults },
+      parent: {},
+      profile: { systemPromptMode: 'preset' },
+      forkOptions: { label: 't' },
+    })
+    expect(result.forkCompressFn).toBe(fnDefaults)
+  })
+
+  it('forkCompressFn 与 compressFn 互不干扰', () => {
+    const fnCompress = makeCompressFn('compress')
+    const fnFork = makeCompressFn('fork')
+    const result = mergeSessionConfig({
+      defaults: { compressFn: fnCompress, forkCompressFn: fnFork },
+      forkOptions: { label: 't' },
+    })
+    expect(result.compressFn).toBe(fnCompress)
+    expect(result.forkCompressFn).toBe(fnFork)
+  })
 })
