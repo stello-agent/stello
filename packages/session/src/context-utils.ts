@@ -292,9 +292,9 @@ async function compressWithFn(
  * 从 storage 读取已持久化的压缩缓存(若实现该方法)。
  *
  * 返回 null 的情形:
- * - storage 未实现 getCompressionCache（可选方法）
- * - storage 返回 null（无快照）
- * - 读取抛错（错误被静默,调用方回退到内存行为）
+ * - storage 未实现 getCompressionCache(可选方法)
+ * - storage 返回 null(无快照)
+ * - 读取抛错(错误通过 console.warn 记录,调用方回退到内存行为)
  */
 export async function hydrateCompressionCache(
   storage: SessionStorage,
@@ -305,26 +305,27 @@ export async function hydrateCompressionCache(
     const snap = await storage.getCompressionCache(sessionId)
     if (!snap) return null
     return { summary: snap.summary, compressedCount: snap.compressedCount }
-  } catch {
+  } catch (err) {
+    console.warn('[stello/session] hydrateCompressionCache failed', { sessionId, err })
     return null
   }
 }
 
 /**
- * 把压缩缓存快照写入 storage(若实现该方法)。
- *
- * 错误被静默,失败的 flush 永远不会阻塞 LLM 轮次。
+ * 把压缩缓存快照写入 storage(若实现该方法)。fire-and-forget:
+ * 调用立即返回,持久化在后台异步进行。失败会通过 console.warn 记录,
+ * 但永远不会阻塞 LLM 轮次,也不会抛错。
  * 未实现 putCompressionCache 的 storage 后端,本函数等效 no-op。
  */
-export async function flushCompressionCache(
+export function flushCompressionCache(
   storage: SessionStorage,
   sessionId: string,
   snapshot: CompressionCacheSnapshot,
-): Promise<void> {
+): void {
   if (typeof storage.putCompressionCache !== 'function') return
-  try {
-    await storage.putCompressionCache(sessionId, snapshot)
-  } catch {
-    /* 静默吞掉:调用方继续用内存缓存 */
-  }
+  // Fire-and-forget: persistence latency must not block the calling LLM turn.
+  // Errors are warned but never thrown.
+  void storage.putCompressionCache(sessionId, snapshot).catch((err) => {
+    console.warn('[stello/session] flushCompressionCache failed', { sessionId, err })
+  })
 }

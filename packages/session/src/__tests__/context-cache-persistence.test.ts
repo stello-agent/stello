@@ -1,4 +1,4 @@
-import { describe, it, expect, expectTypeOf } from 'vitest'
+import { describe, it, expect, expectTypeOf, vi, beforeEach, afterEach } from 'vitest'
 import type { SessionStorage, CompressionCacheSnapshot } from '../types/storage'
 
 describe('SessionStorage compression cache extension', () => {
@@ -23,6 +23,16 @@ describe('SessionStorage compression cache extension', () => {
 })
 
 describe('hydrateCompressionCache', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    warnSpy.mockRestore()
+  })
+
   it('returns null when storage has no method', async () => {
     const { hydrateCompressionCache } = await import('../context-utils')
     const storage = {} as any
@@ -55,14 +65,28 @@ describe('hydrateCompressionCache', () => {
     }
     const result = await hydrateCompressionCache(storage, 'sid-1')
     expect(result).toBeNull()
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[stello/session] hydrateCompressionCache failed',
+      expect.objectContaining({ sessionId: 'sid-1', err: expect.any(Error) }),
+    )
   })
 })
 
 describe('flushCompressionCache', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    warnSpy.mockRestore()
+  })
+
   it('is a no-op when storage has no putCompressionCache method', async () => {
     const { flushCompressionCache } = await import('../context-utils')
     const storage = {} as any
-    await expect(flushCompressionCache(storage, 'sid-1', { summary: 's', compressedCount: 3 })).resolves.toBeUndefined()
+    expect(() => flushCompressionCache(storage, 'sid-1', { summary: 's', compressedCount: 3 })).not.toThrow()
   })
 
   it('calls putCompressionCache when present', async () => {
@@ -71,7 +95,9 @@ describe('flushCompressionCache', () => {
     const storage: any = {
       putCompressionCache: async (sid: string, snap: any) => { calls.push([sid, snap]) },
     }
-    await flushCompressionCache(storage, 'sid-1', { summary: 's', compressedCount: 3 })
+    flushCompressionCache(storage, 'sid-1', { summary: 's', compressedCount: 3 })
+    // 等待 microtask queue flush
+    await new Promise<void>((resolve) => setImmediate(resolve))
     expect(calls).toEqual([['sid-1', { summary: 's', compressedCount: 3 }]])
   })
 
@@ -80,6 +106,12 @@ describe('flushCompressionCache', () => {
     const storage: any = {
       putCompressionCache: async () => { throw new Error('disk full') },
     }
-    await expect(flushCompressionCache(storage, 'sid-1', { summary: 's', compressedCount: 1 })).resolves.toBeUndefined()
+    expect(() => flushCompressionCache(storage, 'sid-1', { summary: 's', compressedCount: 1 })).not.toThrow()
+    // 让 microtask 跑完;不应产生 unhandled rejection
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[stello/session] flushCompressionCache failed',
+      expect.objectContaining({ sessionId: 'sid-1', err: expect.any(Error) }),
+    )
   })
 })
