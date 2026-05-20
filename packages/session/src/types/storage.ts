@@ -47,6 +47,31 @@ export interface SessionStorage {
   /** 写入 Session 的 memory */
   putMemory(sessionId: string, content: string): Promise<void>
 
+  /**
+   * (Optional) Load the persisted compression cache for a session.
+   * Storage backends that don't implement this leave the cache transient
+   * (in-memory only). Returns null if no snapshot exists.
+   */
+  getCompressionCache?(sessionId: string): Promise<CompressionCacheSnapshot | null>
+
+  /**
+   * (Optional) Persist a compression cache snapshot for a session.
+   * Called after each compress operation. Failures should be logged
+   * but must not block the current LLM turn.
+   */
+  putCompressionCache?(sessionId: string, snapshot: CompressionCacheSnapshot): Promise<void>
+
   /** 事务（内存实现可直接执行 fn） */
   transaction<T>(fn: (tx: SessionStorage) => Promise<T>): Promise<T>
+}
+
+/**
+ * Snapshot of an in-memory CompressionCache, persistable via SessionStorage.
+ * Mirrors the shape of CompressionCache in context-utils.ts.
+ */
+export interface CompressionCacheSnapshot {
+  /** The latest compressed summary text. */
+  summary: string
+  /** Number of messages from the start of history that this summary covers. */
+  compressedCount: number
 }
