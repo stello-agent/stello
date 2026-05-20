@@ -1,5 +1,5 @@
 import type { Message, LLMAdapter } from './types/llm.js'
-import type { SessionStorage } from './types/storage.js'
+import type { SessionStorage, CompressionCacheSnapshot } from './types/storage.js'
 import type { CompressFn } from './types/functions.js'
 
 /**
@@ -285,5 +285,46 @@ async function compressWithFn(
     userTimestamp,
     compressed: true,
     compressionCache: newCache,
+  }
+}
+
+/**
+ * 从 storage 读取已持久化的压缩缓存(若实现该方法)。
+ *
+ * 返回 null 的情形:
+ * - storage 未实现 getCompressionCache（可选方法）
+ * - storage 返回 null（无快照）
+ * - 读取抛错（错误被静默,调用方回退到内存行为）
+ */
+export async function hydrateCompressionCache(
+  storage: SessionStorage,
+  sessionId: string,
+): Promise<CompressionCache | null> {
+  if (typeof storage.getCompressionCache !== 'function') return null
+  try {
+    const snap = await storage.getCompressionCache(sessionId)
+    if (!snap) return null
+    return { summary: snap.summary, compressedCount: snap.compressedCount }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 把压缩缓存快照写入 storage(若实现该方法)。
+ *
+ * 错误被静默,失败的 flush 永远不会阻塞 LLM 轮次。
+ * 未实现 putCompressionCache 的 storage 后端,本函数等效 no-op。
+ */
+export async function flushCompressionCache(
+  storage: SessionStorage,
+  sessionId: string,
+  snapshot: CompressionCacheSnapshot,
+): Promise<void> {
+  if (typeof storage.putCompressionCache !== 'function') return
+  try {
+    await storage.putCompressionCache(sessionId, snapshot)
+  } catch {
+    /* 静默吞掉:调用方继续用内存缓存 */
   }
 }
