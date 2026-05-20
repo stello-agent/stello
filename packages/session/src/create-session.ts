@@ -4,7 +4,7 @@ import { SessionArchivedError } from './types/session-api.js'
 import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './types/session.js'
 import type { Message } from './types/llm.js'
 import type { CreateSessionOptions, LoadSessionOptions, SendResult, StreamResult } from './types/functions.js'
-import { assembleSessionContext, buildSessionIdentityMessages, createBuiltinCompressFn, hydrateCompressionCache, removeIncompleteToolCallGroups, type CompressionCache } from './context-utils.js'
+import { assembleSessionContext, buildSessionIdentityMessages, createBuiltinCompressFn, flushCompressionCache, hydrateCompressionCache, removeIncompleteToolCallGroups, type CompressionCache } from './context-utils.js'
 
 interface ToolResultEnvelope {
   toolResults: Array<{
@@ -182,6 +182,13 @@ function buildSession(
       )
       if (assembled.compressionCache !== undefined) {
         compressionCache = assembled.compressionCache
+        // 压缩成功后持久化快照(fire-and-forget;失败由 helper 内部 warn 记录)。
+        // compressFn 抛错时 assembleSessionContext 会向上传播,本行不会到达,
+        // 因而失败的 compress 不会污染持久化层。
+        // 类型上 compressionCache 允许 null,实际运行时只在 compressed=true 时为真值快照。
+        if (assembled.compressionCache) {
+          flushCompressionCache(storage, currentMeta.id, assembled.compressionCache)
+        }
       }
 
       // 消费 insight
@@ -258,6 +265,13 @@ function buildSession(
         )
         if (assembled.compressionCache !== undefined) {
           compressionCache = assembled.compressionCache
+          // 压缩成功后持久化快照(fire-and-forget;失败由 helper 内部 warn 记录)。
+          // compressFn 抛错时 assembleSessionContext 会向上传播,本行不会到达,
+          // 因而失败的 compress 不会污染持久化层。
+          // 类型上 compressionCache 允许 null,实际运行时只在 compressed=true 时为真值快照。
+          if (assembled.compressionCache) {
+            flushCompressionCache(storage, currentMeta.id, assembled.compressionCache)
+          }
         }
 
         // 消费 insight

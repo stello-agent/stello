@@ -154,3 +154,121 @@ describe('createSession compressionCache hydration', () => {
     expect(session.meta.id).toBe('sid-1')
   })
 })
+
+describe('compress persistence — flush after success', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    warnSpy.mockRestore()
+  })
+
+  it('calls storage.putCompressionCache after a successful compress in send()', async () => {
+    const { createSession } = await import('../create-session')
+    const { InMemoryStorageAdapter } = await import('../mocks/in-memory-storage')
+    const { createMockLLM } = await import('./helpers')
+
+    // 基于 InMemoryStorageAdapter,但额外捕获 putCompressionCache 调用
+    const baseStorage = new InMemoryStorageAdapter()
+    const puts: Array<[string, { summary: string; compressedCount: number }]> = []
+    const storage: any = baseStorage
+    storage.putCompressionCache = async (sid: string, snap: { summary: string; compressedCount: number }) => {
+      puts.push([sid, snap])
+    }
+
+    // 极小上下文窗口 → 必然触发压缩;mock LLM 一次响应即可
+    const llm = { ...createMockLLM([{ content: 'OK', usage: { promptTokens: 100, completionTokens: 10 } }]), maxContextTokens: 50 }
+    const compressFn = async () => 'compressed summary text'
+
+    const session = await createSession({
+      id: 'sid-flush-1',
+      storage,
+      llm,
+      compressFn,
+      label: 'Test',
+    })
+
+    // 预填充足量历史,确保超阈触发 compress
+    for (let i = 0; i < 20; i++) {
+      await storage.appendRecord(session.meta.id, { role: 'user', content: `message number ${i} with some padding text` })
+      await storage.appendRecord(session.meta.id, { role: 'assistant', content: `reply number ${i} with some padding text` })
+    }
+
+    await session.send('trigger compress')
+
+    // flush 是 fire-and-forget,等 microtask 跑完
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    expect(puts).toHaveLength(1)
+    expect(puts[0]![0]).toBe('sid-flush-1')
+    expect(puts[0]![1]).toEqual({ summary: 'compressed summary text', compressedCount: expect.any(Number) })
+    expect(puts[0]![1].compressedCount).toBeGreaterThan(0)
+  })
+
+  it('does NOT flush when no compress occurs (under threshold)', async () => {
+    const { createSession } = await import('../create-session')
+    const { InMemoryStorageAdapter } = await import('../mocks/in-memory-storage')
+    const { createMockLLM } = await import('./helpers')
+
+    const baseStorage = new InMemoryStorageAdapter()
+    const puts: Array<[string, unknown]> = []
+    const storage: any = baseStorage
+    storage.putCompressionCache = async (sid: string, snap: unknown) => {
+      puts.push([sid, snap])
+    }
+
+    // 巨大上下文窗口 → 不触发 compress
+    const llm = { ...createMockLLM([{ content: 'OK', usage: { promptTokens: 100, completionTokens: 10 } }]), maxContextTokens: 1_000_000 }
+    const compressFn = async () => 'should not be called'
+
+    const session = await createSession({
+      id: 'sid-noflush',
+      storage,
+      llm,
+      compressFn,
+      label: 'Test',
+    })
+
+    await session.send('a normal message')
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    expect(puts).toHaveLength(0)
+  })
+
+  it('does NOT flush when compressFn throws (failed compress)', async () => {
+    const { createSession } = await import('../create-session')
+    const { InMemoryStorageAdapter } = await import('../mocks/in-memory-storage')
+    const { createMockLLM } = await import('./helpers')
+
+    const baseStorage = new InMemoryStorageAdapter()
+    const puts: Array<[string, unknown]> = []
+    const storage: any = baseStorage
+    storage.putCompressionCache = async (sid: string, snap: unknown) => {
+      puts.push([sid, snap])
+    }
+
+    const llm = { ...createMockLLM([{ content: 'OK', usage: { promptTokens: 100, completionTokens: 10 } }]), maxContextTokens: 50 }
+    const compressFn = async () => { throw new Error('compress boom') }
+
+    const session = await createSession({
+      id: 'sid-failcompress',
+      storage,
+      llm,
+      compressFn,
+      label: 'Test',
+    })
+
+    for (let i = 0; i < 20; i++) {
+      await storage.appendRecord(session.meta.id, { role: 'user', content: `message number ${i} with some padding text` })
+      await storage.appendRecord(session.meta.id, { role: 'assistant', content: `reply number ${i} with some padding text` })
+    }
+
+    await expect(session.send('trigger')).rejects.toThrow('compress boom')
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    expect(puts).toHaveLength(0)
+  })
+})
