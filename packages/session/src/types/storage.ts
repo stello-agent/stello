@@ -60,12 +60,6 @@ export interface SessionStorage {
    */
   putCompressionCache?(sessionId: string, snapshot: CompressionCacheSnapshot): Promise<void>
 
-  /**
-   * (可选)清除已持久化的压缩缓存。
-   * 通常在 session reset / 分支 fork / 历史回滚时调用,避免 stale 摘要。
-   */
-  clearCompressionCache?(sessionId: string): Promise<void>
-
   /** 事务（内存实现可直接执行 fn） */
   transaction<T>(fn: (tx: SessionStorage) => Promise<T>): Promise<T>
 }

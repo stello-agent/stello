@@ -9,15 +9,12 @@ describe('SessionStorage compression cache extension', () => {
     }>()
   })
 
-  it('get/put/clearCompressionCache are optional on SessionStorage', () => {
+  it('get/putCompressionCache are optional on SessionStorage', () => {
     expectTypeOf<SessionStorage['getCompressionCache']>().toEqualTypeOf<
       ((sessionId: string) => Promise<CompressionCacheSnapshot | null>) | undefined
     >()
     expectTypeOf<SessionStorage['putCompressionCache']>().toEqualTypeOf<
       ((sessionId: string, snapshot: CompressionCacheSnapshot) => Promise<void>) | undefined
-    >()
-    expectTypeOf<SessionStorage['clearCompressionCache']>().toEqualTypeOf<
-      ((sessionId: string) => Promise<void>) | undefined
     >()
   })
 })

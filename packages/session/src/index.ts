@@ -1,6 +1,6 @@
 // 类型导出 — Session
 export type { SessionMeta, SessionMetaUpdate, SessionFilter, ForkOptions, ForkContextFn } from './types/session.js'
-export type { SessionStorage, ListRecordsOptions } from './types/storage.js'
+export type { SessionStorage, ListRecordsOptions, CompressionCacheSnapshot } from './types/storage.js'
 export type {
   Message, ToolCall, LLMCompleteOptions, LLMResult, LLMChunk, LLMAdapter,
 } from './types/llm.js'
