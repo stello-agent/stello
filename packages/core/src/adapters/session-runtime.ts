@@ -56,6 +56,8 @@ export interface SessionCompatibleSendOptions {
   signal?: AbortSignal;
   /** Agent 级共享 memory 索引段（已由编排层渲染） */
   sharedMemoryContext?: string;
+  /** Per-session topology 上下文段（已由编排层渲染） */
+  topologyContext?: string;
 }
 
 /** 结构兼容 @stello-ai/session 的 Session */
@@ -93,6 +95,12 @@ export interface SessionRuntimeAdapterOptions {
    * 返回 undefined / 空字符串则不注入。adapter 把结果合并进 sendOptions.sharedMemoryContext。
    */
   sharedMemoryContextProvider?: () => Promise<string | undefined>;
+  /**
+   * Per-session topology context provider, called before each send/stream with
+   * the session's own id. Result is merged into sendOptions.topologyContext.
+   * Returning undefined / empty string omits injection.
+   */
+  topologyContextProvider?: (sessionId: string) => Promise<string | undefined>;
 }
 
 /** 默认的 Session send() 结果序列化 */
@@ -164,9 +172,11 @@ export async function adaptSessionToEngineRuntime(
     },
     async send(input: string, sendOptions?: SessionCompatibleSendOptions): Promise<string> {
       const sharedMemoryContext = await options.sharedMemoryContextProvider?.();
+      const topologyContext = await options.topologyContextProvider?.(session.meta.id);
       const mergedOptions: SessionCompatibleSendOptions = {
         ...sendOptions,
         ...(sharedMemoryContext ? { sharedMemoryContext } : {}),
+        ...(topologyContext ? { topologyContext } : {}),
       };
       const result = await session.send(input, mergedOptions);
       turnCount += 1;
@@ -185,11 +195,14 @@ export async function adaptSessionToEngineRuntime(
       ? {
           stream(input: string, sendOptions?: SessionCompatibleSendOptions) {
             const contextPromise = options.sharedMemoryContextProvider?.() ?? Promise.resolve(undefined);
+            const topologyPromise = options.topologyContextProvider?.(session.meta.id) ?? Promise.resolve(undefined);
             const source = (async () => {
               const sharedMemoryContext = await contextPromise;
+              const topologyContext = await topologyPromise;
               const mergedOptions: SessionCompatibleSendOptions = {
                 ...sendOptions,
                 ...(sharedMemoryContext ? { sharedMemoryContext } : {}),
+                ...(topologyContext ? { topologyContext } : {}),
               };
               return session.stream!(input, mergedOptions);
             })();

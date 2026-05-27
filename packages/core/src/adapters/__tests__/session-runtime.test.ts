@@ -190,6 +190,92 @@ describe('session-runtime adapters', () => {
     expect(session.stream).toHaveBeenCalledWith('hi', { signal: controller.signal });
   });
 
+  describe('topologyContextProvider', () => {
+    it('calls topologyContextProvider with sessionId and merges result into send options', async () => {
+      const session = {
+        meta: { id: 'sX', status: 'active' as const },
+        send: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }),
+        messages: vi.fn().mockResolvedValue([]),
+        consolidate: vi.fn(),
+        setTools: vi.fn(),
+      };
+      const provider = vi.fn().mockResolvedValue('<topology>T</topology>');
+      const runtime = await adaptSessionToEngineRuntime(session, {
+        topologyContextProvider: provider,
+      });
+      await runtime.send('hi');
+      expect(provider).toHaveBeenCalledWith('sX');
+      expect(session.send).toHaveBeenCalledWith(
+        'hi',
+        expect.objectContaining({ topologyContext: '<topology>T</topology>' }),
+      );
+    });
+
+    it('omits topologyContext when provider returns undefined', async () => {
+      const session = {
+        meta: { id: 'sX', status: 'active' as const },
+        send: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }),
+        messages: vi.fn().mockResolvedValue([]),
+        consolidate: vi.fn(),
+        setTools: vi.fn(),
+      };
+      const provider = vi.fn().mockResolvedValue(undefined);
+      const runtime = await adaptSessionToEngineRuntime(session, {
+        topologyContextProvider: provider,
+      });
+      await runtime.send('hi');
+      const [, opts] = session.send.mock.calls[0];
+      expect(opts).not.toHaveProperty('topologyContext');
+    });
+
+    it('omits topologyContext when provider returns empty string', async () => {
+      const session = {
+        meta: { id: 'sX', status: 'active' as const },
+        send: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }),
+        messages: vi.fn().mockResolvedValue([]),
+        consolidate: vi.fn(),
+        setTools: vi.fn(),
+      };
+      const runtime = await adaptSessionToEngineRuntime(session, {
+        topologyContextProvider: async () => '',
+      });
+      await runtime.send('hi');
+      const [, opts] = session.send.mock.calls[0];
+      expect(opts).not.toHaveProperty('topologyContext');
+    });
+
+    it('calls topologyContextProvider in stream wrapper and merges into stream options', async () => {
+      const streamSource = {
+        result: Promise.resolve({ content: 'ok', toolCalls: [] }),
+        async *[Symbol.asyncIterator]() {
+          yield 'a';
+        },
+      };
+      const session = {
+        meta: { id: 'sX', status: 'active' as const },
+        send: vi.fn(),
+        stream: vi.fn(() => streamSource),
+        messages: vi.fn().mockResolvedValue([]),
+        consolidate: vi.fn(),
+        setTools: vi.fn(),
+      };
+      const provider = vi.fn().mockResolvedValue('<topology>S</topology>');
+      const runtime = await adaptSessionToEngineRuntime(session, {
+        topologyContextProvider: provider,
+      });
+      const stream = runtime.stream!('hi');
+      for await (const _ of stream) {
+        // drain
+      }
+      await stream.result;
+      expect(provider).toHaveBeenCalledWith('sX');
+      expect(session.stream).toHaveBeenCalledWith(
+        'hi',
+        expect.objectContaining({ topologyContext: '<topology>S</topology>' }),
+      );
+    });
+  });
+
   it('adapter exposes tools getter and forwards setTools to underlying Session', async () => {
     const sessionTools: Array<{ name: string; description: string; inputSchema: object }> = [{ name: 'a', description: 'd', inputSchema: {} }];
     const setToolsSpy = vi.fn((t) => {
