@@ -203,6 +203,7 @@ function buildSession(
         { maxContextTokens: options.llm.maxContextTokens, lastPromptTokens, compressFn: resolveCompressFn(), compressionCache },
         currentMeta.label,
         sendOptions?.sharedMemoryContext,
+        sendOptions?.topologyContext,
       )
       persistAndApplyCompressionCache(assembled.compressionCache)
 
@@ -277,6 +278,7 @@ function buildSession(
           { maxContextTokens: options.llm!.maxContextTokens, lastPromptTokens, compressFn: resolveCompressFn(), compressionCache },
           currentMeta.label,
           sendOptions?.sharedMemoryContext,
+          sendOptions?.topologyContext,
         )
         persistAndApplyCompressionCache(assembled.compressionCache)
 

@@ -168,6 +168,10 @@ export function buildSessionIdentityMessages(label: string | undefined): Message
  *
  * 若传入 `label`（非空）则在 systemPrompt 之后插入 `<session_identity>` 系统消息，
  * 让子 session 感知自己的身份标签。
+ *
+ * 注入顺序：systemPrompt → sharedMemoryContext → topologyContext → session_identity → insight → history → user。
+ * sharedMemoryContext / topologyContext 由编排层渲染好后通过 SessionSendOptions 传入；
+ * 为空 / undefined 时对应槽位不注入。
  */
 export async function assembleSessionContext(
   sessionId: string,
@@ -176,6 +180,7 @@ export async function assembleSessionContext(
   compress: CompressContext,
   label?: string,
   sharedMemoryContext?: string,
+  topologyContext?: string,
 ): Promise<AssembleResult> {
   const prefixMessages: Message[] = []
   let insightConsumed = false
@@ -191,10 +196,15 @@ export async function assembleSessionContext(
     prefixMessages.push({ role: 'system', content: sharedMemoryContext })
   }
 
-  // 3. session identity (label)
+  // 3. topology context (agent-level, externally rendered with you-are-here marker)
+  if (topologyContext) {
+    prefixMessages.push({ role: 'system', content: topologyContext })
+  }
+
+  // 4. session identity (label)
   prefixMessages.push(...buildSessionIdentityMessages(label))
 
-  // 4. insight
+  // 5. insight
   const insightContent = await storage.getInsight(sessionId)
   if (insightContent) {
     prefixMessages.push({ role: 'system', content: insightContent })

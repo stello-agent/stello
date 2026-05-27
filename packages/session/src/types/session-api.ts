@@ -21,9 +21,14 @@ export interface SessionSendOptions {
   signal?: AbortSignal
   /**
    * Agent 级共享 memory 全量内容段（已由编排层渲染好）。
-   * 非空时插入到 systemPrompt 之后、session_identity 之前；为空 / undefined 时不注入。
+   * 非空时插入到 systemPrompt 之后、topology/identity 之前；为空 / undefined 时不注入。
    */
   sharedMemoryContext?: string
+  /**
+   * Agent 级 topology 上下文段（已由编排层渲染好，含 you-are-here 标记和可选 decorator 前缀）。
+   * 非空时插入到 sharedMemoryContext 之后、session_identity 之前；为空 / undefined 时不注入。
+   */
+  topologyContext?: string
 }
 
 /** Session 错误：操作归档中的 Session */
