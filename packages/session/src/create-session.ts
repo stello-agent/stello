@@ -53,6 +53,7 @@ async function assembleSessionReplayContext(
   storage: CreateSessionOptions['storage'] | LoadSessionOptions['storage'],
   label?: string,
   sharedMemoryContext?: string,
+  topologyContext?: string,
 ): Promise<{ messages: Message[]; insightConsumed: boolean }> {
   const messages: Message[] = []
   let insightConsumed = false
@@ -64,6 +65,10 @@ async function assembleSessionReplayContext(
 
   if (sharedMemoryContext) {
     messages.push({ role: 'system', content: sharedMemoryContext })
+  }
+
+  if (topologyContext) {
+    messages.push({ role: 'system', content: topologyContext })
   }
 
   messages.push(...buildSessionIdentityMessages(label))
@@ -216,7 +221,7 @@ function buildSession(
       let recordsToPersist: Message[] = [{ role: 'user', content, timestamp: assembled.userTimestamp }]
       const toolEnvelope = parseToolResultEnvelope(content)
       if (toolEnvelope) {
-        const replayContext = await assembleSessionReplayContext(currentMeta.id, storage, currentMeta.label, sendOptions?.sharedMemoryContext)
+        const replayContext = await assembleSessionReplayContext(currentMeta.id, storage, currentMeta.label, sendOptions?.sharedMemoryContext, sendOptions?.topologyContext)
         promptMessages = [
           ...replayContext.messages,
           ...toolEnvelope.toolResults.map((result) => ({
@@ -291,7 +296,7 @@ function buildSession(
         let recordsToPersist: Message[] = [{ role: 'user', content, timestamp: assembled.userTimestamp }]
         const toolEnvelope = parseToolResultEnvelope(content)
         if (toolEnvelope) {
-          const replayContext = await assembleSessionReplayContext(currentMeta.id, storage, currentMeta.label, sendOptions?.sharedMemoryContext)
+          const replayContext = await assembleSessionReplayContext(currentMeta.id, storage, currentMeta.label, sendOptions?.sharedMemoryContext, sendOptions?.topologyContext)
           promptMessages = [
             ...replayContext.messages,
             ...toolEnvelope.toolResults.map((result) => ({
