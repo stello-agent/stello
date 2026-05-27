@@ -533,6 +533,148 @@ describe('StelloAgent', () => {
     });
   });
 
+  describe('topologyContextDecorator integration', () => {
+    /**
+     * Build a sessionLoader-style agent fixture where:
+     * - sessions exposes getNode (parent walk) + getTree (subtree)
+     * - the underlying session.send captures the merged sendOptions
+     */
+    function buildTopologyFixture(opts: {
+      sessions: Partial<SessionTree>;
+      topologyContextDecorator?: StelloAgentConfig['topologyContextDecorator'];
+    }) {
+      const captured: { sendOptions?: Record<string, unknown> } = {};
+      const session = {
+        meta: { id: 'child', status: 'active' as const },
+        messages: vi.fn().mockResolvedValue([]),
+        send: vi.fn().mockImplementation(async (_input: string, sendOptions?: Record<string, unknown>) => {
+          captured.sendOptions = sendOptions;
+          return { content: 'done', toolCalls: [] };
+        }),
+        consolidate: vi.fn().mockResolvedValue(undefined),
+        setTools: vi.fn(),
+      };
+
+      const config: StelloAgentConfig = {
+        sessions: {
+          get: vi.fn().mockResolvedValue(rootSession),
+          archive: vi.fn(),
+          ...opts.sessions,
+        } as unknown as SessionTree,
+        session: {
+          sessionLoader: vi.fn().mockResolvedValue({ session, config: null }),
+        },
+        capabilities: {
+          lifecycle: {
+            bootstrap: vi.fn().mockResolvedValue({
+              context: { core: {}, memories: [], currentMemory: null, scope: null },
+              session: rootSession,
+            }),
+            afterTurn: vi.fn(),
+          },
+          tools: {
+            getToolDefinitions: vi.fn().mockReturnValue([]),
+            executeTool: vi.fn().mockResolvedValue({ success: true, data: {} }),
+          },
+          skills: {
+            get: vi.fn().mockReturnValue(undefined),
+            register: vi.fn(),
+            getAll: vi.fn().mockReturnValue([]),
+          } as unknown as SkillRouter,
+          confirm: {} as ConfirmProtocol,
+        },
+      };
+      if (opts.topologyContextDecorator) {
+        config.topologyContextDecorator = opts.topologyContextDecorator;
+      }
+      const agent = createStelloAgent(config);
+      return { agent, captured, session };
+    }
+
+    // 2-node tree: root -> child. getTree returns the recursive SessionTreeNode
+    // structure renderTopologyMarkdown consumes.
+    const twoNodeTree = {
+      getNode: vi.fn().mockImplementation(async (id: string) => {
+        if (id === 'child') {
+          return { id: 'child', parentId: 'root', children: [], refs: [], depth: 1, index: 0, label: 'Child' };
+        }
+        if (id === 'root') {
+          return { id: 'root', parentId: null, children: ['child'], refs: [], depth: 0, index: 0, label: 'Root' };
+        }
+        return null;
+      }),
+      getTree: vi.fn().mockResolvedValue([
+        {
+          id: 'root',
+          label: 'Root',
+          status: 'active' as const,
+          turnCount: 0,
+          children: [
+            { id: 'child', label: 'Child', status: 'active' as const, turnCount: 0, children: [] },
+          ],
+        },
+      ]),
+    };
+
+    it('applies configured topologyContextDecorator to rendered topology before send', async () => {
+      const { agent, captured } = buildTopologyFixture({
+        sessions: twoNodeTree,
+        topologyContextDecorator: (raw, ctx) => `<space>S:${ctx.sessionId}</space>\n${raw}`,
+      });
+
+      await agent.turn('child', 'hello');
+
+      expect(captured.sendOptions).toBeDefined();
+      const topologyContext = captured.sendOptions?.topologyContext as string | undefined;
+      expect(topologyContext).toBeDefined();
+      expect(topologyContext).toContain('<space>S:child</space>');
+      expect(topologyContext).toContain('<topology>');
+      expect(topologyContext).toContain('</topology>');
+      expect(topologyContext).toContain('← YOU ARE HERE');
+      // root + child both present in the rendered tree
+      expect(topologyContext).toContain('[sessionId=root]');
+      expect(topologyContext).toContain('[sessionId=child]');
+    });
+
+    it('falls back to raw topology when topologyContextDecorator throws', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { agent, captured } = buildTopologyFixture({
+        sessions: twoNodeTree,
+        topologyContextDecorator: () => {
+          throw new Error('boom');
+        },
+      });
+
+      await agent.turn('child', 'hello');
+
+      const topologyContext = captured.sendOptions?.topologyContext as string | undefined;
+      expect(topologyContext).toBeDefined();
+      expect(topologyContext).toContain('<topology>');
+      expect(topologyContext).not.toContain('<space>');
+      expect(warnSpy).toHaveBeenCalled();
+
+      warnSpy.mockRestore();
+    });
+
+    it('omits topologyContext when SessionTree query fails', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { agent, captured } = buildTopologyFixture({
+        sessions: {
+          getNode: vi.fn().mockRejectedValue(new Error('tree gone')),
+          getTree: vi.fn().mockRejectedValue(new Error('tree gone')),
+        },
+      });
+
+      await agent.turn('child', 'hello');
+
+      expect(captured.sendOptions).toBeDefined();
+      expect(captured.sendOptions?.topologyContext).toBeUndefined();
+      expect(warnSpy).toHaveBeenCalled();
+
+      warnSpy.mockRestore();
+    });
+  });
+
   describe('orchestrator-facing data-IO SDK', () => {
     function storageMock() {
       return {

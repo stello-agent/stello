@@ -35,6 +35,7 @@ import type {
 } from '@stello-ai/session';
 import type { SharedMemoryEntry, SharedMemoryStore } from '../shared-memory/types';
 import { renderSharedMemoryContext } from '../shared-memory/render-shared-memory';
+import { renderTopologyMarkdown } from '../engine/topology-render';
 
 /** Session 能力相关配置 */
 export interface StelloAgentCapabilitiesConfig {
@@ -121,6 +122,19 @@ export interface StelloAgentConfig {
   capabilities: StelloAgentCapabilitiesConfig;
   runtime?: StelloAgentRuntimeConfig;
   orchestration?: StelloAgentOrchestrationConfig;
+  /**
+   * Optional decorator applied to the rendered topology context string before
+   * it's passed to session.send. Receives `(raw, ctx)` where `raw` is the
+   * `<topology>...</topology>` block and `ctx = { sessionId }`. If the
+   * decorator throws, the raw rendered topology is used and a warning is
+   * logged. Intended for product layers (e.g. KitKit) to prepend their own
+   * concepts (like `<space>`) without stello knowing about them.
+   *
+   * Only effective when the agent is constructed via `session.sessionLoader`
+   * (default adapter path). Callers that provide their own `runtime.resolver`
+   * must wire `topologyContextProvider` themselves on their adapter.
+   */
+  topologyContextDecorator?: (raw: string, ctx: { sessionId: string }) => string;
 }
 
 /** 单 Session 的外部数据视图（memory + insight 聚合） */
@@ -150,6 +164,42 @@ function resolveRuntimeResolver(config: StelloAgentConfig, agent: StelloAgent): 
       compressFn: config.sessionDefaults?.compressFn,
       serializeResult: config.session!.serializeSendResult ?? serializeSessionSendResult,
       sharedMemoryContextProvider: () => renderSharedMemoryContext(agent.sharedMemory),
+      topologyContextProvider: async (sessionId: string): Promise<string | undefined> => {
+        let rootNode: SessionTreeNode | undefined;
+        try {
+          // Walk parentId chain to find the root id this session belongs to.
+          let cursor = await config.sessions.getNode(sessionId);
+          if (!cursor) return undefined;
+          while (cursor.parentId) {
+            const parent = await config.sessions.getNode(cursor.parentId);
+            if (!parent) break;
+            cursor = parent;
+          }
+          const rootId = cursor.id;
+          // Fetch the full forest and pick the matching root subtree.
+          const forest = await config.sessions.getTree();
+          rootNode = forest.find((n) => n.id === rootId);
+          if (!rootNode) return undefined;
+        } catch (err) {
+          console.warn(
+            `[stello] topologyContextProvider: failed to load tree for ${sessionId}; skipping`,
+            err,
+          );
+          return undefined;
+        }
+        const markdown = renderTopologyMarkdown(rootNode, sessionId);
+        const raw = `<topology>\n${markdown}\n</topology>`;
+        if (!config.topologyContextDecorator) return raw;
+        try {
+          return config.topologyContextDecorator(raw, { sessionId });
+        } catch (err) {
+          console.warn(
+            `[stello] topologyContextDecorator threw; falling back to raw topology`,
+            err,
+          );
+          return raw;
+        }
+      },
     };
     return {
       resolve: async (sessionId: string) => {
