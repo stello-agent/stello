@@ -157,6 +157,7 @@ export { SessionArchivedError, NotImplementedError } from '@stello-ai/session';
 export type {
   // LLM 适配器
   LLMAdapter, LLMResult, LLMChunk, LLMCompleteOptions, Message,
+  ClientToolDefinition, ProviderToolDefinition, ProviderToolProvider, ProviderToolEvent,
   ClaudeModel, ClaudeOptions,
   GPTModel, GPTOptions,
   OpenAICompatibleOptions,

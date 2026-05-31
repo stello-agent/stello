@@ -1,11 +1,26 @@
 import OpenAI from 'openai'
 import type { ChatCompletion, ChatCompletionChunk } from 'openai/resources/chat/completions'
 import type { Stream } from 'openai/streaming'
-import type { ContentPart, LLMAdapter, LLMResult, Message, LLMCompleteOptions } from '../types/llm.js'
+import type {
+  ContentPart,
+  LLMAdapter,
+  LLMResult,
+  Message,
+  LLMCompleteOptions,
+  ProviderToolDefinition,
+  ProviderToolEvent,
+} from '../types/llm.js'
 
-type ChatToolCallDelta = NonNullable<
-  NonNullable<ChatCompletionChunk['choices'][number]['delta']['tool_calls']>[number]
->
+type RawOpenAIToolCall = {
+  index?: number
+  id?: string
+  type?: string
+  function?: {
+    name?: string
+    arguments?: string
+    results?: unknown
+  }
+} & Record<string, unknown>
 
 /** OpenAI 兼容协议的配置选项 */
 export interface OpenAICompatibleOptions {
@@ -23,6 +38,8 @@ export interface OpenAICompatibleOptions {
    * 在中途被截断，引发上层 JSON 解析失败。
    */
   maxOutputTokens?: number
+  /** Provider-hosted tools to send with every request for this adapter. */
+  providerTools?: ProviderToolDefinition[]
   /** 将 KitKit 托管的多模态文件转成模型服务可访问的 URL。 */
   resolveMediaUrl?: (source: Extract<Extract<ContentPart, { kind: 'image' | 'video' }>['source'], { type: 'kitkit_file' }>) => string | Promise<string>
 }
@@ -47,6 +64,45 @@ function isStepFun37Flash(options: OpenAICompatibleOptions): boolean {
   // StepFun 的不同套餐/入口可能使用不同 baseURL（如 /v1 与 /step_plan/v1）。
   // 多模态能力跟随模型名判断，不能把能力限定死在某一个 endpoint。
   return options.model === 'step-3.7-flash'
+}
+
+function isOpenAICompatibleProviderTool(tool: ProviderToolDefinition): boolean {
+  return tool.provider === 'openai' || tool.provider === 'openai-compatible'
+}
+
+function buildProviderTools(
+  adapterTools: ProviderToolDefinition[] | undefined,
+  requestTools: ProviderToolDefinition[] | undefined,
+): Record<string, unknown>[] {
+  return [...(adapterTools ?? []), ...(requestTools ?? [])]
+    .filter(isOpenAICompatibleProviderTool)
+    .map((tool) => tool.spec)
+}
+
+function parseProviderToolArguments(value: string | undefined): unknown {
+  if (!value) return undefined
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
+}
+
+function isProviderToolCall(call: RawOpenAIToolCall): boolean {
+  return typeof call.type === 'string' && call.type !== 'function'
+}
+
+function toProviderToolEvent(call: RawOpenAIToolCall): ProviderToolEvent {
+  const event: ProviderToolEvent = {
+    ...(call.id ? { id: call.id } : {}),
+    type: call.type ?? 'provider_tool',
+    ...(call.function?.name ? { name: call.function.name } : {}),
+    raw: call,
+  }
+  const input = parseProviderToolArguments(call.function?.arguments)
+  if (input !== undefined) event.input = input
+  if (call.function && 'results' in call.function) event.results = call.function.results
+  return event
 }
 
 function escapeDocumentAttribute(value: string): string {
@@ -137,22 +193,22 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleOptions):
   async function buildParams(messages: Message[], completeOptions?: LLMCompleteOptions) {
     const normalizedMessages = mergeConsecutiveSystemMessages(messages)
     const allowMultimodal = isStepFun37Flash(options)
+    const clientTools = completeOptions?.tools?.map((tool) => ({
+      type: 'function' as const,
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.inputSchema,
+      },
+    })) ?? []
+    const providerTools = buildProviderTools(options.providerTools, completeOptions?.providerTools)
+    const requestTools = [...clientTools, ...providerTools]
     return {
       model: options.model,
       max_tokens: completeOptions?.maxTokens ?? options.maxOutputTokens ?? 4096,
       ...(completeOptions?.temperature !== undefined && { temperature: completeOptions.temperature }),
-      ...(completeOptions?.tools
-        ? {
-            tools: completeOptions.tools.map((tool) => ({
-              type: 'function' as const,
-              function: {
-                name: tool.name,
-                description: tool.description,
-                parameters: tool.inputSchema,
-              },
-            })),
-          }
-        : {}),
+      ...(requestTools.length > 0 ? { tools: requestTools } : {}),
+      ...(providerTools.length > 0 ? { tool_choice: 'auto' as const } : {}),
       messages: await Promise.all(normalizedMessages.map(async (m) => ({
         role: m.role as 'system' | 'user' | 'assistant' | 'tool',
         content: await toOpenAIContent(m, allowMultimodal, options),
@@ -194,18 +250,24 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleOptions):
       const reasoningContent = typeof rawMessage?.reasoning_content === 'string'
         ? rawMessage.reasoning_content
         : null
+      const rawToolCalls = (choice?.message?.tool_calls ?? []) as RawOpenAIToolCall[]
+      const providerToolEvents = rawToolCalls
+        .filter(isProviderToolCall)
+        .map(toProviderToolEvent)
 
       return {
         content: choice?.message?.content ?? null,
         ...(reasoningContent ? { reasoningContent } : {}),
-        toolCalls: (choice?.message?.tool_calls ?? []).flatMap((call) => {
+        toolCalls: rawToolCalls.flatMap((call) => {
+          if (isProviderToolCall(call)) return []
           if (!('function' in call) || !call.function) return []
           return [{
-            id: call.id,
+            id: call.id ?? 'unknown_tool_call',
             name: call.function.name ?? 'unknown_tool',
             input: call.function.arguments ? JSON.parse(call.function.arguments) as Record<string, unknown> : {},
           }]
         }),
+        ...(providerToolEvents.length > 0 ? { providerToolEvents } : {}),
         usage: response.usage
           ? {
               promptTokens: response.usage.prompt_tokens,
@@ -231,14 +293,23 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleOptions):
         const reasoningDelta = typeof rawDelta?.reasoning_content === 'string'
           ? rawDelta.reasoning_content
           : undefined
-        const toolCallDeltas = (chunk.choices[0]?.delta?.tool_calls ?? []).map((call: ChatToolCallDelta) => ({
+        const rawToolCalls = (chunk.choices[0]?.delta?.tool_calls ?? []) as RawOpenAIToolCall[]
+        const providerToolEvents = rawToolCalls
+          .filter(isProviderToolCall)
+          .map(toProviderToolEvent)
+        const toolCallDeltas = rawToolCalls.filter((call) => !isProviderToolCall(call)).map((call) => ({
           index: call.index ?? 0,
           id: call.id,
           name: call.function?.name,
           input: call.function?.arguments,
         }))
-        if (delta || reasoningDelta || toolCallDeltas.length > 0) {
-          yield { delta, ...(reasoningDelta ? { reasoningDelta } : {}), toolCallDeltas }
+        if (delta || reasoningDelta || toolCallDeltas.length > 0 || providerToolEvents.length > 0) {
+          yield {
+            delta,
+            ...(reasoningDelta ? { reasoningDelta } : {}),
+            ...(toolCallDeltas.length > 0 ? { toolCallDeltas } : {}),
+            ...(providerToolEvents.length > 0 ? { providerToolEvents } : {}),
+          }
         }
       }
     },

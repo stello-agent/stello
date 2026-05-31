@@ -189,6 +189,164 @@ describe('createOpenAICompatibleAdapter', () => {
       ],
     })
   })
+
+  it('将 providerTools 原样透传给 OpenAI-compatible tools 数组', async () => {
+    const adapter = createOpenAICompatibleAdapter({
+      apiKey: 'test-key',
+      baseURL: 'https://api.stepfun.com/v1',
+      model: 'step-3.7-flash',
+      maxContextTokens: 128_000,
+    })
+
+    await adapter.complete([{ role: 'user', content: '今天有什么新闻？' }], {
+      tools: [{ name: 'client_search', description: 'client search', inputSchema: { type: 'object' } }],
+      providerTools: [{
+        id: 'stepfun_web_search',
+        provider: 'openai-compatible',
+        spec: {
+          type: 'web_search',
+          function: { description: '搜索互联网实时信息' },
+        },
+      }],
+    })
+
+    expect(createCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool_choice: 'auto',
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'client_search',
+              description: 'client search',
+              parameters: { type: 'object' },
+            },
+          },
+          {
+            type: 'web_search',
+            function: { description: '搜索互联网实时信息' },
+          },
+        ],
+      }),
+      undefined,
+    )
+  })
+
+  it('StepFun web_search tool_calls 不会变成客户端 toolCalls，并保留 providerToolEvents', async () => {
+    createCompletion.mockResolvedValueOnce({
+      choices: [{
+        message: {
+          content: '上海中心大厦',
+          tool_calls: [{
+            id: 'call_search_1',
+            type: 'web_search',
+            function: {
+              name: 'step_websearch',
+              arguments: '{"keyword":"上海最高的楼"}',
+              results: [{ index: 0, url: 'https://example.com', title: '上海最高的楼' }],
+            },
+          }],
+        },
+      }],
+      usage: { prompt_tokens: 10, completion_tokens: 4 },
+    })
+
+    const adapter = createOpenAICompatibleAdapter({
+      apiKey: 'test-key',
+      baseURL: 'https://api.stepfun.com/v1',
+      model: 'step-3.7-flash',
+      maxContextTokens: 128_000,
+    })
+
+    const result = await adapter.complete([{ role: 'user', content: '上海最高的楼？' }], {
+      providerTools: [{
+        id: 'stepfun_web_search',
+        provider: 'openai-compatible',
+        spec: { type: 'web_search', function: { description: '搜索互联网实时信息' } },
+      }],
+    })
+
+    expect(result.toolCalls).toEqual([])
+    expect(result.providerToolEvents).toEqual([{
+      id: 'call_search_1',
+      type: 'web_search',
+      name: 'step_websearch',
+      input: { keyword: '上海最高的楼' },
+      results: [{ index: 0, url: 'https://example.com', title: '上海最高的楼' }],
+      raw: {
+        id: 'call_search_1',
+        type: 'web_search',
+        function: {
+          name: 'step_websearch',
+          arguments: '{"keyword":"上海最高的楼"}',
+          results: [{ index: 0, url: 'https://example.com', title: '上海最高的楼' }],
+        },
+      },
+    }])
+  })
+
+  it('stream() 忽略 provider tool delta 的客户端执行通道，并下发 providerToolEvents', async () => {
+    createCompletion.mockResolvedValueOnce((async function* () {
+      yield {
+        choices: [{
+          delta: {
+            tool_calls: [{
+              index: 0,
+              id: 'call_search_1',
+              type: 'web_search',
+              function: {
+                name: 'step_websearch',
+                arguments: '{"keyword":"上海最高的楼"}',
+                results: [{ index: 0, url: 'https://example.com', title: '上海最高的楼' }],
+              },
+            }],
+          },
+        }],
+      }
+      yield { choices: [{ delta: { content: '上海中心大厦' } }] }
+    })())
+
+    const adapter = createOpenAICompatibleAdapter({
+      apiKey: 'test-key',
+      baseURL: 'https://api.stepfun.com/v1',
+      model: 'step-3.7-flash',
+      maxContextTokens: 128_000,
+    })
+
+    if (!adapter.stream) throw new Error('adapter.stream is required')
+
+    const chunks = []
+    for await (const chunk of adapter.stream([{ role: 'user', content: '上海最高的楼？' }], {
+      providerTools: [{
+        id: 'stepfun_web_search',
+        provider: 'openai-compatible',
+        spec: { type: 'web_search', function: { description: '搜索互联网实时信息' } },
+      }],
+    })) {
+      chunks.push(chunk)
+    }
+
+    expect(chunks.flatMap((chunk) => chunk.toolCallDeltas ?? [])).toEqual([])
+    expect(chunks.flatMap((chunk) => chunk.providerToolEvents ?? [])).toEqual([{
+      id: 'call_search_1',
+      type: 'web_search',
+      name: 'step_websearch',
+      input: { keyword: '上海最高的楼' },
+      results: [{ index: 0, url: 'https://example.com', title: '上海最高的楼' }],
+      raw: {
+        index: 0,
+        id: 'call_search_1',
+        type: 'web_search',
+        function: {
+          name: 'step_websearch',
+          arguments: '{"keyword":"上海最高的楼"}',
+          results: [{ index: 0, url: 'https://example.com', title: '上海最高的楼' }],
+        },
+      },
+    }])
+    expect(chunks.map((chunk) => chunk.delta).join('')).toBe('上海中心大厦')
+  })
+
   it('StepFun 3.7 多模态能力不绑定固定 baseURL', async () => {
     const adapter = createOpenAICompatibleAdapter({
       apiKey: 'test-key',

@@ -213,6 +213,70 @@ describe('createAnthropicAdapter complete() max_tokens', () => {
       undefined,
     )
   })
+
+  it('将 providerTools 原样透传给 Anthropic tools 数组', async () => {
+    const adapter = createAnthropicAdapter({
+      apiKey: 'k',
+      model: 'm',
+      maxContextTokens: 200_000,
+      providerTools: [{
+        id: 'anthropic_web_search',
+        provider: 'anthropic',
+        spec: { type: 'web_search_20250305', name: 'web_search', max_uses: 3 },
+      }],
+    })
+
+    await adapter.complete([{ role: 'user', content: 'latest news' }], {
+      tools: [{ name: 'client_tool', description: 'client', inputSchema: { type: 'object' } }],
+    })
+
+    expect(messagesCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tools: [
+          { name: 'client_tool', description: 'client', input_schema: { type: 'object' } },
+          { type: 'web_search_20250305', name: 'web_search', max_uses: 3 },
+        ],
+      }),
+      undefined,
+    )
+  })
+
+  it('Anthropic server-side tool blocks 不会变成客户端 toolCalls，并保留 providerToolEvents', async () => {
+    messagesCreate.mockResolvedValueOnce({
+      content: [
+        { type: 'server_tool_use', id: 'srv_1', name: 'web_search', input: { query: 'OpenAI news' } },
+        { type: 'web_search_tool_result', tool_use_id: 'srv_1', content: [{ type: 'web_search_result', title: 'Example', url: 'https://example.com' }] },
+        { type: 'text', text: 'answer' },
+      ],
+      usage: { input_tokens: 10, output_tokens: 5 },
+    })
+
+    const adapter = createAnthropicAdapter({
+      apiKey: 'k',
+      model: 'm',
+      maxContextTokens: 200_000,
+    })
+
+    const result = await adapter.complete([{ role: 'user', content: 'latest news' }])
+
+    expect(result.content).toBe('answer')
+    expect(result.toolCalls).toBeUndefined()
+    expect(result.providerToolEvents).toEqual([
+      {
+        id: 'srv_1',
+        type: 'server_tool_use',
+        name: 'web_search',
+        input: { query: 'OpenAI news' },
+        raw: { type: 'server_tool_use', id: 'srv_1', name: 'web_search', input: { query: 'OpenAI news' } },
+      },
+      {
+        id: 'srv_1',
+        type: 'web_search_tool_result',
+        results: [{ type: 'web_search_result', title: 'Example', url: 'https://example.com' }],
+        raw: { type: 'web_search_tool_result', tool_use_id: 'srv_1', content: [{ type: 'web_search_result', title: 'Example', url: 'https://example.com' }] },
+      },
+    ])
+  })
 })
 
 describe('createAnthropicAdapter stream() max_tokens', () => {

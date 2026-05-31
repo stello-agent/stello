@@ -3,7 +3,8 @@ export type { SessionMeta, SessionMetaUpdate, SessionFilter, ForkOptions, ForkCo
 export type { SessionStorage, ListRecordsOptions, CompressionCacheSnapshot } from './types/storage.js'
 export type {
   Message, ContentPart, TextPart, ImagePart, VideoPart, FilePart, AudioPart, MediaSource,
-  ToolCall, LLMCompleteOptions, LLMResult, LLMChunk, LLMAdapter,
+  ToolCall, ClientToolDefinition, ProviderToolDefinition, ProviderToolProvider, ProviderToolEvent,
+  LLMCompleteOptions, LLMResult, LLMChunk, LLMAdapter,
 } from './types/llm.js'
 export type {
   Session,

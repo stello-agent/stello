@@ -82,6 +82,32 @@ export interface ToolCall {
   input: Record<string, unknown>
 }
 
+/** 客户端执行的 function-calling tool 定义。 */
+export interface ClientToolDefinition {
+  name: string
+  description: string
+  inputSchema: Record<string, unknown>
+}
+
+export type ProviderToolProvider = 'openai' | 'openai-compatible' | 'anthropic'
+
+/** Provider 执行的内置 tool 原生描述符。Stello 只透传，不本地执行。 */
+export interface ProviderToolDefinition {
+  id: string
+  provider: ProviderToolProvider
+  spec: Record<string, unknown>
+}
+
+/** Provider 内置 tool 的事件 / 结果。由 adapter 从 provider 响应中提取。 */
+export interface ProviderToolEvent {
+  id?: string
+  type: string
+  name?: string
+  input?: unknown
+  results?: unknown
+  raw: unknown
+}
+
 /** LLM complete 的选项 */
 export interface LLMCompleteOptions {
   /** 最大生成 token 数 */
@@ -89,7 +115,9 @@ export interface LLMCompleteOptions {
   /** 温度参数 */
   temperature?: number
   /** 可用工具列表的 schema（JSON Schema 格式） */
-  tools?: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
+  tools?: ClientToolDefinition[]
+  /** Provider 执行的内置 tool 原生描述符。 */
+  providerTools?: ProviderToolDefinition[]
   /**
    * AbortSignal — adapter 应在 abort 时中断 LLM 调用并以 AbortError reject。
    * 不支持取消的 adapter 可忽略此字段（best-effort 语义）。
@@ -103,6 +131,8 @@ export interface LLMResult {
   /** 推理模型的思考内容，多轮对话时需回传给 API */
   reasoningContent?: string | null
   toolCalls?: ToolCall[]
+  /** Provider 内置 tool 事件 / 结果，不进入客户端 tool loop。 */
+  providerToolEvents?: ProviderToolEvent[]
   usage?: {
     promptTokens: number
     completionTokens: number
@@ -122,6 +152,8 @@ export interface LLMChunk {
     name?: string
     input?: string
   }>
+  /** Provider 内置 tool 事件 / 结果，不进入客户端 tool loop。 */
+  providerToolEvents?: ProviderToolEvent[]
 }
 
 /**

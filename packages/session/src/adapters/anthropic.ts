@@ -7,7 +7,25 @@ import type {
   Tool,
   ContentBlock,
 } from '@anthropic-ai/sdk/resources/messages/messages'
-import type { LLMAdapter, LLMResult, LLMChunk, Message, ToolCall, LLMCompleteOptions } from '../types/llm.js'
+import type {
+  LLMAdapter,
+  LLMResult,
+  LLMChunk,
+  Message,
+  ToolCall,
+  LLMCompleteOptions,
+  ProviderToolDefinition,
+  ProviderToolEvent,
+} from '../types/llm.js'
+
+type AnthropicProviderBlock = {
+  type: string
+  id?: string
+  tool_use_id?: string
+  name?: string
+  input?: unknown
+  content?: unknown
+} & Record<string, unknown>
 
 /** Anthropic 原生协议的配置选项 */
 export interface AnthropicAdapterOptions {
@@ -24,6 +42,8 @@ export interface AnthropicAdapterOptions {
    * 在中途被截断，引发上层 JSON 解析失败。建议按模型上限设置。
    */
   maxOutputTokens?: number
+  /** Provider-hosted tools to send with every request for this adapter. */
+  providerTools?: ProviderToolDefinition[]
 }
 
 /** 将 Stello 内部 Message 转换为 Anthropic MessageParam 格式 */
@@ -106,6 +126,27 @@ function toAnthropicTools(
   }))
 }
 
+function isAnthropicProviderTool(tool: ProviderToolDefinition): boolean {
+  return tool.provider === 'anthropic'
+}
+
+function buildProviderTools(
+  adapterTools: ProviderToolDefinition[] | undefined,
+  requestTools: ProviderToolDefinition[] | undefined,
+): Record<string, unknown>[] {
+  return [...(adapterTools ?? []), ...(requestTools ?? [])]
+    .filter(isAnthropicProviderTool)
+    .map((tool) => tool.spec)
+}
+
+function buildRequestTools(completeOptions: LLMCompleteOptions | undefined, adapterTools: ProviderToolDefinition[] | undefined): Tool[] {
+  const clientTools = completeOptions?.tools && completeOptions.tools.length > 0
+    ? toAnthropicTools(completeOptions.tools)
+    : []
+  const providerTools = buildProviderTools(adapterTools, completeOptions?.providerTools)
+  return [...clientTools, ...providerTools] as Tool[]
+}
+
 /** 从 Anthropic response content blocks 中提取 tool calls */
 function extractToolCalls(content: ContentBlock[]): ToolCall[] {
   return content
@@ -125,6 +166,27 @@ function extractText(content: ContentBlock[]): string | null {
   return texts.length > 0 ? texts.join('') : null
 }
 
+function toProviderToolEvent(block: AnthropicProviderBlock): ProviderToolEvent | null {
+  if (block.type === 'text' || block.type === 'tool_use') return null
+  const event: ProviderToolEvent = {
+    type: block.type,
+    raw: block,
+  }
+  const id = block.id ?? block.tool_use_id
+  if (id) event.id = id
+  if (block.name) event.name = block.name
+  if ('input' in block) event.input = block.input
+  if ('content' in block) event.results = block.content
+  return event
+}
+
+function extractProviderToolEvents(content: ContentBlock[]): ProviderToolEvent[] {
+  return content.flatMap((block) => {
+    const event = toProviderToolEvent(block as AnthropicProviderBlock)
+    return event ? [event] : []
+  })
+}
+
 /** 创建基于 Anthropic 原生协议的 LLMAdapter */
 export function createAnthropicAdapter(options: AnthropicAdapterOptions): LLMAdapter {
   const client = new Anthropic({
@@ -141,6 +203,7 @@ export function createAnthropicAdapter(options: AnthropicAdapterOptions): LLMAda
       const system = systemMessages.length > 0
         ? systemMessages.map((m) => m.content).join('\n\n')
         : undefined
+      const requestTools = buildRequestTools(completeOptions, options.providerTools)
 
       const response = await client.messages.create(
         {
@@ -148,19 +211,19 @@ export function createAnthropicAdapter(options: AnthropicAdapterOptions): LLMAda
           max_tokens: completeOptions?.maxTokens ?? options.maxOutputTokens ?? 4096,
           ...(completeOptions?.temperature !== undefined && { temperature: completeOptions.temperature }),
           ...(system && { system }),
-          ...(completeOptions?.tools && completeOptions.tools.length > 0
-            ? { tools: toAnthropicTools(completeOptions.tools) }
-            : {}),
+          ...(requestTools.length > 0 ? { tools: requestTools } : {}),
           messages: toAnthropicMessages(nonSystemMessages),
         },
         completeOptions?.signal ? { signal: completeOptions.signal } : undefined,
       )
 
       const toolCalls = extractToolCalls(response.content)
+      const providerToolEvents = extractProviderToolEvents(response.content)
 
       return {
         content: extractText(response.content),
         ...(toolCalls.length > 0 ? { toolCalls } : {}),
+        ...(providerToolEvents.length > 0 ? { providerToolEvents } : {}),
         usage: {
           promptTokens: response.usage.input_tokens,
           completionTokens: response.usage.output_tokens,
@@ -175,6 +238,7 @@ export function createAnthropicAdapter(options: AnthropicAdapterOptions): LLMAda
       const system = systemMessages.length > 0
         ? systemMessages.map((m) => m.content).join('\n\n')
         : undefined
+      const requestTools = buildRequestTools(completeOptions, options.providerTools)
 
       const stream = client.messages.stream(
         {
@@ -182,9 +246,7 @@ export function createAnthropicAdapter(options: AnthropicAdapterOptions): LLMAda
           max_tokens: completeOptions?.maxTokens ?? options.maxOutputTokens ?? 4096,
           ...(completeOptions?.temperature !== undefined && { temperature: completeOptions.temperature }),
           ...(system && { system }),
-          ...(completeOptions?.tools && completeOptions.tools.length > 0
-            ? { tools: toAnthropicTools(completeOptions.tools) }
-            : {}),
+          ...(requestTools.length > 0 ? { tools: requestTools } : {}),
           messages: toAnthropicMessages(nonSystemMessages),
         },
         completeOptions?.signal ? { signal: completeOptions.signal } : undefined,
@@ -204,6 +266,11 @@ export function createAnthropicAdapter(options: AnthropicAdapterOptions): LLMAda
                 id: event.content_block.id,
                 name: event.content_block.name,
               }],
+            }
+          } else {
+            const providerEvent = toProviderToolEvent(event.content_block as AnthropicProviderBlock)
+            if (providerEvent) {
+              yield { delta: '', providerToolEvents: [providerEvent] }
             }
           }
         } else if (event.type === 'content_block_delta') {
