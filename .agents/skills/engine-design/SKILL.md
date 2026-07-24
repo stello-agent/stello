@@ -59,7 +59,7 @@ hooks 抛错时 emit error 事件 + 调用 onError hook，不中断对话周期�
 
 ## 错误处理原则
 
-- session.send() 失败 → 向上抛出（核心路径）
+- session.stream() 失败 → 向上抛出（核心路径；turn() 也聚合该流）
 - tool.execute() 失败 → 错误信息作为 tool result 返回给 LLM，继续循环
 - hook / Scheduler 闭包失败 → emit error，不影响 turn() 返回
 

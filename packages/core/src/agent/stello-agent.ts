@@ -106,7 +106,7 @@ export interface StelloAgentConfig {
    *   removeSharedMemoryEntry) 可用
    * - 内置 tool `stello_memory_edit` 可用
    * - 当 agent 走默认 session.sessionLoader 路径时,<shared_memory> 全量段每次
-   *   send 前由内置 adapter 自动渲染并注入到上下文。
+   *   send/stream 前由内置 adapter 自动渲染并注入到上下文。
    *
    * 未注入：SDK 方法和内置 tool 抛 "sharedMemory not configured";<shared_memory>
    * 段不进入上下文。
@@ -124,7 +124,7 @@ export interface StelloAgentConfig {
   orchestration?: StelloAgentOrchestrationConfig;
   /**
    * Optional decorator applied to the rendered topology context string before
-   * it's passed to session.send. Receives `(raw, ctx)` where `raw` is the
+   * it's passed to the next session send/stream context. Receives `(raw, ctx)` where `raw` is the
    * `<topology>...</topology>` block and `ctx = { sessionId }`. If the
    * decorator throws, the raw rendered topology is used and a warning is
    * logged. Intended for product layers (e.g. KitKit) to prepend their own

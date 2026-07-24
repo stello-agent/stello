@@ -1,628 +1,231 @@
 # 发布指南（维护者）
 
-本指南面向 Stello 项目的维护者，详细说明如何管理版本发布流程。即使你是第一次接触 npm 包发布，也能轻松掌握。
+本仓库不再使用 Changesets。版本号和 CHANGELOG 由维护者在发布提交中直接更新。
 
-## 📋 目录
+## 发布对象
 
-- [发布流程概览](#发布流程概览)
-- [核心概念](#核心概念)
-- [自动发布流程](#自动发布流程)
-- [Version PR 审查与合并](#version-pr-审查与合并)
-- [验证发布](#验证发布)
-- [手动发布（紧急情况）](#手动发布紧急情况)
-- [发布 Beta/Alpha 版本](#发布-betaalpha-版本)
-- [常见问题排查](#常见问题排查)
+| 包 | 是否发布 | 依赖关系 |
+| --- | --- | --- |
+| `@stello-ai/session` | 是 | 基础 Session 包 |
+| `@stello-ai/core` | 是 | 依赖 `@stello-ai/session` |
+| `@stello-ai/devtools` | 按需单独发布 | 依赖 `@stello-ai/core` |
+| `@stello-ai/devtools-web` | 否 | private workspace |
 
----
+根包 `stello` 也是 private，不会发布。
 
-## 发布流程概览
+`@stello-ai/core` 和 `@stello-ai/session` 可以使用不同版本号。全局 `vX.Y.Z` tag 跟随 Core 版本。
 
-Stello 使用 **Changesets + GitHub Actions** 实现全自动发布流程。整个流程分为 3 个阶段：
+## 当前发布机制
 
-```
-阶段 1: 贡献者提交代码
-  ├─ 编写代码
-  ├─ 添加 changeset 文件
-  └─ 提交 PR 并合并到 main
+仓库提供两条互斥的发布路径，一次发布只能选择其中一条。
 
-阶段 2: 自动创建 Version PR
-  ├─ GitHub Actions 检测到新的 changeset
-  ├─ 自动更新包版本号
-  ├─ 自动生成 CHANGELOG
-  └─ 创建 "chore: release packages" PR
+### Tag 自动发布
 
-阶段 3: 维护者操作（你的工作）
-  ├─ 审查 Version PR
-  ├─ 合并 Version PR
-  └─ 自动触发 npm 发布
-```
+推送任意 `v*` tag 会触发 [`.github/workflows/release.yml`](.github/workflows/release.yml)：
 
-**你的主要职责：审查并合并 Version PR。**
+1. 使用 frozen lockfile 安装依赖；
+2. 构建并测试 Session 和 Core；
+3. 将两个包发布到 npm；
+4. 创建 GitHub Release。
 
----
+该 workflow 会无条件发布两个包，因此打 tag 前必须同时给两个包设置尚未发布的新版本。
 
-## 核心概念
+### 维护者手动发布
 
-### 什么是 Changeset？
+维护者也可以在本地运行 `pnpm release`。该命令会先完成 lint、build、typecheck 和 test，然后严格按以下顺序发布：
 
-Changeset 是一个描述代码变更的 Markdown 文件，包含：
+1. `@stello-ai/session`
+2. `@stello-ai/core`
 
-- 受影响的包名
-- 版本变更类型（patch/minor/major）
-- 变更描述（会出现在 CHANGELOG 中）
+手动发布后不要再推送同版本的 `v*` tag，否则 tag workflow 会尝试重复发布并失败。若需要在手动发布后补建标准 `v*` tag/GitHub Release，应先调整 workflow，使其跳过 npm 上已经存在的版本。
 
-示例 changeset 文件（`.changeset/quick-lions-dance.md`）：
+`.github/workflows/npm-publish.yml` 是可手动触发的 GitHub Actions fallback，可选择发布两个包或单个包，也支持 dry run。
 
-```markdown
----
-"@stello-ai/core": minor
-"@stello-ai/session": patch
----
+## 版本规则
 
-feat(core): 添加自动分支保护机制
+项目仍处于 `0.x` 阶段：
 
-- 新增 `maxDepth` 配置限制 Session 树深度
-- 修复 Session.consolidate() 的异步竞态问题
-```
+| 变更 | 版本升级 |
+| --- | --- |
+| Breaking API 或运行时语义变化 | minor，例如 `0.10.2 → 0.11.0` |
+| 向后兼容的修复或小改进 | patch，例如 `0.10.2 → 0.10.3` |
 
-### 什么是 Version PR？
+发布时需要同步检查：
 
-Version PR 是由 GitHub Actions 自动创建的特殊 Pull Request，标题固定为：
+- `packages/session/package.json`
+- `packages/session/CHANGELOG.md`
+- `packages/core/package.json`
+- `packages/core/CHANGELOG.md`
+- `packages/core/src/index.ts` 中公开的 `VERSION` 常量
 
-```
-chore: release packages
-```
+Core 对 Session 的依赖应保留为 `workspace:^`。pnpm 打包 Core 时会把它转换成当前 Session 版本对应的范围，例如 `^0.9.0`，不要手工改成固定版本。
 
-它会自动完成：
+仅修改 workspace 包自身版本通常不需要更新 `pnpm-lock.yaml`；仍应运行 `pnpm install --frozen-lockfile` 验证 lockfile 一致。
 
-1. **更新版本号** - 修改所有受影响包的 `package.json`
-2. **生成 CHANGELOG** - 汇总所有 changeset 到 `CHANGELOG.md`
-3. **删除已处理的 changeset** - 清空 `.changeset/*.md` 文件
+## 发布准备
 
-### 语义化版本（Semver）
+### 1. 确认基线
 
-版本号格式：`MAJOR.MINOR.PATCH`（如 `0.2.1`）
-
-| 类型 | 何时使用 | 示例 |
-|------|---------|------|
-| **patch** | Bug 修复、小改进、不影响 API | 0.2.0 → 0.2.1 |
-| **minor** | 新功能、向后兼容的 API 变更 | 0.2.0 → 0.3.0 |
-| **major** | 破坏性变更、不兼容的 API 修改 | 0.2.0 → 1.0.0 |
-
-**注意：** 在 `0.x.y` 阶段，minor 版本也可以包含破坏性变更（符合 Semver 规范）。
-
----
-
-## 自动发布流程
-
-### 工作流程触发条件
-
-GitHub Actions 工作流（`.github/workflows/release.yml`）在以下情况触发：
-
-- 有新代码被推送到 `main` 分支
-
-### 工作流程行为
-
-1. **如果 `.changeset/` 目录下有未处理的 changeset 文件**：
-   - 创建或更新 Version PR
-
-2. **如果 Version PR 被合并**：
-   - 构建所有包
-   - 发布到 npm
-   - 创建 Git tag
-
-### Version PR 示例
-
-当你在 GitHub 上看到这样的 PR 时，就是 Version PR：
-
-**标题：** `chore: release packages`
-
-**描述：** 自动生成的版本变更汇总
-
-**文件变更：**
-```
-modified: packages/core/package.json
-modified: packages/core/CHANGELOG.md
-modified: packages/session/package.json
-modified: packages/session/CHANGELOG.md
-deleted:  .changeset/quick-lions-dance.md
-```
-
----
-
-## Version PR 审查与合并
-
-### 审查清单
-
-在合并 Version PR 前，请逐项检查：
-
-#### 1. 版本号是否合理
-
-打开 `packages/*/package.json`，检查版本号变更：
-
-- [ ] 版本号符合 Semver 规范
-- [ ] 如果包含破坏性变更，`major` 版本号应该递增
-- [ ] 如果只是 Bug 修复，`patch` 版本号应该递增
-- [ ] 各包版本号递增符合 changeset 中声明的类型
-
-#### 2. CHANGELOG 是否完整且格式正确
-
-打开 `packages/*/CHANGELOG.md`，检查：
-
-- [ ] 所有重要变更都已记录
-- [ ] 描述清晰易懂（面向最终用户）
-- [ ] 没有重复或遗漏的条目
-- [ ] 格式符合 Markdown 规范
-- [ ] 包名使用完整的 `@stello-ai/*` 格式
-- [ ] 没有包含内部实现细节（应聚焦用户可见的改动）
-
-#### 3. Changeset 文件是否已删除
-
-- [ ] `.changeset/` 目录下的所有 `.md` 文件（除了 `README.md` 和 `config.json`）都已被删除
-- [ ] 确认被删除的 changeset 文件内容已正确合并到 CHANGELOG
-
-#### 4. 依赖关系是否正确更新
-
-如果发布了多个包，检查包之间的依赖版本：
-
-- [ ] `@stello-ai/server` 依赖的 `@stello-ai/core` 版本已更新
-- [ ] `@stello-ai/server` 依赖的 `@stello-ai/session` 版本已更新
-- [ ] `@stello-ai/devtools` 依赖的包版本已更新
-- [ ] 所有 `workspace:^` 协议已被替换为实际版本号
-
-#### 5. CI 检查是否通过
-
-- [ ] GitHub Actions 中的所有检查都显示绿色 ✅
-- [ ] 构建成功（所有包）
-- [ ] 测试通过（所有包）
-- [ ] 类型检查通过
-
-### 何时合并 Version PR
-
-✅ **可以合并的情况：**
-
-- 所有审查清单项都已通过
-- 距离上次发布已有足够的变更积累
-- 当前 `main` 分支稳定（没有已知的严重 Bug）
-
-❌ **不应该合并的情况：**
-
-- 正在进行大规模重构（等重构完成后一起发布）
-- 发现 CHANGELOG 中描述不准确（手动编辑后再合并）
-- CI 检查失败
-
-### 如何合并 Version PR
-
-1. 访问 Version PR 页面
-2. 点击 "Squash and merge" 按钮（推荐）或 "Merge pull request"
-3. 确认合并
-
-**注意：** 不要选择 "Rebase and merge"，这会导致提交历史混乱。
-
-### 合并后会发生什么
-
-合并 Version PR 后，GitHub Actions 会自动：
-
-1. ✅ 安装依赖（`pnpm install --frozen-lockfile`）
-2. ✅ 构建所有包（`pnpm build`）
-3. ✅ 发布到 npm（`pnpm release`）
-4. ✅ 为每个发布的包创建 Git tag（如 `@stello-ai/core@0.3.0`）
-
-整个过程约需 3-5 分钟。
-
----
-
-## 验证发布
-
-### 检查 GitHub Actions 执行状态
-
-1. 访问 [Actions 页面](https://github.com/stello-agent/stello/actions)
-2. 找到最新的 "Release" 工作流运行
-3. 确认所有步骤都显示绿色 ✅
-
-### 检查 npm 包
-
-在终端运行：
+发布应基于最新且干净的 `main`：
 
 ```bash
-npm view @stello-ai/core version
+git switch main
+git fetch origin main --tags
+git status --short --branch
+git rev-list --left-right --count origin/main...HEAD
+```
+
+如果本地落后，先以 fast-forward 方式同步；如果出现分叉，先解决分支关系，不要直接打 tag 或发布。
+
+同时确认准备使用的版本尚未存在：
+
+```bash
 npm view @stello-ai/session version
-npm view @stello-ai/server version
+npm view @stello-ai/core version
 ```
 
-确认输出的版本号与 Version PR 中的一致。
+### 2. 更新发布元数据
 
-### 检查 npm 网站
+1. 更新两个 `package.json` 的版本；
+2. 把两个 CHANGELOG 的 `Unreleased` 内容归档到实际版本标题；
+3. 更新 Core 的 `VERSION` 常量；
+4. 确认公开 API 的 breaking change 和迁移方式已经写入 CHANGELOG。
 
-访问 npm 包页面：
+如果新 Core 依赖本次新增的 Session API，两个包都必须发布，并且 Session 必须先于 Core。
 
-- [@stello-ai/core](https://www.npmjs.com/package/@stello-ai/core)
-- [@stello-ai/session](https://www.npmjs.com/package/@stello-ai/session)
-- [@stello-ai/server](https://www.npmjs.com/package/@stello-ai/server)
-- [@stello-ai/devtools](https://www.npmjs.com/package/@stello-ai/devtools)
-
-确认：
-
-- [ ] "Latest version" 显示正确的版本号
-- [ ] 发布时间是最近几分钟内
-- [ ] README 和 CHANGELOG 已更新
-
-### 本地测试安装
-
-创建一个测试项目并安装最新版本：
+### 3. 完整验证
 
 ```bash
-mkdir test-stello
-cd test-stello
-npm init -y
-npm install @stello-ai/core@latest
-```
-
-检查 `node_modules/@stello-ai/core/package.json` 中的版本号。
-
----
-
-## 手动发布（紧急情况）
-
-如果自动发布失败，你可以手动发布。**仅在紧急情况下使用。**
-
-### 前提条件
-
-1. 你的 npm 账号已加入 `stello-agent` 组织
-2. 你有 `@stello-ai/*` 包的发布权限
-3. 你已在本地登录 npm：
-
-```bash
-npm login
-```
-
-### 手动发布步骤
-
-1. **确保代码最新**
-
-```bash
-git checkout main
-git pull origin main
-```
-
-2. **清理并安装依赖**
-
-```bash
-rm -rf node_modules pnpm-lock.yaml
 pnpm install --frozen-lockfile
+pnpm release:dry-run
 ```
 
-3. **构建所有包**
+`release:dry-run` 会执行：
+
+- ESLint
+- Session/Core build
+- Session/Core typecheck
+- Session/Core test
+- 两个包的 `pnpm publish --dry-run`
+
+Dry run 不会写入 npm registry。重点检查 Core 的打包输出，确认依赖已经从 `workspace:^` 转换为期望的 Session npm 版本范围。
+
+### 4. 提交并进入 main
 
 ```bash
-pnpm build
+git add package.json \
+  packages/session/package.json \
+  packages/session/CHANGELOG.md \
+  packages/core/package.json \
+  packages/core/CHANGELOG.md \
+  packages/core/src/index.ts \
+  RELEASE_GUIDE.md
+git commit -m "chore(release): prepare core and session"
+git push origin main
 ```
 
-4. **确认版本号已更新**
+推送后等待 main 的 CI 全部通过。普通 CI 包含 lint、build、typecheck 和 test；不要仅依赖 tag workflow，因为 tag workflow 当前不运行 lint 和 typecheck。
 
-检查 `packages/*/package.json`，确保版本号已经在 Version PR 中更新过。
+## 路径 A：通过 tag 自动发布
 
-5. **手动发布**
+仅在发布提交已经位于 `origin/main` 且 main CI 全绿后执行：
 
 ```bash
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+不要提前手动运行 `pnpm release`。推送 tag 后，在 GitHub Actions 中观察 Release workflow，确认 npm publish 和 GitHub Release 都成功。
+
+## 路径 B：维护者本地发布
+
+如果 npm publish 由维护者自己执行：
+
+```bash
+pnpm release:dry-run
 pnpm release
 ```
 
-这会调用 `changeset publish`，发布所有有版本变更的包。
-
-6. **创建 Git tags**
+`pnpm release` 会重新执行全部发布检查，然后先发布 Session、再发布 Core。也可以显式逐包执行：
 
 ```bash
-git tag @stello-ai/core@0.3.0
-git tag @stello-ai/session@0.2.1
-git push origin --tags
+pnpm release:check
+pnpm --filter @stello-ai/session publish --no-git-checks --access public
+pnpm --filter @stello-ai/core publish --no-git-checks --access public
 ```
 
-（替换为实际的版本号）
+本地发布需要：
 
----
+- npm 账号拥有 `@stello-ai/*` 发布权限；
+- 已完成 `npm login`；
+- npm 的 2FA 或 access token 配置满足 publish 要求。
 
-## 发布 Beta/Alpha 版本
+Session 发布成功但 Core 发布失败时，不要重复发布 Session。修复问题后只重试 Core；若 Core 的目标版本尚未进入 registry，可以继续使用同一版本。
 
-Beta/Alpha 版本用于提前测试即将发布的功能，不影响 `latest` 标签。
-
-### 1. 创建预发布 changeset
+## 发布后验证
 
 ```bash
-pnpm changeset pre enter beta
+npm view @stello-ai/session version
+npm view @stello-ai/core version
+npm view @stello-ai/core dependencies --json
 ```
 
-这会在 `.changeset/pre.json` 中标记进入预发布模式。
+确认：
 
-### 2. 添加正常的 changeset
+- npm 上的版本与发布提交一致；
+- Core 依赖的是刚发布的 Session minor 范围；
+- 从一个空目录安装 `@stello-ai/core@latest` 能正常解析 Session；
+- ESM 和 CommonJS 入口均存在，类型声明包含在包内。
+
+建议再做一次最小安装验证：
 
 ```bash
-pnpm changeset
+release_smoke_dir="$(mktemp -d)"
+cd "$release_smoke_dir"
+npm init -y
+npm install @stello-ai/core@latest
+node -e "import('@stello-ai/core').then((m) => console.log(m.VERSION))"
 ```
 
-选择包和版本类型，填写描述。
+## 预发布版本
 
-### 3. 更新版本并发布
+Beta/Alpha 版本需要手工设置预发布版本，例如 Session `0.9.0-beta.0`、Core `0.11.0-beta.0`，然后使用相同 dist-tag 逐包发布：
 
 ```bash
-pnpm changeset version
+pnpm release:check
+pnpm --filter @stello-ai/session publish --tag beta --no-git-checks --access public
+pnpm --filter @stello-ai/core publish --tag beta --no-git-checks --access public
 ```
 
-这会生成类似 `0.3.0-beta.0` 的版本号。
+预发布不要推送普通 `v*` tag；当前 tag workflow 没有设置 beta dist-tag。
 
-### 4. 构建并发布
-
-```bash
-pnpm build
-pnpm release --tag beta
-```
-
-`--tag beta` 会将包发布到 `beta` 标签，而不是 `latest`。
-
-### 5. 退出预发布模式
-
-```bash
-pnpm changeset pre exit
-```
-
-### 安装 Beta 版本
-
-用户可以通过以下方式安装 Beta 版本：
+用户可通过以下方式安装：
 
 ```bash
 npm install @stello-ai/core@beta
-# 或指定具体版本
-npm install @stello-ai/core@0.3.0-beta.0
 ```
 
----
+## 常见故障
 
-## 审查普通 PR 时的 Changeset 检查
+### npm 返回 403
 
-作为维护者，在审查普通 PR（非 Version PR）时，需要确保 changeset 格式正确。
+检查 npm 组织权限、token 有效期、2FA，以及 token 是否允许发布对应 scope。GitHub Actions 发布时还要检查仓库的 `NPM_TOKEN` secret。
 
-### Changeset 格式检查清单
+### npm 提示版本已存在
 
-对于每个包含功能改动的 PR：
-
-1. **确认 changeset 文件存在**
-
-   查看 PR 的 "Files changed"，应该能看到：
-   ```
-   .changeset/xxx-xxx-xxx.md
-   ```
-
-2. **检查包名格式**
-
-   打开 changeset 文件，确认包名使用完整的 scoped 格式：
-
-   ✅ 正确：
-   ```markdown
-   ---
-   "@stello-ai/core": minor
-   "@stello-ai/session": patch
-   ---
-   ```
-
-   ❌ 错误：
-   ```markdown
-   ---
-   "core": minor        # 缺少 @stello-ai/ 前缀
-   "session": patch     # 缺少 @stello-ai/ 前缀
-   ---
-   ```
-
-3. **检查版本类型**
-
-   确认版本类型合理：
-
-   - `patch` - Bug 修复、小改进、文档更新
-   - `minor` - 新功能、向后兼容的 API 变更
-   - `major` - 破坏性变更、不兼容的 API 修改
-
-   如果 PR 添加了新功能但 changeset 标记为 `patch`，需要要求修改。
-
-4. **检查描述质量**
-
-   Changeset 描述会直接出现在 CHANGELOG 中，确认：
-
-   - [ ] 描述清晰，用户能理解
-   - [ ] 使用面向用户的语言（不是内部实现细节）
-   - [ ] 格式规范（建议使用 `feat(模块): 描述` 格式）
-
-   ✅ 好的描述：
-   ```markdown
-   feat(core): 添加 Session 树深度限制配置
-
-   - 新增 `maxDepth` 配置项，防止无限递归分支
-   - 深度超限时抛出明确的错误提示
-   ```
-
-   ❌ 不好的描述：
-   ```markdown
-   更新了一些东西
-   ```
-
-5. **纯文档/测试 PR 是否误加 changeset**
-
-   如果 PR 只修改了文档或测试，不应该包含 changeset：
-
-   - 仅修改 `*.md` 文件 → 不需要 changeset
-   - 仅修改 `*.test.ts` 文件 → 不需要 changeset
-   - 仅修改 CI 配置 → 不需要 changeset
-
-### 如果 changeset 格式错误怎么办
-
-**选项 1：要求贡献者修改（推荐）**
-
-在 PR 中评论：
-
-```markdown
-感谢你的贡献！请修改 changeset 格式：
-
-1. 包名需要使用完整格式 `@stello-ai/core` 而不是 `core`
-2. 建议描述格式：`feat(模块): 功能描述`
-
-可以删除当前的 changeset 文件，重新运行 `pnpm changeset` 生成。
-```
-
-**选项 2：自行修正（小问题）**
-
-如果只是描述不够清晰，可以直接在 GitHub 网页编辑 changeset 文件。
-
-**选项 3：合并后补充**
-
-如果 PR 已经合并但忘记添加 changeset，可以：
-
-1. 在本地运行 `pnpm changeset`
-2. 创建一个新的 PR 补充 changeset
-3. 合并后会被包含在下一个 Version PR 中
-
----
-
-## 常见问题排查
-
-### 问题 1: GitHub Actions 构建失败
-
-**症状：** Release 工作流显示红色 ❌
-
-**排查步骤：**
-
-1. 点击失败的步骤查看日志
-2. 常见原因：
-   - TypeScript 类型错误 → 本地运行 `pnpm typecheck`
-   - 测试失败 → 本地运行 `pnpm test`
-   - 依赖安装失败 → 检查 `pnpm-lock.yaml` 是否提交
-
-**解决方案：**
-
-在本地修复问题，提交新的 PR 到 `main`。Version PR 会自动更新。
-
-### 问题 2: npm 发布 403 Forbidden
-
-**症状：** 发布步骤失败，错误信息包含 `403 Forbidden`
-
-**可能原因：**
-
-1. NPM_TOKEN 过期或无效
-2. NPM_TOKEN 权限不足
-3. NPM_TOKEN 未启用 "Bypass 2FA"
-
-**解决方案：**
-
-重新生成 NPM_TOKEN（需要 npm 账号管理员权限）：
-
-1. 访问 [npm Access Tokens](https://www.npmjs.com/settings/stello-agent/tokens)
-2. 点击 "Generate New Token" → "Granular Access Token"
-3. 配置：
-   - **Packages and scopes** → Select packages → 选中所有 `@stello-ai/*` 包
-   - **Permissions** → Read and write
-   - ✅ **勾选 "Bypass two-factor authentication (2FA)"**（重要！）
-4. 复制生成的 token
-5. 访问 [GitHub Secrets](https://github.com/stello-agent/stello/settings/secrets/actions)
-6. 更新 `NPM_TOKEN` Secret
-
-### 问题 3: 包发布成功但 tag 未创建
-
-**症状：** npm 上有新版本，但 GitHub 没有对应的 Git tag
-
-**解决方案：**
-
-手动创建并推送 tag：
+npm 版本不可覆盖。确认是否已经部分发布：
 
 ```bash
-git tag @stello-ai/core@0.3.0
-git tag @stello-ai/session@0.2.1
-git push origin --tags
+npm view @stello-ai/session versions --json
+npm view @stello-ai/core versions --json
 ```
 
-### 问题 4: 错误发布了包，如何撤回？
+如果目标版本确实存在，未发布的包应选择新的版本；不要尝试覆盖 registry 中的 tarball。
 
-**24 小时内：**
+### Tag workflow 在 publish 阶段失败
 
-```bash
-npm unpublish @stello-ai/core@0.3.0
-```
+先判断两个包是否已经部分发布。修复后不要盲目重跑整个 workflow，因为它会再次尝试发布已经成功的包；可使用 `npm-publish.yml` 只发布缺失的包，或在本地逐包发布。
 
-**24 小时后：**
+### 发布了有问题的版本
 
-npm 不允许 unpublish。只能发布新的修复版本（如 `0.3.1`）。
-
-**预防措施：**
-
-- 在 Beta 环境充分测试
-- 合并 Version PR 前仔细审查 CHANGELOG
-
-### 问题 5: Version PR 一直不出现
-
-**可能原因：**
-
-1. `.changeset/` 目录下没有未处理的 changeset 文件
-2. 最近的 commit 没有触发 GitHub Actions
-
-**排查步骤：**
-
-1. 检查 `.changeset/` 目录：
-
-```bash
-ls -la .changeset/
-```
-
-应该有除了 `README.md` 和 `config.json` 之外的 `.md` 文件。
-
-2. 检查 [Actions 页面](https://github.com/stello-agent/stello/actions)，确认 Release 工作流已运行
-
-**解决方案：**
-
-如果确认有 changeset 但 Version PR 未创建，可以手动触发：
-
-1. 在本地运行 `pnpm changeset version`
-2. 提交生成的版本更新
-3. 推送到 `main` 分支
-
-### 问题 6: 依赖包版本不一致
-
-**症状：** `@stello-ai/server` 依赖 `@stello-ai/core@workspace:^`，但发布后版本不匹配
-
-**解决方案：**
-
-确保在 Version PR 中，所有依赖关系已正确更新。Changesets 会自动处理 `workspace:^` 协议，将其替换为实际版本号。
-
-如果发现问题，手动编辑 Version PR，更新依赖版本。
-
----
-
-## 最佳实践
-
-### 发布频率
-
-- **Patch 版本**：随时发布（Bug 修复）
-- **Minor 版本**：每周或双周（功能积累到一定程度）
-- **Major 版本**：慎重规划（有充分的迁移文档）
-
-### 发布时机
-
-- ✅ 工作日白天（方便快速响应问题）
-- ✅ `main` 分支稳定（CI 全绿）
-- ✅ 团队成员在线（紧急情况可快速协调）
-- ❌ 周五晚上或周末（出问题没人修）
-- ❌ 重大节假日（用户可能无法及时升级）
-
-### 沟通
-
-- 发布前在团队内部通知（"准备发布 0.3.0"）
-- 发布后更新 GitHub Discussions 或社区渠道
-- Major 版本发布后发布 Release Notes
-
----
-
-## 相关资源
-
-- [Changesets 官方文档](https://github.com/changesets/changesets)
-- [Semantic Versioning 规范](https://semver.org/lang/zh-CN/)
-- [npm 发布文档](https://docs.npmjs.com/cli/v10/commands/npm-publish)
-- [GitHub Actions 文档](https://docs.github.com/en/actions)
-
----
-
-如有任何疑问，请在团队内部沟通渠道询问，或查阅 [CONTRIBUTING.md](../CONTRIBUTING.md)。
+优先发布新的 patch 修复版本并通过 npm deprecate 标记问题版本。只有在符合 npm unpublish 政策且影响范围明确时才考虑撤回。

@@ -11,7 +11,9 @@
     "demo:chat": "tsx demo/stello-agent-chat/chat-devtools.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "release": "pnpm build && pnpm --filter @stello-ai/session --filter @stello-ai/core publish --no-git-checks --access public"
+    "release:check": "pnpm lint && pnpm build && pnpm typecheck && pnpm test",
+    "release:dry-run": "pnpm release:check && pnpm --filter @stello-ai/session publish --dry-run --no-git-checks --access public && pnpm --filter @stello-ai/core publish --dry-run --no-git-checks --access public",
+    "release": "pnpm release:check && pnpm --filter @stello-ai/session publish --no-git-checks --access public && pnpm --filter @stello-ai/core publish --no-git-checks --access public"
   },
   "devDependencies": {
     "dotenv": "^17.4.0",

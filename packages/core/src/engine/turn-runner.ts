@@ -108,7 +108,7 @@ function addUsage(current: TurnRunnerUsage | undefined, next: TurnRunnerUsage | 
 
 /** Session 调用的运行时选项 */
 export interface TurnRunnerSessionCallOptions {
-  /** AbortSignal — 透传给 session.send/stream，进而透传给 LLM 调用 */
+  /** AbortSignal — 透传给 session.stream，进而透传给 LLM 调用 */
   signal?: AbortSignal;
 }
 
@@ -158,7 +158,7 @@ export interface TurnRunnerOptions {
   onToolResult?: (result: ToolCallResult) => Promise<void> | void;
   /**
    * AbortSignal — abort 后下一轮边界（含 stream / tool 执行前后）抛 AbortError，
-   * 同时透传给 session.send/stream 与 tools.executeTool。
+   * 同时透传给 session.stream 与 tools.executeTool。
    * Tools 不消费 ctx.signal 时，runner 会等本轮 tool 自然返回，再在边界处抛。
    */
   signal?: AbortSignal;

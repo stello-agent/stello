@@ -1,4 +1,4 @@
-import OpenAI from 'openai'
+import type OpenAI from 'openai'
 import type { ChatCompletionChunk } from 'openai/resources/chat/completions'
 import type { Stream } from 'openai/streaming'
 import type {
@@ -195,10 +195,15 @@ async function toOpenAIContent(message: Message, allowMultimodal: boolean, optio
 
 /** 创建 OpenAI 兼容协议的 LLMAdapter，可对接 MiniMax / DeepSeek / OpenAI 等 */
 export function createOpenAICompatibleAdapter(options: OpenAICompatibleOptions): LLMAdapter {
-  const client = new OpenAI({
-    apiKey: options.apiKey,
-    baseURL: options.baseURL,
-  })
+  let clientPromise: Promise<OpenAI> | undefined
+
+  function getClient(): Promise<OpenAI> {
+    clientPromise ??= import('openai').then(({ default: OpenAIClient }) => new OpenAIClient({
+      apiKey: options.apiKey,
+      baseURL: options.baseURL,
+    }))
+    return clientPromise
+  }
 
   /** 构建公共请求参数 */
   async function buildParams(messages: Message[], completeOptions?: LLMCompleteOptions) {
@@ -247,6 +252,7 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleOptions):
     messages: Message[],
     completeOptions?: LLMCompleteOptions,
   ): AsyncIterable<LLMChunk> {
+    const client = await getClient()
     const source = await client.chat.completions.create(
       {
         ...(await buildParams(messages, completeOptions)),

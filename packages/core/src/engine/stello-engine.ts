@@ -221,7 +221,7 @@ export class StelloEngineImpl implements StelloEngine {
     return this.session.id;
   }
 
-  /** 处理一轮编排：当前 session send + tool loop + 调度 */
+  /** 处理一轮编排：聚合当前 session 的 streaming tool loop + 调度 */
   async turn(input: TurnInput, options?: TurnRunnerOptions): Promise<EngineTurnResult> {
     const inputText = turnInputText(input);
     this.fireHook('onMessageReceived', { sessionId: this.session.id, input: inputText });

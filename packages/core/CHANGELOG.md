@@ -1,6 +1,6 @@
 # @stello-ai/core
 
-## Unreleased
+## 0.11.0
 
 ### Breaking
 
@@ -10,6 +10,7 @@
 
 - `turn()` aggregates the same streaming tool loop exposed by `stream()`. Every LLM continuation after a tool result remains streaming, and `stream()` emits text chunks from all LLM sub-rounds in order.
 - Default compression, fork-compression, and consolidation LLM calls use streaming transport internally while preserving their Promise-based return types.
+- Published tarballs now include package documentation, the changelog, and the Apache-2.0 license; `prepack` also guarantees a fresh build.
 
 ## 0.10.0
 

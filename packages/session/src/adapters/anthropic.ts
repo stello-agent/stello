@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import type Anthropic from '@anthropic-ai/sdk'
 import type {
   MessageParam,
   ContentBlockParam,
@@ -176,15 +176,21 @@ function toProviderToolEvent(block: AnthropicProviderBlock): ProviderToolEvent |
 
 /** 创建基于 Anthropic 原生协议的 LLMAdapter */
 export function createAnthropicAdapter(options: AnthropicAdapterOptions): LLMAdapter {
-  const client = new Anthropic({
-    apiKey: options.apiKey,
-    ...(options.baseURL && { baseURL: options.baseURL }),
-  })
+  let clientPromise: Promise<Anthropic> | undefined
+
+  function getClient(): Promise<Anthropic> {
+    clientPromise ??= import('@anthropic-ai/sdk').then(({ default: AnthropicClient }) => new AnthropicClient({
+      apiKey: options.apiKey,
+      ...(options.baseURL && { baseURL: options.baseURL }),
+    }))
+    return clientPromise
+  }
 
   async function* stream(
     messages: Message[],
     completeOptions?: LLMCompleteOptions,
   ): AsyncIterable<LLMChunk> {
+    const client = await getClient()
     const systemMessages = messages.filter((m) => m.role === 'system')
     const nonSystemMessages = messages.filter((m) => m.role !== 'system')
 

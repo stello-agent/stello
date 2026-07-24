@@ -1,6 +1,6 @@
 # @stello-ai/session
 
-## Unreleased
+## 0.9.0
 
 ### Breaking
 
@@ -10,6 +10,8 @@
 
 - `Session.send()` and the built-in `complete()` facades now consume and aggregate the same streaming path used by `Session.stream()`.
 - Built-in Anthropic and OpenAI-compatible adapters no longer use provider non-streaming endpoints, including for large output-token budgets and automatic context compression.
+- Optional Anthropic and OpenAI peer SDKs are loaded only when their corresponding adapter is first used, so importing Session no longer requires both providers to be installed.
+- Published tarballs now include package documentation, the changelog, and the Apache-2.0 license; `prepack` also guarantees a fresh build.
 
 ## 0.8.0
 
