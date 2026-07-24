@@ -5,7 +5,6 @@ import type {
   ToolResultBlockParam,
   ToolUseBlockParam,
   Tool,
-  ContentBlock,
 } from '@anthropic-ai/sdk/resources/messages/messages'
 import type {
   LLMAdapter,
@@ -13,11 +12,11 @@ import type {
   LLMChunk,
   LLMUsage,
   Message,
-  ToolCall,
   LLMCompleteOptions,
   ProviderToolDefinition,
   ProviderToolEvent,
 } from '../types/llm.js'
+import { collectLLMStream } from '../llm-stream.js'
 
 type AnthropicProviderBlock = {
   type: string
@@ -161,25 +160,6 @@ function buildRequestTools(completeOptions: LLMCompleteOptions | undefined, adap
   return [...clientTools, ...providerTools] as Tool[]
 }
 
-/** 从 Anthropic response content blocks 中提取 tool calls */
-function extractToolCalls(content: ContentBlock[]): ToolCall[] {
-  return content
-    .filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
-    .map((b) => ({
-      id: b.id,
-      name: b.name,
-      input: (b.input ?? {}) as Record<string, unknown>,
-    }))
-}
-
-/** 从 Anthropic response content blocks 中提取文本 */
-function extractText(content: ContentBlock[]): string | null {
-  const texts = content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-  return texts.length > 0 ? texts.join('') : null
-}
-
 function toProviderToolEvent(block: AnthropicProviderBlock): ProviderToolEvent | null {
   if (block.type === 'text' || block.type === 'tool_use') return null
   const event: ProviderToolEvent = {
@@ -194,13 +174,6 @@ function toProviderToolEvent(block: AnthropicProviderBlock): ProviderToolEvent |
   return event
 }
 
-function extractProviderToolEvents(content: ContentBlock[]): ProviderToolEvent[] {
-  return content.flatMap((block) => {
-    const event = toProviderToolEvent(block as AnthropicProviderBlock)
-    return event ? [event] : []
-  })
-}
-
 /** 创建基于 Anthropic 原生协议的 LLMAdapter */
 export function createAnthropicAdapter(options: AnthropicAdapterOptions): LLMAdapter {
   const client = new Anthropic({
@@ -208,106 +181,79 @@ export function createAnthropicAdapter(options: AnthropicAdapterOptions): LLMAda
     ...(options.baseURL && { baseURL: options.baseURL }),
   })
 
+  async function* stream(
+    messages: Message[],
+    completeOptions?: LLMCompleteOptions,
+  ): AsyncIterable<LLMChunk> {
+    const systemMessages = messages.filter((m) => m.role === 'system')
+    const nonSystemMessages = messages.filter((m) => m.role !== 'system')
+
+    const system = systemMessages.length > 0
+      ? systemMessages.map((m) => m.content).join('\n\n')
+      : undefined
+    const requestTools = buildRequestTools(completeOptions, options.providerTools)
+
+    const source = client.messages.stream(
+      {
+        model: options.model,
+        max_tokens: completeOptions?.maxTokens ?? options.maxOutputTokens ?? 4096,
+        ...(completeOptions?.temperature !== undefined && { temperature: completeOptions.temperature }),
+        ...(system && { system }),
+        ...(requestTools.length > 0 ? { tools: requestTools } : {}),
+        messages: toAnthropicMessages(nonSystemMessages),
+      },
+      completeOptions?.signal ? { signal: completeOptions.signal } : undefined,
+    )
+
+    let usage: LLMUsage | undefined
+    for await (const event of source) {
+      if (event.type === 'content_block_start') {
+        // tool_use 块的 id 和 name 只在 start 事件里下发，
+        // 后续的 input_json_delta 只追加参数 JSON。
+        // 不处理 start 会让下游累加器拿不到 name，
+        // fallback 到 'unknown_tool' 触发幻觉调用。
+        if (event.content_block.type === 'tool_use') {
+          yield {
+            delta: '',
+            toolCallDeltas: [{
+              index: event.index,
+              id: event.content_block.id,
+              name: event.content_block.name,
+            }],
+          }
+        } else {
+          const providerEvent = toProviderToolEvent(event.content_block as AnthropicProviderBlock)
+          if (providerEvent) {
+            yield { delta: '', providerToolEvents: [providerEvent] }
+          }
+        }
+      } else if (event.type === 'content_block_delta') {
+        if (event.delta.type === 'text_delta') {
+          yield { delta: event.delta.text }
+        } else if (event.delta.type === 'input_json_delta') {
+          yield {
+            delta: '',
+            toolCallDeltas: [{
+              index: event.index,
+              input: event.delta.partial_json,
+            }],
+          }
+        }
+      } else if (event.type === 'message_start') {
+        usage = mergeAnthropicUsage(usage, event.message.usage)
+        if (usage) yield { delta: '', usage }
+      } else if (event.type === 'message_delta') {
+        usage = mergeAnthropicUsage(usage, event.usage)
+        if (usage) yield { delta: '', usage }
+      }
+    }
+  }
+
   return {
     maxContextTokens: options.maxContextTokens,
-    async complete(messages: Message[], completeOptions?: LLMCompleteOptions): Promise<LLMResult> {
-      const systemMessages = messages.filter((m) => m.role === 'system')
-      const nonSystemMessages = messages.filter((m) => m.role !== 'system')
-
-      const system = systemMessages.length > 0
-        ? systemMessages.map((m) => m.content).join('\n\n')
-        : undefined
-      const requestTools = buildRequestTools(completeOptions, options.providerTools)
-
-      const response = await client.messages.create(
-        {
-          model: options.model,
-          max_tokens: completeOptions?.maxTokens ?? options.maxOutputTokens ?? 4096,
-          ...(completeOptions?.temperature !== undefined && { temperature: completeOptions.temperature }),
-          ...(system && { system }),
-          ...(requestTools.length > 0 ? { tools: requestTools } : {}),
-          messages: toAnthropicMessages(nonSystemMessages),
-        },
-        completeOptions?.signal ? { signal: completeOptions.signal } : undefined,
-      )
-
-      const toolCalls = extractToolCalls(response.content)
-      const providerToolEvents = extractProviderToolEvents(response.content)
-
-      return {
-        content: extractText(response.content),
-        ...(toolCalls.length > 0 ? { toolCalls } : {}),
-        ...(providerToolEvents.length > 0 ? { providerToolEvents } : {}),
-        usage: {
-          promptTokens: response.usage.input_tokens,
-          completionTokens: response.usage.output_tokens,
-        },
-      }
+    complete(messages: Message[], completeOptions?: LLMCompleteOptions): Promise<LLMResult> {
+      return collectLLMStream(stream(messages, completeOptions))
     },
-
-    async *stream(messages: Message[], completeOptions?: LLMCompleteOptions): AsyncIterable<LLMChunk> {
-      const systemMessages = messages.filter((m) => m.role === 'system')
-      const nonSystemMessages = messages.filter((m) => m.role !== 'system')
-
-      const system = systemMessages.length > 0
-        ? systemMessages.map((m) => m.content).join('\n\n')
-        : undefined
-      const requestTools = buildRequestTools(completeOptions, options.providerTools)
-
-      const stream = client.messages.stream(
-        {
-          model: options.model,
-          max_tokens: completeOptions?.maxTokens ?? options.maxOutputTokens ?? 4096,
-          ...(completeOptions?.temperature !== undefined && { temperature: completeOptions.temperature }),
-          ...(system && { system }),
-          ...(requestTools.length > 0 ? { tools: requestTools } : {}),
-          messages: toAnthropicMessages(nonSystemMessages),
-        },
-        completeOptions?.signal ? { signal: completeOptions.signal } : undefined,
-      )
-
-      let usage: LLMUsage | undefined
-      for await (const event of stream) {
-        if (event.type === 'content_block_start') {
-          // tool_use 块的 id 和 name 只在 start 事件里下发，
-          // 后续的 input_json_delta 只追加参数 JSON。
-          // 不处理 start 会让下游累加器拿不到 name，
-          // fallback 到 'unknown_tool' 触发幻觉调用。
-          if (event.content_block.type === 'tool_use') {
-            yield {
-              delta: '',
-              toolCallDeltas: [{
-                index: event.index,
-                id: event.content_block.id,
-                name: event.content_block.name,
-              }],
-            }
-          } else {
-            const providerEvent = toProviderToolEvent(event.content_block as AnthropicProviderBlock)
-            if (providerEvent) {
-              yield { delta: '', providerToolEvents: [providerEvent] }
-            }
-          }
-        } else if (event.type === 'content_block_delta') {
-          if (event.delta.type === 'text_delta') {
-            yield { delta: event.delta.text }
-          } else if (event.delta.type === 'input_json_delta') {
-            yield {
-              delta: '',
-              toolCallDeltas: [{
-                index: event.index,
-                input: event.delta.partial_json,
-              }],
-            }
-          }
-        } else if (event.type === 'message_start') {
-          usage = mergeAnthropicUsage(usage, event.message.usage)
-          if (usage) yield { delta: '', usage }
-        } else if (event.type === 'message_delta') {
-          usage = mergeAnthropicUsage(usage, event.usage)
-          if (usage) yield { delta: '', usage }
-        }
-      }
-    },
+    stream,
   }
 }

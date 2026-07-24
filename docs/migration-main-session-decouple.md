@@ -179,6 +179,8 @@ getAllSessionL2s() → IntegrateFn(children, currentSynthesis) → { synthesis, 
 迁到 orchestrator 后，用 SDK 拼一个等价循环：
 
 ```ts
+import { collectLLMStream } from '@stello-ai/session'
+
 async function runIntegrate(
   agent: StelloAgent,
   rootId: string,
@@ -193,10 +195,10 @@ async function runIntegrate(
 
   // 3. 调用你自己的 IntegrateFn —— 现在是普通函数，框架不感知
   const prompt = buildIntegratePrompt(children, currentSynthesis)
-  const raw = await llm.complete([
+  const raw = await collectLLMStream(llm.stream([
     { role: 'system', content: prompt },
     { role: 'user', content: serialize(children) },
-  ])
+  ]))
   const result = JSON.parse(raw.content ?? '{}') as {
     synthesis: string
     insights: Array<{ sessionId: string; content: string }>
@@ -387,7 +389,7 @@ async function migrateLegacyMainDir(rootDir: string) {
 
 ```ts
 import { createStelloAgent, type StelloAgent } from '@stello-ai/core'
-import { createSession, createClaude, InMemoryStorageAdapter } from '@stello-ai/session'
+import { collectLLMStream, createSession, createClaude, InMemoryStorageAdapter } from '@stello-ai/session'
 
 // 1. 装配
 const storage = new InMemoryStorageAdapter()
@@ -426,7 +428,7 @@ async function reflect() {
     .join('\n')}\n\n请输出 JSON: { "synthesis": "...", "insights": [{ "sessionId": "...", "content": "..." }] }`
 
   const result = JSON.parse(
-    (await llm.complete([{ role: 'user', content: prompt }])).content ?? '{}',
+    (await collectLLMStream(llm.stream([{ role: 'user', content: prompt }]))).content ?? '{}',
   )
 
   // 写回

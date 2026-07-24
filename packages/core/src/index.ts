@@ -150,13 +150,14 @@ export { createGPT } from '@stello-ai/session';
 export { createOpenAICompatibleAdapter } from '@stello-ai/session';
 export { createAnthropicAdapter } from '@stello-ai/session';
 export { InMemoryStorageAdapter } from '@stello-ai/session';
+export { collectLLMStream } from '@stello-ai/session';
 // Note: session 包的 createSessionTool 已被 core 的 builtin-tools 工厂替代，
 // 不再从 core 重新导出（避免与 './builtin-tools' 同名冲突）。
 export { tool } from '@stello-ai/session';
 export { SessionArchivedError, NotImplementedError } from '@stello-ai/session';
 export type {
   // LLM 适配器
-  LLMAdapter, LLMResult, LLMChunk, LLMCompleteOptions, Message,
+  LLMAdapter, LLMResult, LLMChunk, LLMChunkHandler, LLMCompleteOptions, Message,
   ClientToolDefinition, ProviderToolDefinition, ProviderToolProvider, ProviderToolEvent,
   ClaudeModel, ClaudeOptions,
   GPTModel, GPTOptions,

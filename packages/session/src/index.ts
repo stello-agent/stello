@@ -6,6 +6,8 @@ export type {
   ToolCall, ClientToolDefinition, ProviderToolDefinition, ProviderToolProvider, ProviderToolEvent,
   LLMCompleteOptions, LLMResult, LLMChunk, LLMAdapter,
 } from './types/llm.js'
+export type { LLMChunkHandler } from './llm-stream.js'
+export { collectLLMStream } from './llm-stream.js'
 export type {
   Session,
   SessionInput,

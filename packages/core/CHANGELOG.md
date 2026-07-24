@@ -1,5 +1,16 @@
 # @stello-ai/core
 
+## Unreleased
+
+### Breaking
+
+- `SessionCompatible.stream()`, `EngineRuntimeSession.stream()`, and `TurnRunnerSession.stream()` are now required; custom runtimes must provide a real stream implementation.
+
+### Changed
+
+- `turn()` aggregates the same streaming tool loop exposed by `stream()`. Every LLM continuation after a tool result remains streaming, and `stream()` emits text chunks from all LLM sub-rounds in order.
+- Default compression, fork-compression, and consolidation LLM calls use streaming transport internally while preserving their Promise-based return types.
+
 ## 0.10.0
 
 > **迁移指南**：[`docs/migration-main-session-decouple.md`](../../docs/migration-main-session-decouple.md) 含心智模型转变、删除清单、迁移配方与 orchestrator 重建示例。

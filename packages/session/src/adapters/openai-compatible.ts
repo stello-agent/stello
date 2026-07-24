@@ -1,15 +1,17 @@
 import OpenAI from 'openai'
-import type { ChatCompletion, ChatCompletionChunk } from 'openai/resources/chat/completions'
+import type { ChatCompletionChunk } from 'openai/resources/chat/completions'
 import type { Stream } from 'openai/streaming'
 import type {
   ContentPart,
   LLMAdapter,
+  LLMChunk,
   LLMResult,
   Message,
   LLMCompleteOptions,
   ProviderToolDefinition,
   ProviderToolEvent,
 } from '../types/llm.js'
+import { collectLLMStream } from '../llm-stream.js'
 
 type RawOpenAIToolCall = {
   index?: number
@@ -92,7 +94,7 @@ function isProviderToolCall(call: RawOpenAIToolCall): boolean {
   return typeof call.type === 'string' && call.type !== 'function'
 }
 
-function toProviderUsage(usage: ChatCompletion['usage'] | ChatCompletionChunk['usage'] | undefined) {
+function toProviderUsage(usage: ChatCompletionChunk['usage'] | undefined) {
   return usage
     ? {
         promptTokens: usage.prompt_tokens,
@@ -241,84 +243,55 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleOptions):
     }
   }
 
-  return {
-    maxContextTokens: options.maxContextTokens,
-    async complete(messages: Message[], completeOptions?: LLMCompleteOptions): Promise<LLMResult> {
-      const response = await client.chat.completions.create(
-        {
-          ...(await buildParams(messages, completeOptions)),
-          ...(options.extraBody ?? {}),
-          stream: false,
-        } as Parameters<typeof client.chat.completions.create>[0],
-        completeOptions?.signal ? { signal: completeOptions.signal } : undefined,
-      ) as ChatCompletion
+  async function* stream(
+    messages: Message[],
+    completeOptions?: LLMCompleteOptions,
+  ): AsyncIterable<LLMChunk> {
+    const source = await client.chat.completions.create(
+      {
+        ...(await buildParams(messages, completeOptions)),
+        ...(options.extraBody ?? {}),
+        stream: true,
+        stream_options: { include_usage: true },
+      } as Parameters<typeof client.chat.completions.create>[0],
+      completeOptions?.signal ? { signal: completeOptions.signal } : undefined,
+    ) as Stream<ChatCompletionChunk>
 
-      const choice = response.choices[0]
-      // 提取推理模型的思考内容（stepFun/DeepSeek 等使用 reasoning_content 字段）
-      const rawMessage = choice?.message as Record<string, unknown> | undefined
-      const reasoningContent = typeof rawMessage?.reasoning_content === 'string'
-        ? rawMessage.reasoning_content
-        : null
-      const rawToolCalls = (choice?.message?.tool_calls ?? []) as RawOpenAIToolCall[]
+    for await (const chunk of source) {
+      const delta = chunk.choices[0]?.delta?.content ?? ''
+      // 提取推理模型的思考内容增量（stepFun/DeepSeek 等使用 reasoning_content 字段）
+      const rawDelta = chunk.choices[0]?.delta as Record<string, unknown> | undefined
+      const reasoningDelta = typeof rawDelta?.reasoning_content === 'string'
+        ? rawDelta.reasoning_content
+        : undefined
+      const rawToolCalls = (chunk.choices[0]?.delta?.tool_calls ?? []) as RawOpenAIToolCall[]
       const providerToolEvents = rawToolCalls
         .filter(isProviderToolCall)
         .map(toProviderToolEvent)
-
-      return {
-        content: choice?.message?.content ?? null,
-        ...(reasoningContent ? { reasoningContent } : {}),
-        toolCalls: rawToolCalls.flatMap((call) => {
-          if (isProviderToolCall(call)) return []
-          if (!('function' in call) || !call.function) return []
-          return [{
-            id: call.id ?? 'unknown_tool_call',
-            name: call.function.name ?? 'unknown_tool',
-            input: call.function.arguments ? JSON.parse(call.function.arguments) as Record<string, unknown> : {},
-          }]
-        }),
-        ...(providerToolEvents.length > 0 ? { providerToolEvents } : {}),
-        usage: toProviderUsage(response.usage),
-      }
-    },
-    async *stream(messages: Message[], completeOptions?: LLMCompleteOptions) {
-      const stream = await client.chat.completions.create(
-        {
-          ...(await buildParams(messages, completeOptions)),
-          ...(options.extraBody ?? {}),
-          stream: true,
-          stream_options: { include_usage: true },
-        } as Parameters<typeof client.chat.completions.create>[0],
-        completeOptions?.signal ? { signal: completeOptions.signal } : undefined,
-      ) as Stream<ChatCompletionChunk>
-
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta?.content ?? ''
-        // 提取推理模型的思考内容增量（stepFun/DeepSeek 等使用 reasoning_content 字段）
-        const rawDelta = chunk.choices[0]?.delta as Record<string, unknown> | undefined
-        const reasoningDelta = typeof rawDelta?.reasoning_content === 'string'
-          ? rawDelta.reasoning_content
-          : undefined
-        const rawToolCalls = (chunk.choices[0]?.delta?.tool_calls ?? []) as RawOpenAIToolCall[]
-        const providerToolEvents = rawToolCalls
-          .filter(isProviderToolCall)
-          .map(toProviderToolEvent)
-        const usage = toProviderUsage(chunk.usage)
-        const toolCallDeltas = rawToolCalls.filter((call) => !isProviderToolCall(call)).map((call) => ({
-          index: call.index ?? 0,
-          id: call.id,
-          name: call.function?.name,
-          input: call.function?.arguments,
-        }))
-        if (delta || reasoningDelta || toolCallDeltas.length > 0 || providerToolEvents.length > 0 || usage) {
-          yield {
-            delta,
-            ...(reasoningDelta ? { reasoningDelta } : {}),
-            ...(toolCallDeltas.length > 0 ? { toolCallDeltas } : {}),
-            ...(providerToolEvents.length > 0 ? { providerToolEvents } : {}),
-            ...(usage ? { usage } : {}),
-          }
+      const usage = toProviderUsage(chunk.usage)
+      const toolCallDeltas = rawToolCalls.filter((call) => !isProviderToolCall(call)).map((call) => ({
+        index: call.index ?? 0,
+        id: call.id,
+        name: call.function?.name,
+        input: call.function?.arguments,
+      }))
+      if (delta || reasoningDelta || toolCallDeltas.length > 0 || providerToolEvents.length > 0 || usage) {
+        yield {
+          delta,
+          ...(reasoningDelta ? { reasoningDelta } : {}),
+          ...(toolCallDeltas.length > 0 ? { toolCallDeltas } : {}),
+          ...(providerToolEvents.length > 0 ? { providerToolEvents } : {}),
+          ...(usage ? { usage } : {}),
         }
       }
+    }
+  }
+
+  return {
+    maxContextTokens: options.maxContextTokens,
+    complete(messages: Message[], completeOptions?: LLMCompleteOptions): Promise<LLMResult> {
+      return collectLLMStream(stream(messages, completeOptions))
     },
+    stream,
   }
 }

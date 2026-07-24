@@ -136,7 +136,7 @@ sessionDefaults → 父 session 固化 config → ForkProfile → EngineForkOpti
 |------|------|
 | SessionStorage | 单 Session 数据持久化 |
 | SessionTree | 拓扑与固化配置持久化 |
-| LLMAdapter | LLM 接口（消息数组、tool use、可选 stream） |
+| LLMAdapter | Stream-first LLM 接口（消息数组、tool use、必需 stream；complete 为流式聚合 facade） |
 | ConsolidateFn | L3 → memory 的转换逻辑；应用层定义 memory 格式，fn 自行选择 LLM tier |
 | CompressFn | 超上下文阈值时的摘要压缩逻辑；fn 自行选择 LLM tier |
 | sessionDefaults | 所有 Session 的 agent 级默认 SessionConfig，fork 合成链最低优先级 |

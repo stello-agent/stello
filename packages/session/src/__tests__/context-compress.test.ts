@@ -70,10 +70,10 @@ describe('自动压缩 — Session', () => {
   it('未超阈值时全量回放所有 L3', async () => {
     const capturedMessages: Message[][] = []
     const llm = createMockLLMWithContext([simpleResponse, simpleResponse], 1_000_000)
-    const origComplete = llm.complete.bind(llm)
-    llm.complete = async (msgs) => {
+    const origStream = llm.stream.bind(llm)
+    llm.stream = async function* (msgs, options) {
       capturedMessages.push([...msgs])
-      return origComplete(msgs)
+      yield* origStream(msgs, options)
     }
 
     const { session } = await makeSession({ llm })
@@ -91,10 +91,10 @@ describe('自动压缩 — Session', () => {
   it('超阈值且有 compressFn 时调用压缩：注入摘要 + 裁剪 L3', async () => {
     const capturedMessages: Message[][] = []
     const llm = createMockLLMWithContext([simpleResponse], 50)
-    const origComplete = llm.complete.bind(llm)
-    llm.complete = async (msgs) => {
+    const origStream = llm.stream.bind(llm)
+    llm.stream = async function* (msgs, options) {
       capturedMessages.push([...msgs])
-      return origComplete(msgs)
+      yield* origStream(msgs, options)
     }
 
     const compressFn: CompressFn = vi.fn(async () => 'compressed summary')
@@ -127,10 +127,11 @@ describe('自动压缩 — Session', () => {
     // 第一次调用是内置 compressFn 的压缩调用，第二次是实际 send
     const compressResponse: LLMResult = { content: 'builtin compressed', usage: { promptTokens: 10, completionTokens: 5 } }
     const llm = createMockLLMWithContext([compressResponse, simpleResponse], 50)
-    const origComplete = llm.complete.bind(llm)
-    llm.complete = async (msgs) => {
+    const completeSpy = vi.spyOn(llm, 'complete')
+    const origStream = llm.stream.bind(llm)
+    llm.stream = async function* (msgs, options) {
       capturedMessages.push([...msgs])
-      return origComplete(msgs)
+      yield* origStream(msgs, options)
     }
 
     // 不传 compressFn，但有 llm → 自动内置压缩
@@ -153,6 +154,7 @@ describe('自动压缩 — Session', () => {
     expect(sendCall.some(m => m.role === 'system' && m.content === 'builtin compressed')).toBe(true)
     expect(sendCall.length).toBeLessThan(21)
     expect(sendCall[sendCall.length - 1]!.content).toBe('hello')
+    expect(completeSpy).not.toHaveBeenCalled()
   })
 
   it('compressFn 缓存命中：连续两次 send 只调用一次', async () => {
@@ -189,10 +191,10 @@ describe('自动压缩 — Session', () => {
       { content: 'r2', usage: { promptTokens: 50, completionTokens: 10 } },
     ]
     const llm = createMockLLMWithContext(responses, 100)
-    const origComplete = llm.complete.bind(llm)
-    llm.complete = async (msgs) => {
+    const origStream = llm.stream.bind(llm)
+    llm.stream = async function* (msgs, options) {
       capturedMessages.push([...msgs])
-      return origComplete(msgs)
+      yield* origStream(msgs, options)
     }
 
     const compressFn: CompressFn = vi.fn(async () => 'sum')
@@ -225,10 +227,10 @@ describe('自动压缩 — Session（compress + insight 共存）', () => {
     const capturedMessages: Message[][] = []
     const storage = new InMemoryStorageAdapter()
     const llm = createMockLLMWithContext([simpleResponse], 50)
-    const origComplete = llm.complete.bind(llm)
-    llm.complete = async (msgs) => {
+    const origStream = llm.stream.bind(llm)
+    llm.stream = async function* (msgs, options) {
       capturedMessages.push([...msgs])
-      return origComplete(msgs)
+      yield* origStream(msgs, options)
     }
 
     const compressFn: CompressFn = vi.fn(async () => 'main compressed')
@@ -269,10 +271,10 @@ describe('自动压缩 — Session（compress + insight 共存）', () => {
     const storage = new InMemoryStorageAdapter()
     const compressResponse: LLMResult = { content: 'main builtin compressed', usage: { promptTokens: 10, completionTokens: 5 } }
     const llm = createMockLLMWithContext([compressResponse, simpleResponse], 50)
-    const origComplete = llm.complete.bind(llm)
-    llm.complete = async (msgs) => {
+    const origStream = llm.stream.bind(llm)
+    llm.stream = async function* (msgs, options) {
       capturedMessages.push([...msgs])
-      return origComplete(msgs)
+      yield* origStream(msgs, options)
     }
 
     const session = await createSession({ storage, llm, label: 'Test Root' })
@@ -299,10 +301,10 @@ describe('consolidate 与 compress 独立', () => {
     const capturedMessages: Message[][] = []
     const responses = Array.from({ length: 3 }, () => simpleResponse)
     const llm = createMockLLMWithContext(responses, 200)
-    const origComplete = llm.complete.bind(llm)
-    llm.complete = async (msgs) => {
+    const origStream = llm.stream.bind(llm)
+    llm.stream = async function* (msgs, options) {
       capturedMessages.push([...msgs])
-      return origComplete(msgs)
+      yield* origStream(msgs, options)
     }
 
     // 不提供 compressFn — 即使有 L2 也不应用于压缩
@@ -327,10 +329,10 @@ describe('consolidate 与 compress 独立', () => {
     const capturedMessages: Message[][] = []
     const compressResponse: LLMResult = { content: 'fn compressed', usage: { promptTokens: 10, completionTokens: 5 } }
     const llm = createMockLLMWithContext([compressResponse, simpleResponse], 50)
-    const origComplete = llm.complete.bind(llm)
-    llm.complete = async (msgs) => {
+    const origStream = llm.stream.bind(llm)
+    llm.stream = async function* (msgs, options) {
       capturedMessages.push([...msgs])
-      return origComplete(msgs)
+      yield* origStream(msgs, options)
     }
 
     const { session, storage } = await makeSession({ llm })

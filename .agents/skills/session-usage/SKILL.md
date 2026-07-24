@@ -79,7 +79,9 @@ Engine 在编排层会先创建 TopologyNode（拿到 ID），再调用 `session
 
 ## LLM Adapter
 
-包内置两个 adapter：OpenAI 兼容协议和 Anthropic 协议（均为 optional peerDependencies）。也可自行实现 `LLMAdapter` 接口。
+包内置两个 adapter：OpenAI 兼容协议和 Anthropic 协议（均为 optional peerDependencies）。也可自行实现 `LLMAdapter` 接口，但 `stream()` 是必需能力，不支持 complete-only adapter。
+
+Session 始终以 stream 作为底层传输：`stream()` 实时转发文本增量，`send()` 使用同一执行器静默消费并聚合完整结果。`complete()` 仅是 adapter 对直接调用方保留的流式聚合 facade，不得切回 provider 的非流式端点。
 
 ---
 

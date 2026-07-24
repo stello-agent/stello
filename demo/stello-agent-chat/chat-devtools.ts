@@ -25,6 +25,7 @@ import {
   type TurnRecord,
   createDefaultConsolidateFn,
   createDefaultIntegrateFn,
+  collectLLMStream,
   loadSkillsFromDirectory,
   type LLMCallFn,
   type StelloEngine,
@@ -485,10 +486,10 @@ export async function bootstrap() {
   }
 
   const llmCall: LLMCallFn = async (messages) => {
-    const result = await currentLlm.complete(
+    const result = await collectLLMStream(currentLlm.stream(
       messages.map((m) => ({ role: m.role as 'user' | 'assistant' | 'system', content: m.content })),
       { temperature: currentLlmConfig.temperature, maxTokens: currentLlmConfig.maxTokens },
-    )
+    ))
     return result.content ?? ''
   }
 

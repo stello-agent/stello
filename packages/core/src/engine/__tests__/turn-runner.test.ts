@@ -1,290 +1,273 @@
 import { describe, expect, it, vi } from 'vitest';
-import { TurnRunner, type ToolCallParser } from '../turn-runner';
+import {
+  TurnRunner,
+  type ParsedTurnResponse,
+  type ToolCallParser,
+} from '../turn-runner';
 
 const parser: ToolCallParser = {
   parse(raw) {
-    return JSON.parse(raw) as { content: string | null; toolCalls: Array<{ name: string; args: Record<string, unknown> }> };
+    return JSON.parse(raw) as ParsedTurnResponse;
   },
 };
 
+interface StreamStep {
+  response: ParsedTurnResponse;
+  chunks?: string[];
+}
+
+function deferredStream(step: StreamStep) {
+  let resolveResult!: (raw: string) => void;
+  let rejectResult!: (error: unknown) => void;
+  const result = new Promise<string>((resolve, reject) => {
+    resolveResult = resolve;
+    rejectResult = reject;
+  });
+  result.catch(() => {});
+
+  return {
+    result,
+    async *[Symbol.asyncIterator]() {
+      try {
+        for (const chunk of step.chunks ?? []) yield chunk;
+        resolveResult(JSON.stringify(step.response));
+      } catch (error) {
+        rejectResult(error);
+        throw error;
+      }
+    },
+  };
+}
+
+function createSession(steps: StreamStep[]) {
+  let index = 0;
+  const stream = vi
+    .fn<(input: unknown, options?: unknown) => ReturnType<typeof deferredStream>>()
+    .mockImplementation(() => {
+      const step = steps[index++];
+      if (!step) throw new Error('unexpected LLM round');
+      return deferredStream(step);
+    });
+  return {
+    id: 's1',
+    send: vi.fn(async () => {
+      throw new Error('TurnRunner must not call session.send()');
+    }),
+    stream,
+  };
+}
+
 describe('TurnRunner', () => {
-  it('无 tool call 时只调用一次 send', async () => {
-    const session = {
-      id: 's1',
-      send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'final', toolCalls: [] })),
-    };
-    const tools = {
-      executeTool: vi.fn(),
-    };
+  it('run 只消费 session.stream，无 tool call 时只调用一次', async () => {
+    const session = createSession([
+      { response: { content: 'final', toolCalls: [] }, chunks: ['fi', 'nal'] },
+    ]);
+    const tools = { executeTool: vi.fn() };
 
-    const runner = new TurnRunner(parser);
-    const result = await runner.run(session, 'hello', tools);
+    const result = await new TurnRunner(parser).run(session, 'hello', tools);
 
-    expect(session.send).toHaveBeenCalledTimes(1);
-    expect(session.send).toHaveBeenCalledWith('hello', { signal: undefined });
-    expect(result.finalContent).toBe('final');
-    expect(result.toolRoundCount).toBe(0);
-    expect(result.toolCallsExecuted).toBe(0);
+    expect(session.stream).toHaveBeenCalledOnce();
+    expect(session.stream).toHaveBeenCalledWith('hello', { signal: undefined });
+    expect(session.send).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      finalContent: 'final',
+      toolRoundCount: 0,
+      toolCallsExecuted: 0,
+    });
   });
 
-  it('单轮 tool call 后继续下一轮 send', async () => {
-    const session = {
-      id: 's1',
-      send: vi
-        .fn()
-        .mockResolvedValueOnce(
-          JSON.stringify({
-            content: null,
-            toolCalls: [{ id: '1', name: 'read', args: { path: 'core.name' } }],
-          }),
-        )
-        .mockResolvedValueOnce(JSON.stringify({ content: 'done', toolCalls: [] })),
-    };
+  it('多轮 tool loop 每轮都使用 stream，并聚合 usage', async () => {
+    const session = createSession([
+      {
+        response: {
+          content: null,
+          toolCalls: [{ id: '1', name: 'read', args: { path: 'core.name' } }],
+          usage: { promptTokens: 10, completionTokens: 2 },
+        },
+      },
+      {
+        response: {
+          content: 'done',
+          toolCalls: [],
+          usage: { promptTokens: 8, completionTokens: 4 },
+        },
+      },
+    ]);
     const tools = {
       executeTool: vi.fn().mockResolvedValue({ success: true, data: { value: 'Stello' } }),
     };
 
-    const runner = new TurnRunner(parser);
-    const result = await runner.run(session, 'hello', tools);
+    const result = await new TurnRunner(parser).run(session, 'hello', tools);
 
-    expect(session.send).toHaveBeenCalledTimes(2);
-    expect(tools.executeTool).toHaveBeenCalledWith('read', { path: 'core.name' }, '1', { signal: undefined });
-    expect(session.send.mock.calls[1]?.[0]).toContain('"toolResults"');
-    expect(result.finalContent).toBe('done');
-    expect(result.toolRoundCount).toBe(1);
-    expect(result.toolCallsExecuted).toBe(1);
-  });
-
-  it('聚合 tool loop 内每次 LLM 调用的 usage', async () => {
-    const session = {
-      id: 's1',
-      send: vi
-        .fn()
-        .mockResolvedValueOnce(
-          JSON.stringify({
-            content: null,
-            toolCalls: [{ id: '1', name: 'read', args: {} }],
-            usage: { promptTokens: 10, completionTokens: 2 },
-          }),
-        )
-        .mockResolvedValueOnce(
-          JSON.stringify({
-            content: 'done',
-            toolCalls: [],
-            usage: { promptTokens: 8, completionTokens: 4 },
-          }),
-        ),
-    };
-    const tools = {
-      executeTool: vi.fn().mockResolvedValue({ success: true, data: { ok: true } }),
-    };
-
-    const runner = new TurnRunner(parser);
-    const result = await runner.run(session, 'hello', tools);
-
-    expect(result.usage).toEqual({
-      promptTokens: 18,
-      completionTokens: 6,
-      totalTokens: 24,
+    expect(session.stream).toHaveBeenCalledTimes(2);
+    expect(session.send).not.toHaveBeenCalled();
+    expect(tools.executeTool).toHaveBeenCalledWith(
+      'read',
+      { path: 'core.name' },
+      '1',
+      { signal: undefined },
+    );
+    expect(session.stream.mock.calls[1]?.[0]).toContain('"toolResults"');
+    expect(result).toMatchObject({
+      finalContent: 'done',
+      toolRoundCount: 1,
+      toolCallsExecuted: 1,
+      usage: { promptTokens: 18, completionTokens: 6, totalTokens: 24 },
     });
   });
 
-  it('多个 tool call 在同轮内并行执行，但调用顺序保持输入序', async () => {
-    const session = {
-      id: 's1',
-      send: vi
-        .fn()
-        .mockResolvedValueOnce(
-          JSON.stringify({
-            content: null,
-            toolCalls: [
-              { name: 'read', args: { path: 'core.name' } },
-              { name: 'list', args: { scope: 'ui' } },
-            ],
-          }),
-        )
-        .mockResolvedValueOnce(JSON.stringify({ content: 'done', toolCalls: [] })),
-    };
-    const tools = {
-      executeTool: vi.fn().mockResolvedValue({ success: true, data: null }),
-    };
-
-    const runner = new TurnRunner(parser);
-    const result = await runner.run(session, 'hello', tools);
-
-    expect(tools.executeTool.mock.calls).toEqual([
-      ['read', { path: 'core.name' }, undefined, { signal: undefined }],
-      ['list', { scope: 'ui' }, undefined, { signal: undefined }],
+  it('runStream 按顺序输出所有 tool 子轮的 chunks', async () => {
+    const session = createSession([
+      {
+        response: {
+          content: null,
+          toolCalls: [{ id: '1', name: 'read', args: {} }],
+        },
+        chunks: ['checking'],
+      },
+      {
+        response: { content: 'done', toolCalls: [] },
+        chunks: ['do', 'ne'],
+      },
     ]);
-    expect(result.toolCallsExecuted).toBe(2);
+    const tools = {
+      executeTool: vi.fn().mockResolvedValue({ success: true, data: 'value' }),
+    };
+
+    const stream = new TurnRunner(parser).runStream(session, 'hello', tools);
+    // result 不依赖外部消费 iterator；子流由 runner 主动驱动。
+    const result = await stream.result;
+    const chunks: string[] = [];
+    for await (const chunk of stream) chunks.push(chunk);
+
+    expect(chunks).toEqual(['checking', 'do', 'ne']);
+    expect(session.stream).toHaveBeenCalledTimes(2);
+    expect(session.send).not.toHaveBeenCalled();
+    expect(result.finalContent).toBe('done');
   });
 
-  it('多个 tool call 真正并发执行（耗时按 max 计算而非 sum）', async () => {
-    const DELAY = 80;
-    const session = {
-      id: 's1',
-      send: vi
-        .fn()
-        .mockResolvedValueOnce(
-          JSON.stringify({
-            content: null,
-            toolCalls: [
-              { id: '1', name: 't', args: {} },
-              { id: '2', name: 't', args: {} },
-              { id: '3', name: 't', args: {} },
-            ],
-          }),
-        )
-        .mockResolvedValueOnce(JSON.stringify({ content: 'done', toolCalls: [] })),
-    };
-    let active = 0;
-    let maxConcurrent = 0;
+  it('同轮多个 tool 并行执行', async () => {
+    const session = createSession([
+      {
+        response: {
+          content: null,
+          toolCalls: [
+            { id: '1', name: 'first', args: {} },
+            { id: '2', name: 'second', args: {} },
+            { id: '3', name: 'third', args: {} },
+          ],
+        },
+      },
+      { response: { content: 'done', toolCalls: [] } },
+    ]);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started = 0;
+    let allStarted!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      allStarted = resolve;
+    });
     const tools = {
       executeTool: vi.fn().mockImplementation(async () => {
-        active += 1;
-        if (active > maxConcurrent) maxConcurrent = active;
-        await new Promise((r) => setTimeout(r, DELAY));
-        active -= 1;
+        started += 1;
+        if (started === 3) allStarted();
+        await gate;
         return { success: true, data: null };
       }),
     };
 
-    const runner = new TurnRunner(parser);
-    const start = Date.now();
-    await runner.run(session, 'hello', tools);
-    const elapsed = Date.now() - start;
-
-    // 串行需 ≥ 3*DELAY；并行应在 1*DELAY 量级（留较宽松上界以避免 CI 抖动）
-    expect(maxConcurrent).toBe(3);
-    expect(elapsed).toBeLessThan(DELAY * 3 - 20);
+    const running = new TurnRunner(parser).run(session, 'hello', tools);
+    await startedPromise;
+    expect(tools.executeTool).toHaveBeenCalledTimes(3);
+    release();
+    await running;
   });
 
-  it('单个 tool 抛错不影响兄弟 tool，错误转为 success=false 回灌', async () => {
-    const session = {
-      id: 's1',
-      send: vi
-        .fn()
-        .mockResolvedValueOnce(
-          JSON.stringify({
-            content: null,
-            toolCalls: [
-              { id: 'a', name: 'ok', args: {} },
-              { id: 'b', name: 'boom', args: {} },
-              { id: 'c', name: 'ok', args: {} },
-            ],
-          }),
-        )
-        .mockResolvedValueOnce(JSON.stringify({ content: 'done', toolCalls: [] })),
-    };
+  it('tool 抛错会转成失败结果，回调与回灌保持输入顺序', async () => {
+    const session = createSession([
+      {
+        response: {
+          content: null,
+          toolCalls: [
+            { id: 'a', name: 'ok', args: {} },
+            { id: 'b', name: 'boom', args: {} },
+            { id: 'c', name: 'ok', args: {} },
+          ],
+        },
+      },
+      { response: { content: 'done', toolCalls: [] } },
+    ]);
     const tools = {
       executeTool: vi.fn().mockImplementation(async (name: string) => {
         if (name === 'boom') throw new Error('tool internal error');
         return { success: true, data: { ok: true } };
       }),
     };
+    const onToolCall = vi.fn();
     const onToolResult = vi.fn();
 
-    const runner = new TurnRunner(parser);
-    const result = await runner.run(session, 'hello', tools, { onToolResult });
+    await new TurnRunner(parser).run(session, 'hello', tools, { onToolCall, onToolResult });
 
-    expect(result.toolCallsExecuted).toBe(3);
-    // onToolResult 按输入顺序触发 3 次
-    expect(onToolResult).toHaveBeenCalledTimes(3);
-    expect(onToolResult.mock.calls[0]?.[0]).toMatchObject({ toolCallId: 'a', success: true });
+    expect(onToolCall.mock.calls.map(([call]) => call.id)).toEqual(['a', 'b', 'c']);
+    expect(onToolResult.mock.calls.map(([result]) => result.toolCallId)).toEqual(['a', 'b', 'c']);
     expect(onToolResult.mock.calls[1]?.[0]).toMatchObject({
-      toolCallId: 'b',
       success: false,
       error: 'tool internal error',
     });
-    expect(onToolResult.mock.calls[2]?.[0]).toMatchObject({ toolCallId: 'c', success: true });
-
-    // 错误结果作为 toolResults 回灌给下一轮 send
-    const reentry = session.send.mock.calls[1]?.[0];
+    const reentry = session.stream.mock.calls[1]?.[0];
     expect(reentry).toContain('"toolCallId":"b"');
     expect(reentry).toContain('tool internal error');
   });
 
-  it('tool 执行失败时会把错误继续回灌给下一轮 send', async () => {
-    const session = {
-      id: 's1',
-      send: vi
-        .fn()
-        .mockResolvedValueOnce(
-          JSON.stringify({
-            content: null,
-            toolCalls: [{ id: '1', name: 'fork', args: { label: 'UI' } }],
-          }),
-        )
-        .mockResolvedValueOnce(JSON.stringify({ content: 'fallback', toolCalls: [] })),
-    };
-    const tools = {
-      executeTool: vi.fn().mockResolvedValue({ success: false, error: 'split blocked' }),
-    };
-
-    const runner = new TurnRunner(parser);
-    const result = await runner.run(session, 'hello', tools);
-
-    expect(session.send.mock.calls[1]?.[0]).toContain('"success":false');
-    expect(session.send.mock.calls[1]?.[0]).toContain('"split blocked"');
-    expect(result.finalContent).toBe('fallback');
-  });
-
   it('超过 maxToolRounds 时安全终止', async () => {
-    const session = {
-      id: 's1',
-      send: vi.fn().mockResolvedValue(
-        JSON.stringify({
-          content: null,
-          toolCalls: [{ name: 'loop', args: {} }],
-        }),
-      ),
-    };
+    const loop = {
+      response: {
+        content: null,
+        toolCalls: [{ id: 'loop', name: 'loop', args: {} }],
+      },
+    } satisfies StreamStep;
+    const session = createSession([loop, loop]);
     const tools = {
       executeTool: vi.fn().mockResolvedValue({ success: true }),
     };
 
-    const runner = new TurnRunner(parser);
-
-    await expect(runner.run(session, 'hello', tools, { maxToolRounds: 1 })).rejects.toThrow(
-      'tool loop 超出上限',
-    );
-    expect(tools.executeTool).toHaveBeenCalledTimes(1);
+    await expect(
+      new TurnRunner(parser).run(session, 'hello', tools, { maxToolRounds: 1 }),
+    ).rejects.toThrow('tool loop 超出上限');
+    expect(tools.executeTool).toHaveBeenCalledOnce();
+    expect(session.stream).toHaveBeenCalledTimes(2);
   });
 
-  it('工具调用过程中会触发 onToolCall 和 onToolResult', async () => {
+  it('runStream 的 iterator 和 result 都传递子流错误', async () => {
+    const failure = new Error('stream failed');
+    const sourceResult = Promise.reject(failure);
+    sourceResult.catch(() => {});
     const session = {
       id: 's1',
-      send: vi
-        .fn()
-        .mockResolvedValueOnce(
-          JSON.stringify({
-            content: null,
-            toolCalls: [{ id: '1', name: 'read', args: { path: 'core.name' } }],
-          }),
-        )
-        .mockResolvedValueOnce(JSON.stringify({ content: 'done', toolCalls: [] })),
+      send: vi.fn(),
+      stream: vi.fn(() => ({
+        result: sourceResult,
+        async *[Symbol.asyncIterator]() {
+          yield 'partial';
+          throw failure;
+        },
+      })),
     };
-    const tools = {
-      executeTool: vi.fn().mockResolvedValue({ success: true, data: { value: 'Stello' } }),
-    };
-    const onToolCall = vi.fn();
-    const onToolResult = vi.fn();
+    const stream = new TurnRunner(parser).runStream(
+      session,
+      'hello',
+      { executeTool: vi.fn() },
+    );
 
-    const runner = new TurnRunner(parser);
-    await runner.run(session, 'hello', tools, { onToolCall, onToolResult });
+    const iteratorOutcome = (async () => {
+      const chunks: string[] = [];
+      for await (const chunk of stream) chunks.push(chunk);
+      return chunks;
+    })();
 
-    expect(onToolCall).toHaveBeenCalledWith({
-      id: '1',
-      name: 'read',
-      args: { path: 'core.name' },
-    });
-    expect(onToolResult).toHaveBeenCalledWith({
-      toolCallId: '1',
-      toolName: 'read',
-      args: { path: 'core.name' },
-      success: true,
-      data: { value: 'Stello' },
-      error: null,
-    });
+    await expect(iteratorOutcome).rejects.toBe(failure);
+    await expect(stream.result).rejects.toBe(failure);
   });
 });

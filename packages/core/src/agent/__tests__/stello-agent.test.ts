@@ -4,6 +4,15 @@ import type { SessionTree } from '../../types/session';
 import type { ConfirmProtocol, SkillRouter } from '../../types/lifecycle';
 import { createStelloAgent, type StelloAgentConfig } from '../stello-agent';
 
+function streamWithResult<T>(resultValue: T, chunks: string[] = []) {
+  return {
+    result: Promise.resolve(resultValue),
+    async *[Symbol.asyncIterator]() {
+      for (const chunk of chunks) yield chunk;
+    },
+  };
+}
+
 describe('StelloAgent', () => {
   const rootSession = {
     id: 'root',
@@ -30,6 +39,7 @@ describe('StelloAgent', () => {
       meta: { id: 'root', turnCount: 0, status: 'active' as const },
       turnCount: 0,
       send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
+      stream: vi.fn(() => streamWithResult(JSON.stringify({ content: 'done', toolCalls: [] }))),
       consolidate: vi.fn(),
       setTools: vi.fn(),
     };
@@ -75,6 +85,7 @@ describe('StelloAgent', () => {
       meta: { id: 'root', turnCount: 0, status: 'active' as const },
       turnCount: 0,
       send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
+      stream: vi.fn(() => streamWithResult(JSON.stringify({ content: 'done', toolCalls: [] }))),
       consolidate: vi.fn(),
       setTools: vi.fn(),
     };
@@ -83,7 +94,8 @@ describe('StelloAgent', () => {
     const result = await agent.turn('root', 'hello');
 
     expect(agent.sessions).toBeDefined();
-    expect(runtimeSession.send).toHaveBeenCalledWith('hello', { signal: undefined });
+    expect(runtimeSession.stream).toHaveBeenCalledWith('hello', { signal: undefined });
+    expect(runtimeSession.send).not.toHaveBeenCalled();
     expect(result.turn.finalContent).toContain('"content":"done"');
   });
 
@@ -183,7 +195,7 @@ describe('StelloAgent', () => {
 
     const sessionFork = vi.fn().mockResolvedValue({
       id: 'child-2', meta: { id: 'child-2', turnCount: 0, status: 'active' },
-      turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
+      turnCount: 0, send: vi.fn(), stream: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
     });
 
     const childRuntime = {
@@ -191,6 +203,7 @@ describe('StelloAgent', () => {
       meta: { id: 'child-1', turnCount: 1, status: 'active' as const },
       turnCount: 1,
       send: vi.fn(),
+      stream: vi.fn(),
       consolidate: vi.fn(),
       setTools: vi.fn(),
       fork: sessionFork,
@@ -358,6 +371,7 @@ describe('StelloAgent', () => {
       meta: { id: 'root', turnCount: 0, status: 'active' as const },
       turnCount: 0,
       send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
+      stream: vi.fn(() => streamWithResult(JSON.stringify({ content: 'done', toolCalls: [] }))),
       consolidate: vi.fn().mockResolvedValue(undefined),
       setTools: vi.fn(),
     };
@@ -367,24 +381,23 @@ describe('StelloAgent', () => {
   });
 
   it('支持通过 session.sessionLoader 正式接入 Session 配置', async () => {
+    const responseFor = (input: string) => {
+      if (input.includes('"toolResults"')) {
+        return { content: 'done', toolCalls: [] };
+      }
+      return {
+        content: null,
+        toolCalls: [{ id: 't1', name: 'read_file', input: { path: 'a.ts' } }],
+      };
+    };
     const session = {
       meta: {
         id: 'root',
         status: 'active' as const,
       },
       messages: vi.fn().mockResolvedValue([]),
-      send: vi.fn().mockImplementation(async (input: string) => {
-        if (input.includes('"toolResults"')) {
-          return {
-            content: 'done',
-            toolCalls: [],
-          };
-        }
-        return {
-          content: null,
-          toolCalls: [{ id: 't1', name: 'read_file', input: { path: 'a.ts' } }],
-        };
-      }),
+      send: vi.fn().mockImplementation(async (input: string) => responseFor(input)),
+      stream: vi.fn().mockImplementation((input: string) => streamWithResult(responseFor(input))),
       consolidate: vi.fn().mockResolvedValue(undefined),
       setTools: vi.fn(),
     };
@@ -421,7 +434,8 @@ describe('StelloAgent', () => {
 
     const result = await agent.turn('root', 'hello');
 
-    expect(session.send).toHaveBeenCalledWith('hello', { signal: undefined });
+    expect(session.stream).toHaveBeenCalledWith('hello', { signal: undefined });
+    expect(session.send).not.toHaveBeenCalled();
     expect(result.turn.rawResponse).toContain('"content":"done"');
     expect(result.turn.toolCallsExecuted).toBe(1);
   });
@@ -537,7 +551,7 @@ describe('StelloAgent', () => {
     /**
      * Build a sessionLoader-style agent fixture where:
      * - sessions exposes getNode (parent walk) + getTree (subtree)
-     * - the underlying session.send captures the merged sendOptions
+     * - the underlying session.stream captures the merged sendOptions
      */
     function buildTopologyFixture(opts: {
       sessions: Partial<SessionTree>;
@@ -550,6 +564,10 @@ describe('StelloAgent', () => {
         send: vi.fn().mockImplementation(async (_input: string, sendOptions?: Record<string, unknown>) => {
           captured.sendOptions = sendOptions;
           return { content: 'done', toolCalls: [] };
+        }),
+        stream: vi.fn().mockImplementation((_input: string, sendOptions?: Record<string, unknown>) => {
+          captured.sendOptions = sendOptions;
+          return streamWithResult({ content: 'done', toolCalls: [] });
         }),
         consolidate: vi.fn().mockResolvedValue(undefined),
         setTools: vi.fn(),

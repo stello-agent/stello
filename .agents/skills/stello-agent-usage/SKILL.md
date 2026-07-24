@@ -67,6 +67,8 @@ const result = await streamResult.result
 console.log(result.turn.finalContent)
 ```
 
+若本轮包含 tool call，iterator 会按产生顺序继续输出每个 LLM 子轮的文本；工具执行期间暂时没有 chunk。`result.turn.finalContent` 仍只表示最后一个不再请求客户端 tool 的响应，可能不等于所有 chunk 的简单拼接。
+
 ### 2.4 TurnRunnerOptions
 
 ```typescript

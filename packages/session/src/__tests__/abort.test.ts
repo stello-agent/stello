@@ -6,40 +6,19 @@ import type { LLMAdapter, LLMChunk, LLMCompleteOptions, LLMResult, Message } fro
 
 /** 让 fetch-style adapter 监听 signal 的最小 LLMAdapter */
 function createSignalAwareLLM(behavior: {
-  /** complete() 等多久 resolve（毫秒），默认 50ms */
-  delayMs?: number
-  result?: LLMResult
   chunks?: LLMChunk[]
   /** chunk 之间的间隔（毫秒），默认 20ms */
   streamGapMs?: number
 } = {}): LLMAdapter & { calls: { signal?: AbortSignal }[] } {
   const calls: { signal?: AbortSignal }[] = []
-  const result = behavior.result ?? { content: 'ok' }
   const chunks = behavior.chunks ?? [{ delta: 'partial' }]
-  const delayMs = behavior.delayMs ?? 50
   const streamGapMs = behavior.streamGapMs ?? 20
 
   return {
     calls,
     maxContextTokens: 1_000_000,
-    async complete(_messages: Message[], options?: LLMCompleteOptions): Promise<LLMResult> {
-      calls.push({ signal: options?.signal })
-      await new Promise<void>((resolve, reject) => {
-        if (options?.signal?.aborted) {
-          reject(new DOMException('aborted', 'AbortError'))
-          return
-        }
-        const timer = setTimeout(() => {
-          options?.signal?.removeEventListener('abort', onAbort)
-          resolve()
-        }, delayMs)
-        const onAbort = () => {
-          clearTimeout(timer)
-          reject(new DOMException('aborted', 'AbortError'))
-        }
-        options?.signal?.addEventListener('abort', onAbort, { once: true })
-      })
-      return result
+    async complete(): Promise<LLMResult> {
+      throw new Error('Session must not call LLMAdapter.complete')
     },
     async *stream(_messages: Message[], options?: LLMCompleteOptions): AsyncIterable<LLMChunk> {
       calls.push({ signal: options?.signal })
@@ -66,7 +45,7 @@ function createSignalAwareLLM(behavior: {
 
 describe('Session.send() AbortSignal', () => {
   it('signal abort 触发后 send() reject 为 AbortError，且不写入 L3', async () => {
-    const llm = createSignalAwareLLM({ delayMs: 100 })
+    const llm = createSignalAwareLLM({ streamGapMs: 100 })
     const { session } = await makeSession({ llm })
 
     const controller = new AbortController()
@@ -91,7 +70,7 @@ describe('Session.send() AbortSignal', () => {
     expect(llm.calls).toHaveLength(0)
   })
 
-  it('signal 被透传到 LLMAdapter.complete', async () => {
+  it('send() 的 signal 被透传到 LLMAdapter.stream', async () => {
     const llm = createSignalAwareLLM()
     const { session } = await makeSession({ llm })
 
@@ -193,6 +172,10 @@ describe('orphaned tool_calls sanitization (abort recovery)', () => {
       async complete(messages) {
         calls.push(messages)
         return reply
+      },
+      async *stream(messages) {
+        calls.push(messages)
+        if (reply.content) yield { delta: reply.content }
       },
     }
     return Object.assign(adapter, { calls })

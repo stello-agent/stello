@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto'
 import type { Session, MessageQueryOptions, SessionInput, SessionSendOptions } from './types/session-api.js'
 import { SessionArchivedError } from './types/session-api.js'
 import type { SessionMeta, SessionMetaUpdate, ForkOptions } from './types/session.js'
-import type { LLMUsage, Message } from './types/llm.js'
+import type { LLMAdapter, LLMChunk, Message } from './types/llm.js'
 import type { CreateSessionOptions, LoadSessionOptions, SendResult, StreamResult } from './types/functions.js'
 import { assembleSessionContext, buildSessionIdentityMessages, createBuiltinCompressFn, flushCompressionCache, hydrateCompressionCache, removeIncompleteToolCallGroups, type CompressionCache } from './context-utils.js'
+import { collectLLMStream } from './llm-stream.js'
 
 interface ToolResultEnvelope {
   toolResults: Array<{
@@ -76,14 +77,6 @@ function stripMultimodalParts(records: Message[]): Message[] {
   })
 }
 
-function mergeUsage(current: LLMUsage | undefined, next: LLMUsage | undefined): LLMUsage | undefined {
-  if (!next) return current
-  return {
-    promptTokens: next.promptTokens ?? current?.promptTokens ?? 0,
-    completionTokens: next.completionTokens ?? current?.completionTokens ?? 0,
-  }
-}
-
 /** 为 toolResults continuation 组装固定上下文与历史。 */
 async function assembleSessionReplayContext(
   sessionId: string,
@@ -134,6 +127,8 @@ function createStreamResult(
 ): StreamResult {
   const queue: string[] = []
   let done = false
+  let failed = false
+  let failure: unknown
   let notify: (() => void) | null = null
 
   const wake = () => {
@@ -152,11 +147,18 @@ function createStreamResult(
   const result = (async () => {
     try {
       return await processor(push)
+    } catch (error) {
+      failed = true
+      failure = error
+      throw error
     } finally {
       done = true
       wake()
     }
   })()
+  // iterator 也会传播同一错误；先标记 result rejection 已处理，
+  // 避免只消费 iterator 的调用方触发 unhandled-rejection。
+  void result.catch(() => {})
 
   return {
     result,
@@ -170,6 +172,7 @@ function createStreamResult(
           notify = resolve
         })
       }
+      if (failed) throw failure
     },
   }
 }
@@ -196,8 +199,8 @@ function buildSession(
     if (cache && !compressionCache) compressionCache = cache
   })
   /** 解析 compressFn：用户提供 > 内置 LLM 压缩 */
-  function resolveCompressFn() {
-    return options.compressFn ?? createBuiltinCompressFn(options.llm!)
+  function resolveCompressFn(llm: LLMAdapter) {
+    return options.compressFn ?? createBuiltinCompressFn(llm)
   }
 
   /**
@@ -224,218 +227,120 @@ function buildSession(
     compressionCache = assembledCache
   }
 
+  function requireStreamingLLM(method: 'send' | 'stream'): LLMAdapter {
+    if (currentMeta.status === 'archived') {
+      throw new SessionArchivedError(currentMeta.id)
+    }
+    const llm = options.llm
+    if (!llm) {
+      throw new Error(`LLMAdapter is required for ${method}()`)
+    }
+    if (typeof llm.stream !== 'function') {
+      throw new Error(`LLMAdapter.stream is required for ${method}()`)
+    }
+    return llm
+  }
+
+  /**
+   * Session turn 的唯一 LLM 执行路径。send() 静默聚合，stream() 额外提供 chunk sink。
+   * adapter 或 sink 抛错时直接向上传播，下方 L3 写入不会执行。
+   */
+  async function executeStreamingTurn(
+    llm: LLMAdapter,
+    input: string | SessionInput,
+    sendOptions?: SessionSendOptions,
+    onChunk?: (chunk: LLMChunk) => void | Promise<void>,
+  ): Promise<SendResult> {
+    sendOptions?.signal?.throwIfAborted()
+    const normalizedInput = normalizeSessionInput(input)
+    const content = normalizedInput.text
+
+    const assembled = await assembleSessionContext(
+      currentMeta.id, storage, content,
+      { maxContextTokens: llm.maxContextTokens, lastPromptTokens, compressFn: resolveCompressFn(llm), compressionCache },
+      currentMeta.label,
+      sendOptions?.sharedMemoryContext,
+      sendOptions?.topologyContext,
+      normalizedInput.parts,
+    )
+    persistAndApplyCompressionCache(assembled.compressionCache)
+
+    if (assembled.insightConsumed) {
+      await storage.clearInsight(currentMeta.id)
+    }
+
+    let promptMessages = assembled.messages
+    let recordsToPersist: Message[] = [{
+      role: 'user',
+      content,
+      timestamp: assembled.userTimestamp,
+      ...(normalizedInput.parts ? { parts: normalizedInput.parts } : {}),
+    }]
+    const toolEnvelope = parseToolResultEnvelope(content)
+    if (toolEnvelope) {
+      const replayContext = await assembleSessionReplayContext(currentMeta.id, storage, currentMeta.label, sendOptions?.sharedMemoryContext, sendOptions?.topologyContext)
+      promptMessages = [
+        ...replayContext.messages,
+        ...toolEnvelope.toolResults.map((result) => ({
+          role: 'tool' as const,
+          toolCallId: result.toolCallId ?? undefined,
+          content: serializeToolResultContent(result),
+          timestamp: assembled.userTimestamp,
+        })),
+      ]
+      recordsToPersist = promptMessages.slice(replayContext.messages.length)
+      if (replayContext.insightConsumed) {
+        await storage.clearInsight(currentMeta.id)
+      }
+      promptMessages = removeIncompleteToolCallGroups(promptMessages)
+    }
+
+    const result = await collectLLMStream(
+      llm.stream(promptMessages, { tools, signal: sendOptions?.signal }),
+      onChunk,
+    )
+
+    const assistantRecord: Message = {
+      role: 'assistant',
+      content: result.content ?? '',
+      ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}),
+      ...(result.toolCalls && result.toolCalls.length > 0 ? { toolCalls: result.toolCalls } : {}),
+      timestamp: new Date().toISOString(),
+    }
+    const turnId = randomUUID()
+    for (const record of attachTurnMetadata([...recordsToPersist, assistantRecord], turnId)) {
+      await storage.appendRecord(currentMeta.id, record)
+    }
+
+    if (result.usage?.promptTokens) {
+      lastPromptTokens = result.usage.promptTokens
+    }
+
+    return {
+      content: result.content,
+      reasoningContent: result.reasoningContent,
+      toolCalls: result.toolCalls,
+      usage: result.usage,
+    }
+  }
+
   const session: Session = {
     get meta(): Readonly<SessionMeta> {
       return currentMeta
     },
 
     async send(input: string | SessionInput, sendOptions?: SessionSendOptions): Promise<SendResult> {
-      if (currentMeta.status === 'archived') {
-        throw new SessionArchivedError(currentMeta.id)
-      }
-      if (!options.llm) {
-        throw new Error('LLMAdapter is required for send()')
-      }
-      // pre-flight：已 abort 的 signal 立即抛出，不发起任何 LLM 请求
-      sendOptions?.signal?.throwIfAborted()
-      const normalizedInput = normalizeSessionInput(input)
-      const content = normalizedInput.text
-
-      // 组装上下文（自动压缩）
-      const assembled = await assembleSessionContext(
-        currentMeta.id, storage, content,
-        { maxContextTokens: options.llm.maxContextTokens, lastPromptTokens, compressFn: resolveCompressFn(), compressionCache },
-        currentMeta.label,
-        sendOptions?.sharedMemoryContext,
-        sendOptions?.topologyContext,
-        normalizedInput.parts,
-      )
-      persistAndApplyCompressionCache(assembled.compressionCache)
-
-      // 消费 insight
-      if (assembled.insightConsumed) {
-        await storage.clearInsight(currentMeta.id)
-      }
-
-      let promptMessages = assembled.messages
-      let recordsToPersist: Message[] = [{
-        role: 'user',
-        content,
-        timestamp: assembled.userTimestamp,
-        ...(normalizedInput.parts ? { parts: normalizedInput.parts } : {}),
-      }]
-      const toolEnvelope = parseToolResultEnvelope(content)
-      if (toolEnvelope) {
-        const replayContext = await assembleSessionReplayContext(currentMeta.id, storage, currentMeta.label, sendOptions?.sharedMemoryContext, sendOptions?.topologyContext)
-        promptMessages = [
-          ...replayContext.messages,
-          ...toolEnvelope.toolResults.map((result) => ({
-            role: 'tool' as const,
-            toolCallId: result.toolCallId ?? undefined,
-            content: serializeToolResultContent(result),
-            timestamp: assembled.userTimestamp,
-          })),
-        ]
-        recordsToPersist = promptMessages.slice(replayContext.messages.length)
-        if (replayContext.insightConsumed) {
-          await storage.clearInsight(currentMeta.id)
-        }
-        // 替换为 replay 上下文后，原 assembled.messages 里的 sanitize 不再生效；
-        // 在拼好"assistant + tool 结果"完整组之后，再做一次孤儿组清理（防御中段 orphan）。
-        promptMessages = removeIncompleteToolCallGroups(promptMessages)
-      }
-
-      // 调 LLM — adapter 抛 AbortError 时直接向上传播，下方 L3 写入分支整体跳过
-      const result = await options.llm.complete(promptMessages, { tools, signal: sendOptions?.signal })
-
-      // 更新 promptTokens 基线
-      if (result.usage?.promptTokens) {
-        lastPromptTokens = result.usage.promptTokens
-      }
-      const assistantRecord: Message = {
-        role: 'assistant',
-        content: result.content ?? '',
-        ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}),
-        ...(result.toolCalls && result.toolCalls.length > 0 ? { toolCalls: result.toolCalls } : {}),
-        timestamp: new Date().toISOString(),
-      }
-      const turnId = randomUUID()
-      for (const record of attachTurnMetadata([...recordsToPersist, assistantRecord], turnId)) {
-        await storage.appendRecord(currentMeta.id, record)
-      }
-
-      return {
-        content: result.content,
-        reasoningContent: result.reasoningContent,
-        toolCalls: result.toolCalls,
-        usage: result.usage,
-      }
+      return executeStreamingTurn(requireStreamingLLM('send'), input, sendOptions)
     },
 
     stream(input: string | SessionInput, sendOptions?: SessionSendOptions): StreamResult {
-      if (currentMeta.status === 'archived') {
-        throw new SessionArchivedError(currentMeta.id)
-      }
-      if (!options.llm) {
-        throw new Error('LLMAdapter is required for stream()')
-      }
-
-      return createStreamResult(async (push) => {
-        // pre-flight：已 abort 的 signal 立即让 result reject，processor 不进入下游
-        sendOptions?.signal?.throwIfAborted()
-        const normalizedInput = normalizeSessionInput(input)
-        const content = normalizedInput.text
-
-        // 组装上下文（自动压缩）
-        const assembled = await assembleSessionContext(
-          currentMeta.id, storage, content,
-          { maxContextTokens: options.llm!.maxContextTokens, lastPromptTokens, compressFn: resolveCompressFn(), compressionCache },
-          currentMeta.label,
-          sendOptions?.sharedMemoryContext,
-          sendOptions?.topologyContext,
-          normalizedInput.parts,
-        )
-        persistAndApplyCompressionCache(assembled.compressionCache)
-
-        // 消费 insight
-        if (assembled.insightConsumed) {
-          await storage.clearInsight(currentMeta.id)
-        }
-
-        let promptMessages = assembled.messages
-        let recordsToPersist: Message[] = [{
-          role: 'user',
-          content,
-          timestamp: assembled.userTimestamp,
-          ...(normalizedInput.parts ? { parts: normalizedInput.parts } : {}),
-        }]
-        const toolEnvelope = parseToolResultEnvelope(content)
-        if (toolEnvelope) {
-          const replayContext = await assembleSessionReplayContext(currentMeta.id, storage, currentMeta.label, sendOptions?.sharedMemoryContext, sendOptions?.topologyContext)
-          promptMessages = [
-            ...replayContext.messages,
-            ...toolEnvelope.toolResults.map((result) => ({
-              role: 'tool' as const,
-              toolCallId: result.toolCallId ?? undefined,
-              content: serializeToolResultContent(result),
-              timestamp: assembled.userTimestamp,
-            })),
-          ]
-          recordsToPersist = promptMessages.slice(replayContext.messages.length)
-          if (replayContext.insightConsumed) {
-            await storage.clearInsight(currentMeta.id)
-          }
-          // 拼好完整组之后再清孤儿，防御中段 orphan（与 send() 对称）
-          promptMessages = removeIncompleteToolCallGroups(promptMessages)
-        }
-
-        if (!options.llm) {
-          throw new Error('LLM adapter not set. Call setLLM() first or pass llm to createSession().')
-        }
-
-        let result: SendResult
-        if (options.llm.stream) {
-          let accumulated = ''
-          let accumulatedReasoning = ''
-          let usage: LLMUsage | undefined
-          const toolCallsByIndex = new Map<number, { id?: string; name?: string; input: string }>()
-          // adapter 在 abort 时抛 AbortError，这里直接向上传播给 result promise；
-          // 下方 L3 写入分支不会执行（policy: drop entirely），与非流式 send() 对称。
-          for await (const chunk of options.llm.stream(promptMessages, { tools, signal: sendOptions?.signal })) {
-            accumulated += chunk.delta
-            if (chunk.reasoningDelta) accumulatedReasoning += chunk.reasoningDelta
-            usage = mergeUsage(usage, chunk.usage)
-            push(chunk.delta)
-            for (const delta of chunk.toolCallDeltas ?? []) {
-              const current = toolCallsByIndex.get(delta.index) ?? { input: '' }
-              if (delta.id) current.id = delta.id
-              if (delta.name) current.name = delta.name
-              if (delta.input) current.input += delta.input
-              toolCallsByIndex.set(delta.index, current)
-            }
-          }
-          const toolCalls = Array.from(toolCallsByIndex.values()).map((call, index) => ({
-            id: call.id ?? `tool_${index}`,
-            name: call.name ?? 'unknown_tool',
-            input: call.input ? JSON.parse(call.input) as Record<string, unknown> : {},
-          }))
-          result = {
-            content: accumulated,
-            ...(accumulatedReasoning ? { reasoningContent: accumulatedReasoning } : {}),
-            toolCalls,
-            ...(usage ? { usage } : {}),
-          }
-        } else {
-          result = await options.llm.complete(promptMessages, { tools, signal: sendOptions?.signal })
-          if (result.content) {
-            push(result.content)
-          }
-        }
-
-        const assistantRecord: Message = {
-          role: 'assistant',
-          content: result.content ?? '',
-          ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}),
-          ...(result.toolCalls && result.toolCalls.length > 0 ? { toolCalls: result.toolCalls } : {}),
-          timestamp: new Date().toISOString(),
-        }
-        const turnId = randomUUID()
-        for (const record of attachTurnMetadata([...recordsToPersist, assistantRecord], turnId)) {
-          await storage.appendRecord(currentMeta.id, record)
-        }
-
-        // 更新 promptTokens 基线
-        if (result.usage?.promptTokens) {
-          lastPromptTokens = result.usage.promptTokens
-        }
-
-        return {
-          content: result.content,
-          reasoningContent: result.reasoningContent,
-          toolCalls: result.toolCalls,
-          usage: result.usage,
-        }
-      })
+      const llm = requireStreamingLLM('stream')
+      return createStreamResult((push) => executeStreamingTurn(
+        llm,
+        input,
+        sendOptions,
+        (chunk) => push(chunk.delta),
+      ))
     },
 
     async messages(queryOptions?: MessageQueryOptions): Promise<Message[]> {

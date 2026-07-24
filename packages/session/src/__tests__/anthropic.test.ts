@@ -25,6 +25,29 @@ function asyncIterableFrom<T>(items: T[]): AsyncIterable<T> {
   }
 }
 
+function textResponseEvents(text = 'ok', inputTokens = 1, outputTokens = 1) {
+  return asyncIterableFrom([
+    {
+      type: 'message_start',
+      message: { usage: { input_tokens: inputTokens, output_tokens: 0 } },
+    },
+    {
+      type: 'content_block_start',
+      index: 0,
+      content_block: { type: 'text', text: '' },
+    },
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'text_delta', text },
+    },
+    {
+      type: 'message_delta',
+      usage: { output_tokens: outputTokens },
+    },
+  ])
+}
+
 describe('createAnthropicAdapter stream()', () => {
   beforeEach(() => {
     messagesStream.mockReset()
@@ -167,23 +190,26 @@ describe('createAnthropicAdapter complete() max_tokens', () => {
   beforeEach(() => {
     messagesStream.mockReset()
     messagesCreate.mockReset()
-    messagesCreate.mockResolvedValue({
-      content: [{ type: 'text', text: 'ok' }],
-      usage: { input_tokens: 1, output_tokens: 1 },
-    })
+    messagesStream.mockReturnValue(textResponseEvents())
   })
 
-  it('未配置时回落到内建默认值 4096', async () => {
+  it('complete() 通过 stream 聚合，未配置时回落到内建默认值 4096', async () => {
     const adapter = createAnthropicAdapter({
       apiKey: 'k',
       model: 'm',
       maxContextTokens: 200_000,
     })
-    await adapter.complete([{ role: 'user', content: 'hi' }])
-    expect(messagesCreate).toHaveBeenCalledWith(
+    const result = await adapter.complete([{ role: 'user', content: 'hi' }])
+
+    expect(result).toEqual({
+      content: 'ok',
+      usage: { promptTokens: 1, completionTokens: 1 },
+    })
+    expect(messagesStream).toHaveBeenCalledWith(
       expect.objectContaining({ max_tokens: 4096 }),
       undefined,
     )
+    expect(messagesCreate).not.toHaveBeenCalled()
   })
 
   it('options.maxOutputTokens 覆盖内建默认值', async () => {
@@ -194,10 +220,28 @@ describe('createAnthropicAdapter complete() max_tokens', () => {
       maxOutputTokens: 8192,
     })
     await adapter.complete([{ role: 'user', content: 'hi' }])
-    expect(messagesCreate).toHaveBeenCalledWith(
+    expect(messagesStream).toHaveBeenCalledWith(
       expect.objectContaining({ max_tokens: 8192 }),
       undefined,
     )
+  })
+
+  it('超过 Anthropic SDK 非流式长请求阈值时仍通过 stream 传输并完整聚合', async () => {
+    const adapter = createAnthropicAdapter({
+      apiKey: 'k',
+      model: 'm',
+      maxContextTokens: 200_000,
+      maxOutputTokens: 128_000,
+    })
+
+    await expect(adapter.complete([{ role: 'user', content: 'long answer' }])).resolves.toMatchObject({
+      content: 'ok',
+    })
+    expect(messagesStream).toHaveBeenCalledWith(
+      expect.objectContaining({ max_tokens: 128_000 }),
+      undefined,
+    )
+    expect(messagesCreate).not.toHaveBeenCalled()
   })
 
   it('调用方 maxTokens 优先级最高，盖过 options.maxOutputTokens', async () => {
@@ -208,7 +252,7 @@ describe('createAnthropicAdapter complete() max_tokens', () => {
       maxOutputTokens: 8192,
     })
     await adapter.complete([{ role: 'user', content: 'hi' }], { maxTokens: 2048 })
-    expect(messagesCreate).toHaveBeenCalledWith(
+    expect(messagesStream).toHaveBeenCalledWith(
       expect.objectContaining({ max_tokens: 2048 }),
       undefined,
     )
@@ -230,7 +274,7 @@ describe('createAnthropicAdapter complete() max_tokens', () => {
       tools: [{ name: 'client_tool', description: 'client', inputSchema: { type: 'object' } }],
     })
 
-    expect(messagesCreate).toHaveBeenCalledWith(
+    expect(messagesStream).toHaveBeenCalledWith(
       expect.objectContaining({
         tools: [
           { name: 'client_tool', description: 'client', input_schema: { type: 'object' } },
@@ -242,14 +286,31 @@ describe('createAnthropicAdapter complete() max_tokens', () => {
   })
 
   it('Anthropic server-side tool blocks 不会变成客户端 toolCalls，并保留 providerToolEvents', async () => {
-    messagesCreate.mockResolvedValueOnce({
-      content: [
-        { type: 'server_tool_use', id: 'srv_1', name: 'web_search', input: { query: 'OpenAI news' } },
-        { type: 'web_search_tool_result', tool_use_id: 'srv_1', content: [{ type: 'web_search_result', title: 'Example', url: 'https://example.com' }] },
-        { type: 'text', text: 'answer' },
-      ],
-      usage: { input_tokens: 10, output_tokens: 5 },
-    })
+    messagesStream.mockReturnValueOnce(asyncIterableFrom([
+      {
+        type: 'message_start',
+        message: { usage: { input_tokens: 10, output_tokens: 0 } },
+      },
+      {
+        type: 'content_block_start',
+        index: 0,
+        content_block: { type: 'server_tool_use', id: 'srv_1', name: 'web_search', input: { query: 'OpenAI news' } },
+      },
+      {
+        type: 'content_block_start',
+        index: 1,
+        content_block: { type: 'web_search_tool_result', tool_use_id: 'srv_1', content: [{ type: 'web_search_result', title: 'Example', url: 'https://example.com' }] },
+      },
+      {
+        type: 'content_block_delta',
+        index: 2,
+        delta: { type: 'text_delta', text: 'answer' },
+      },
+      {
+        type: 'message_delta',
+        usage: { output_tokens: 5 },
+      },
+    ]))
 
     const adapter = createAnthropicAdapter({
       apiKey: 'k',
@@ -276,6 +337,57 @@ describe('createAnthropicAdapter complete() max_tokens', () => {
         raw: { type: 'web_search_tool_result', tool_use_id: 'srv_1', content: [{ type: 'web_search_result', title: 'Example', url: 'https://example.com' }] },
       },
     ])
+    expect(result.usage).toEqual({ promptTokens: 10, completionTokens: 5 })
+    expect(messagesCreate).not.toHaveBeenCalled()
+  })
+
+  it('complete() 从 stream delta 聚合客户端 tool call，且无文本时 content 为 null', async () => {
+    messagesStream.mockReturnValueOnce(asyncIterableFrom([
+      {
+        type: 'content_block_start',
+        index: 1,
+        content_block: { type: 'tool_use', id: 'toolu_1', name: 'search', input: {} },
+      },
+      {
+        type: 'content_block_delta',
+        index: 1,
+        delta: { type: 'input_json_delta', partial_json: '{"q":"stello"}' },
+      },
+    ]))
+
+    const adapter = createAnthropicAdapter({
+      apiKey: 'k',
+      model: 'm',
+      maxContextTokens: 200_000,
+    })
+
+    const result = await adapter.complete([{ role: 'user', content: 'search' }])
+
+    expect(result).toEqual({
+      content: null,
+      toolCalls: [{ id: 'toolu_1', name: 'search', input: { q: 'stello' } }],
+    })
+    expect(messagesCreate).not.toHaveBeenCalled()
+  })
+
+  it('complete() 将 temperature 和 signal 原样传给 stream 请求', async () => {
+    const adapter = createAnthropicAdapter({
+      apiKey: 'k',
+      model: 'm',
+      maxContextTokens: 200_000,
+    })
+    const controller = new AbortController()
+
+    await adapter.complete([{ role: 'user', content: 'hi' }], {
+      temperature: 0.25,
+      signal: controller.signal,
+    })
+
+    expect(messagesStream).toHaveBeenCalledWith(
+      expect.objectContaining({ temperature: 0.25 }),
+      { signal: controller.signal },
+    )
+    expect(messagesCreate).not.toHaveBeenCalled()
   })
 })
 

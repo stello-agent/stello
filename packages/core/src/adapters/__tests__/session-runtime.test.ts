@@ -5,6 +5,13 @@ import {
   sessionSendResultParser,
 } from '../session-runtime';
 
+function emptyStream() {
+  return {
+    result: Promise.resolve({ content: null, toolCalls: [] }),
+    async *[Symbol.asyncIterator]() {},
+  };
+}
+
 describe('session-runtime adapters', () => {
   it('可以把 session.send() 结果序列化成 TurnRunner 可消费的原始字符串', () => {
     const raw = serializeSessionSendResult({
@@ -40,6 +47,7 @@ describe('session-runtime adapters', () => {
         content: 'done',
         toolCalls: [{ id: 't1', name: 'tool', input: { x: 1 } }],
       }),
+      stream: vi.fn(emptyStream),
       consolidate: vi.fn().mockResolvedValue(undefined),
     };
 
@@ -70,6 +78,7 @@ describe('session-runtime adapters', () => {
     const session = {
       meta: { id: 's1', status: 'active' as const },
       send: vi.fn(),
+      stream: vi.fn(emptyStream),
       messages: vi.fn().mockResolvedValue(parentMessages),
       consolidate: vi.fn(),
       setTools: vi.fn(),
@@ -82,6 +91,7 @@ describe('session-runtime adapters', () => {
     const childSession = {
       meta: { id: 'child-1', status: 'active' as const },
       send: vi.fn().mockResolvedValue({ content: 'hi', toolCalls: [] }),
+      stream: vi.fn(emptyStream),
       messages: vi.fn().mockResolvedValue([]),
       consolidate: vi.fn(),
       setTools: vi.fn(),
@@ -89,6 +99,7 @@ describe('session-runtime adapters', () => {
     const parentSession = {
       meta: { id: 'p1', status: 'active' as const },
       send: vi.fn(),
+      stream: vi.fn(emptyStream),
       messages: vi.fn().mockResolvedValue([]),
       consolidate: vi.fn(),
       setTools: vi.fn(),
@@ -107,6 +118,7 @@ describe('session-runtime adapters', () => {
     const session = {
       meta: { id: 'p1', status: 'active' as const },
       send: vi.fn(),
+      stream: vi.fn(emptyStream),
       messages: vi.fn().mockResolvedValue([]),
       consolidate: vi.fn(),
       setTools: vi.fn(),
@@ -121,6 +133,7 @@ describe('session-runtime adapters', () => {
     const childSession = {
       meta: { id: 'child-1', status: 'active' as const },
       send: vi.fn().mockResolvedValue({ content: 'hi', toolCalls: [] }),
+      stream: vi.fn(emptyStream),
       messages: vi.fn().mockResolvedValue([]),
       consolidate: vi.fn(),
       setTools: vi.fn(),
@@ -128,6 +141,7 @@ describe('session-runtime adapters', () => {
     const parentSession = {
       meta: { id: 'p1', status: 'active' as const },
       send: vi.fn(),
+      stream: vi.fn(emptyStream),
       messages: vi.fn().mockResolvedValue([]),
       consolidate: vi.fn(),
       setTools: vi.fn(),
@@ -151,6 +165,7 @@ describe('session-runtime adapters', () => {
     const session = {
       meta: { id: 's1', status: 'active' as const },
       send: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }),
+      stream: vi.fn(emptyStream),
       messages: vi.fn().mockResolvedValue([]),
       consolidate: vi.fn(),
       setTools: vi.fn(),
@@ -180,7 +195,7 @@ describe('session-runtime adapters', () => {
     const runtime = await adaptSessionToEngineRuntime(session, {});
 
     const controller = new AbortController();
-    const stream = runtime.stream!('hi', { signal: controller.signal });
+    const stream = runtime.stream('hi', { signal: controller.signal });
     const drained: string[] = [];
     for await (const chunk of stream) {
       drained.push(chunk);
@@ -196,6 +211,7 @@ describe('session-runtime adapters', () => {
       const session = {
         meta: { id: 'sX', status: 'active' as const },
         send: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }),
+        stream: vi.fn(emptyStream),
         messages: vi.fn().mockResolvedValue([]),
         consolidate: vi.fn(),
         setTools: vi.fn(),
@@ -216,6 +232,7 @@ describe('session-runtime adapters', () => {
       const session = {
         meta: { id: 'sX', status: 'active' as const },
         send: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }),
+        stream: vi.fn(emptyStream),
         messages: vi.fn().mockResolvedValue([]),
         consolidate: vi.fn(),
         setTools: vi.fn(),
@@ -233,6 +250,7 @@ describe('session-runtime adapters', () => {
       const session = {
         meta: { id: 'sX', status: 'active' as const },
         send: vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }),
+        stream: vi.fn(emptyStream),
         messages: vi.fn().mockResolvedValue([]),
         consolidate: vi.fn(),
         setTools: vi.fn(),
@@ -264,7 +282,7 @@ describe('session-runtime adapters', () => {
       const runtime = await adaptSessionToEngineRuntime(session, {
         topologyContextProvider: provider,
       });
-      const stream = runtime.stream!('hi');
+      const stream = runtime.stream('hi');
       for await (const chunk of stream) {
         void chunk;
         // drain
@@ -291,6 +309,7 @@ describe('session-runtime adapters', () => {
       },
       setTools: setToolsSpy,
       send: vi.fn(),
+      stream: vi.fn(emptyStream),
       messages: vi.fn().mockResolvedValue([]),
       consolidate: vi.fn(),
     };

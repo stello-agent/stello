@@ -20,6 +20,13 @@ function makeFakeSession(): {
       const result: SessionCompatibleSendResult = { content: 'ok' }
       return result
     },
+    stream(_input, options) {
+      capturedOptions.push(options ?? {})
+      return {
+        result: Promise.resolve({ content: 'ok' }),
+        async *[Symbol.asyncIterator]() {},
+      }
+    },
     async messages() {
       return []
     },

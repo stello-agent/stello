@@ -11,10 +11,10 @@ describe('session identity (label) injection', () => {
   it('send 时在 systemPrompt 之后注入 <session_identity> system 消息', async () => {
     const captured: Message[][] = []
     const llm = createMockLLM([simpleResponse])
-    const original = llm.complete.bind(llm)
-    llm.complete = async (msgs) => {
+    const original = llm.stream.bind(llm)
+    llm.stream = async function* (msgs, options) {
       captured.push([...msgs])
-      return original(msgs)
+      yield* original(msgs, options)
     }
 
     const { session } = await makeSession({
@@ -34,10 +34,10 @@ describe('session identity (label) injection', () => {
   it('无 systemPrompt 时 identity 作为首条 system 消息', async () => {
     const captured: Message[][] = []
     const llm = createMockLLM([simpleResponse])
-    const original = llm.complete.bind(llm)
-    llm.complete = async (msgs) => {
+    const original = llm.stream.bind(llm)
+    llm.stream = async function* (msgs, options) {
       captured.push([...msgs])
-      return original(msgs)
+      yield* original(msgs, options)
     }
 
     const { session } = await makeSession({ llm, label: '调研分支' })
@@ -51,10 +51,10 @@ describe('session identity (label) injection', () => {
   it('identity 位于 insight 之前', async () => {
     const captured: Message[][] = []
     const llm = createMockLLM([simpleResponse])
-    const original = llm.complete.bind(llm)
-    llm.complete = async (msgs) => {
+    const original = llm.stream.bind(llm)
+    llm.stream = async function* (msgs, options) {
       captured.push([...msgs])
-      return original(msgs)
+      yield* original(msgs, options)
     }
 
     const { session } = await makeSession({
@@ -75,10 +75,10 @@ describe('session identity (label) injection', () => {
   it('label 为空字符串时不注入', async () => {
     const captured: Message[][] = []
     const llm = createMockLLM([simpleResponse])
-    const original = llm.complete.bind(llm)
-    llm.complete = async (msgs) => {
+    const original = llm.stream.bind(llm)
+    llm.stream = async function* (msgs, options) {
       captured.push([...msgs])
-      return original(msgs)
+      yield* original(msgs, options)
     }
 
     const { session } = await makeSession({

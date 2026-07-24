@@ -67,5 +67,7 @@ hooks 抛错时 emit error 事件 + 调用 onError hook，不中断对话周期�
 
 ## Streaming + Tool Call 策略
 
-- 无工具：session.stream() 直接逐 chunk 输出
-- 有工具：中间轮用 session.send()（非流式），末轮内容一次性返回
+- `session.stream()` 是 Engine 驱动 LLM 的唯一底层原语，每个 tool continuation 都继续使用 stream。
+- `stream()` 按产生顺序输出所有 LLM 子轮的文本 chunk；工具执行期间自然暂停，下一轮继续输出。
+- `turn()` 复用同一个 streaming tool loop，但使用空输出 sink 聚合结果，不向调用方暴露 chunk。
+- `finalContent` / `rawResponse` 始终只代表最后一个不再请求客户端 tool 的 LLM 响应；usage 聚合整轮内所有 LLM 调用。

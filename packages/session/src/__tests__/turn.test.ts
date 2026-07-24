@@ -1,7 +1,13 @@
 import { describe, it, expect, vi } from 'vitest'
 import { makeSession, createMockLLM } from './helpers.js'
 import { SessionArchivedError } from '../types/session-api.js'
-import type { LLMResult, Message } from '../types/llm.js'
+import type { LLMAdapter, LLMChunk, LLMCompleteOptions, LLMResult, Message } from '../types/llm.js'
+
+function chunks(items: LLMChunk[]): AsyncIterable<LLMChunk> {
+  return (async function* () {
+    yield* items
+  })()
+}
 
 describe('send() 契约', () => {
   const simpleResponse: LLMResult = {
@@ -9,14 +15,22 @@ describe('send() 契约', () => {
     usage: { promptTokens: 10, completionTokens: 5 },
   }
 
-  it('send() 调用 LLMAdapter.complete 并返回 SendResult', async () => {
-    const llm = createMockLLM([simpleResponse])
+  it('send() 只调用 LLMAdapter.stream 并聚合返回 SendResult', async () => {
+    const complete = vi.fn(async () => ({ content: 'wrong transport' }))
+    const stream = vi.fn(() => chunks([
+      { delta: '你' },
+      { delta: '好！' },
+      { delta: '', usage: { promptTokens: 10, completionTokens: 5 } },
+    ]))
+    const llm: LLMAdapter = { maxContextTokens: 1_000_000, complete, stream }
     const { session } = await makeSession({ llm })
 
     const result = await session.send('hello')
 
     expect(result.content).toBe('你好！')
     expect(result.usage).toEqual({ promptTokens: 10, completionTokens: 5 })
+    expect(stream).toHaveBeenCalledOnce()
+    expect(complete).not.toHaveBeenCalled()
   })
 
   it('send() 自动存 L3（用户消息 + LLM 响应）', async () => {
@@ -36,11 +50,11 @@ describe('send() 契约', () => {
   it('send() 上下文组装包含 system prompt + insights + L3 历史', async () => {
     const capturedMessages: unknown[] = []
     const llm = createMockLLM([simpleResponse, { content: '第二次回复' }])
-    // 劫持 complete 以捕获消息
-    const originalComplete = llm.complete.bind(llm)
-    llm.complete = async (msgs) => {
+    // 劫持 stream 以捕获消息
+    const originalStream = llm.stream.bind(llm)
+    llm.stream = async function* (msgs, options) {
       capturedMessages.push([...msgs])
-      return originalComplete(msgs)
+      yield* originalStream(msgs, options)
     }
 
     const { session } = await makeSession({
@@ -76,10 +90,10 @@ describe('send() 契约', () => {
   it('send() 支持当前 turn 多模态 parts，持久化但不在后续历史中重复回放', async () => {
     const capturedMessages: Message[][] = []
     const llm = createMockLLM([{ content: '看到了' }, { content: '继续' }])
-    const originalComplete = llm.complete.bind(llm)
-    llm.complete = async (msgs, options) => {
+    const originalStream = llm.stream.bind(llm)
+    llm.stream = async function* (msgs, options) {
       capturedMessages.push(msgs.map((msg) => ({ ...msg, parts: msg.parts ? [...msg.parts] : undefined })))
-      return originalComplete(msgs, options)
+      yield* originalStream(msgs, options)
     }
     const { session } = await makeSession({ llm })
     const parts: Message['parts'] = [
@@ -146,10 +160,10 @@ describe('send() 契约', () => {
         content: '最终答案',
       },
     ])
-    const originalComplete = llm.complete.bind(llm)
-    llm.complete = async (msgs, options) => {
+    const originalStream = llm.stream.bind(llm)
+    llm.stream = async function* (msgs, options) {
       capturedMessages.push(msgs.map((msg) => ({ ...msg })))
-      return originalComplete(msgs, options)
+      yield* originalStream(msgs, options)
     }
 
     const { session } = await makeSession({ llm })
@@ -184,10 +198,11 @@ describe('send() 契约', () => {
     expect(persisted.map((message) => message.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
   })
 
-  it('send() 会把 tools 定义传给 LLMAdapter.complete', async () => {
+  it('send() 会把 tools 定义传给 LLMAdapter.stream', async () => {
     const llm = {
       maxContextTokens: 1_000_000,
       complete: vi.fn(async () => ({ content: null, toolCalls: [] })),
+      stream: vi.fn(() => chunks([{ delta: '' }])),
     }
     const { session } = await makeSession({
       llm,
@@ -208,7 +223,7 @@ describe('send() 契约', () => {
 
     await session.send('创建一个子 session')
 
-    expect(llm.complete).toHaveBeenCalledWith(
+    expect(llm.stream).toHaveBeenCalledWith(
       expect.any(Array),
       expect.objectContaining({
         tools: [
@@ -218,11 +233,26 @@ describe('send() 契约', () => {
         ],
       }),
     )
+    expect(llm.complete).not.toHaveBeenCalled()
   })
 
   it('send() 无 LLM 时抛错', async () => {
     const { session } = await makeSession()
     await expect(session.send('hello')).rejects.toThrow('LLMAdapter is required for send()')
+  })
+
+  it('complete-only adapter 在 send/stream 入口 fail-fast，不调用 complete', async () => {
+    const complete = vi.fn(async () => ({ content: 'must not run' }))
+    const llm = {
+      maxContextTokens: 1_000_000,
+      complete,
+    } as unknown as LLMAdapter
+    const { session } = await makeSession({ llm })
+
+    await expect(session.send('send')).rejects.toThrow('LLMAdapter.stream is required for send()')
+    expect(() => session.stream('stream')).toThrow('LLMAdapter.stream is required for stream()')
+    expect(complete).not.toHaveBeenCalled()
+    expect(await session.messages()).toEqual([])
   })
 
   it('archived session 上调用 send() 抛 SessionArchivedError', async () => {
@@ -271,6 +301,36 @@ describe('send() 契约', () => {
     expect(messages[1]!.content).toBe('你好，世界')
   })
 
+  it('stream() 在 adapter 完成前就把首个 chunk 交给 iterator', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let sourceCompleted = false
+    const { session } = await makeSession({
+      llm: {
+        maxContextTokens: 1_000_000,
+        async complete() {
+          return { content: 'unused' }
+        },
+        async *stream() {
+          yield { delta: 'first' }
+          await gate
+          sourceCompleted = true
+          yield { delta: 'second' }
+        },
+      },
+    })
+
+    const stream = session.stream('hello')
+    const iterator = stream[Symbol.asyncIterator]()
+    await expect(iterator.next()).resolves.toEqual({ value: 'first', done: false })
+    expect(sourceCompleted).toBe(false)
+
+    release()
+    await expect(iterator.next()).resolves.toEqual({ value: 'second', done: false })
+    await expect(iterator.next()).resolves.toEqual({ value: undefined, done: true })
+    await expect(stream.result).resolves.toMatchObject({ content: 'firstsecond' })
+  })
+
   it('stream() 汇总 adapter chunk usage 并透传到最终结果', async () => {
     const { session } = await makeSession({
       llm: {
@@ -297,12 +357,45 @@ describe('send() 契约', () => {
     expect(result.content).toBe('你好')
     expect(result.usage).toEqual({ promptTokens: 11, completionTokens: 2 })
   })
+
+  it('stream() 中途失败时 iterator 与 result 抛同一错误，且 L3 原子不写入', async () => {
+    const failure = new Error('stream exploded')
+    const { session } = await makeSession({
+      llm: {
+        maxContextTokens: 1_000_000,
+        async complete() {
+          return { content: 'unused' }
+        },
+        async *stream() {
+          yield { delta: 'partial' }
+          throw failure
+        },
+      },
+    })
+
+    const stream = session.stream('hello')
+    const resultError = stream.result.catch((error: unknown) => error)
+    const received: string[] = []
+    let iteratorError: unknown
+    try {
+      for await (const chunk of stream) received.push(chunk)
+    } catch (error) {
+      iteratorError = error
+    }
+
+    expect(received).toEqual(['partial'])
+    expect(iteratorError).toBe(failure)
+    expect(await resultError).toBe(failure)
+    expect(await session.messages()).toEqual([])
+  })
 })
 
 describe('Session.setTools (per-session tool list mutation)', () => {
   it('setTools replaces the tools auto-injected on next send', async () => {
-    const llmComplete = vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] })
-    const llm = { complete: llmComplete, stream: vi.fn(), maxContextTokens: 1_000_000 }
+    const llmStream = vi
+      .fn<(messages: Message[], options?: LLMCompleteOptions) => AsyncIterable<LLMChunk>>()
+      .mockImplementation(() => chunks([{ delta: 'ok' }]))
+    const llm = { complete: vi.fn(async () => ({ content: 'unused' })), stream: llmStream, maxContextTokens: 1_000_000 }
     const { session } = await makeSession({
       llm,
       tools: [{ name: 'old', description: 'd', inputSchema: {} }],
@@ -314,19 +407,21 @@ describe('Session.setTools (per-session tool list mutation)', () => {
     expect(session.tools).toEqual([{ name: 'new', description: 'd2', inputSchema: {} }])
 
     await session.send('hi')
-    const passedTools = llmComplete.mock.calls[0]![1]?.tools
+    const passedTools = llmStream.mock.calls[0]![1]?.tools
     expect(passedTools).toEqual([{ name: 'new', description: 'd2', inputSchema: {} }])
   })
 
   it('setTools(undefined) clears tools', async () => {
-    const llmComplete = vi.fn().mockResolvedValue({ content: 'ok', toolCalls: [] })
-    const llm = { complete: llmComplete, stream: vi.fn(), maxContextTokens: 1_000_000 }
+    const llmStream = vi
+      .fn<(messages: Message[], options?: LLMCompleteOptions) => AsyncIterable<LLMChunk>>()
+      .mockImplementation(() => chunks([{ delta: 'ok' }]))
+    const llm = { complete: vi.fn(async () => ({ content: 'unused' })), stream: llmStream, maxContextTokens: 1_000_000 }
     const { session } = await makeSession({
       llm,
       tools: [{ name: 'x', description: 'd', inputSchema: {} }],
     })
     session.setTools(undefined)
     await session.send('hi')
-    expect(llmComplete.mock.calls[0]![1]?.tools).toBeUndefined()
+    expect(llmStream.mock.calls[0]![1]?.tools).toBeUndefined()
   })
 })

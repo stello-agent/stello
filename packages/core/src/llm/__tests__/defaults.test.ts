@@ -123,19 +123,29 @@ describe('label option in DefaultFnOptions', () => {
 });
 
 describe('llmCallFnFromAdapter', () => {
-  it('forwards messages to adapter.complete and returns content', async () => {
+  it('forwards messages to adapter.stream and returns collected content', async () => {
+    const complete = vi.fn(async () => ({ content: 'must not be used' }))
+    const stream = vi.fn(async function* () {
+      yield { delta: 'hel' }
+      yield { delta: 'lo' }
+    })
     const adapter = {
-      complete: vi.fn(async () => ({ content: 'hello' })),
+      maxContextTokens: 1000,
+      complete,
+      stream,
     } as unknown as LLMAdapter
     const fn = llmCallFnFromAdapter(adapter)
     const result = await fn([{ role: 'user', content: 'hi' }])
     expect(result).toBe('hello')
-    expect(adapter.complete).toHaveBeenCalledWith([{ role: 'user', content: 'hi' }])
+    expect(stream).toHaveBeenCalledWith([{ role: 'user', content: 'hi' }])
+    expect(complete).not.toHaveBeenCalled()
   })
 
   it('coerces null content to empty string', async () => {
     const adapter = {
+      maxContextTokens: 1000,
       complete: vi.fn(async () => ({ content: null })),
+      stream: vi.fn(async function* () {}),
     } as unknown as LLMAdapter
     const fn = llmCallFnFromAdapter(adapter)
     expect(await fn([{ role: 'user', content: 'x' }])).toBe('')

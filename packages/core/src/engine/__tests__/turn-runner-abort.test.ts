@@ -7,19 +7,27 @@ const parser: ToolCallParser = {
   },
 }
 
+function streamResult(raw: string) {
+  return {
+    result: Promise.resolve(raw),
+    async *[Symbol.asyncIterator]() {},
+  }
+}
+
 describe('TurnRunner.run AbortSignal', () => {
-  it('signal abort 在轮间生效，下一轮 send 不再发起', async () => {
+  it('signal abort 在轮间生效，下一轮 stream 不再发起', async () => {
     const controller = new AbortController()
     const session = {
       id: 's1',
-      send: vi
-        .fn<(input: string, options?: { signal?: AbortSignal }) => Promise<string>>()
-        .mockResolvedValueOnce(
+      send: vi.fn(),
+      stream: vi
+        .fn()
+        .mockReturnValueOnce(streamResult(
           JSON.stringify({
             content: null,
             toolCalls: [{ id: '1', name: 'read', args: { path: 'a' } }],
           }),
-        ),
+        )),
     }
     const tools = {
       executeTool: vi.fn().mockImplementation(async () => {
@@ -37,16 +45,17 @@ describe('TurnRunner.run AbortSignal', () => {
       }),
     ).rejects.toMatchObject({ name: 'AbortError' })
 
-    // 第二轮 session.send 不应被调用（signal 在 round 边界检查）
-    expect(session.send).toHaveBeenCalledTimes(1)
+    // 第二轮 session.stream 不应被调用（signal 在 round 边界检查）
+    expect(session.stream).toHaveBeenCalledTimes(1)
+    expect(session.send).not.toHaveBeenCalled()
     // tool 执行后立刻 abort，onToolResult 不应触发（避免 phantom result）
     expect(onToolResult).not.toHaveBeenCalled()
   })
 
-  it('已 abort 的 signal 立即拒绝，不调用 session.send', async () => {
+  it('已 abort 的 signal 立即拒绝，不调用 session.stream', async () => {
     const controller = new AbortController()
     controller.abort()
-    const session = { id: 's1', send: vi.fn() }
+    const session = { id: 's1', send: vi.fn(), stream: vi.fn() }
     const tools = { executeTool: vi.fn() }
 
     const runner = new TurnRunner(parser)
@@ -54,22 +63,24 @@ describe('TurnRunner.run AbortSignal', () => {
       runner.run(session, 'hello', tools, { signal: controller.signal }),
     ).rejects.toMatchObject({ name: 'AbortError' })
 
+    expect(session.stream).not.toHaveBeenCalled()
     expect(session.send).not.toHaveBeenCalled()
   })
 
-  it('signal 透传到 session.send 与 tools.executeTool', async () => {
+  it('signal 透传到 session.stream 与 tools.executeTool', async () => {
     const controller = new AbortController()
     const session = {
       id: 's1',
-      send: vi
-        .fn<(input: string, options?: { signal?: AbortSignal }) => Promise<string>>()
-        .mockResolvedValueOnce(
+      send: vi.fn(),
+      stream: vi
+        .fn()
+        .mockReturnValueOnce(streamResult(
           JSON.stringify({
             content: null,
             toolCalls: [{ id: '1', name: 'read', args: {} }],
           }),
-        )
-        .mockResolvedValueOnce(JSON.stringify({ content: 'done', toolCalls: [] })),
+        ))
+        .mockReturnValueOnce(streamResult(JSON.stringify({ content: 'done', toolCalls: [] }))),
     }
     const tools = {
       executeTool: vi
@@ -80,8 +91,9 @@ describe('TurnRunner.run AbortSignal', () => {
     const runner = new TurnRunner(parser)
     await runner.run(session, 'hi', tools, { signal: controller.signal })
 
-    // session.send 第一参数是 input；第二参数应携带 signal
-    expect(session.send).toHaveBeenCalledWith('hi', expect.objectContaining({ signal: controller.signal }))
+    // session.stream 第一参数是 input；第二参数应携带 signal
+    expect(session.stream).toHaveBeenCalledWith('hi', expect.objectContaining({ signal: controller.signal }))
+    expect(session.send).not.toHaveBeenCalled()
     // tools.executeTool 第四参数应携带 signal
     expect(tools.executeTool).toHaveBeenCalledWith(
       'read',
@@ -93,7 +105,7 @@ describe('TurnRunner.run AbortSignal', () => {
 })
 
 describe('TurnRunner.runStream AbortSignal', () => {
-  it('运行中 abort 后 result reject 为 AbortError，且后续不再 send', async () => {
+  it('运行中 abort 后 result reject 为 AbortError，且不再启动后续 stream', async () => {
     const controller = new AbortController()
     // 模拟 session.stream 的真实行为：iterator 抛 AbortError，result 也 reject。
     function makeMockStream(chunks: string[]) {

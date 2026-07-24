@@ -6,9 +6,12 @@ import type { LLMAdapter, Message } from '../types/llm'
 function makeLLM(): { adapter: LLMAdapter; lastMessages: () => Message[] } {
   let captured: Message[] = []
   const adapter: LLMAdapter = {
-    async complete(messages) {
-      captured = messages
+    async complete() {
       return { content: 'ok' }
+    },
+    async *stream(messages) {
+      captured = messages
+      yield { delta: 'ok' }
     },
     maxContextTokens: 1_000_000,
   }

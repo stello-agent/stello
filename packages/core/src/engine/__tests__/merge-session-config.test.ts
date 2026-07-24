@@ -16,6 +16,9 @@ function makeLLM(tag: string): LLMAdapter {
     async complete() {
       return { content: tag }
     },
+    async *stream() {
+      yield { delta: tag }
+    },
   }
 }
 

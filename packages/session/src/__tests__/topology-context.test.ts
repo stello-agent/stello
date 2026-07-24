@@ -68,10 +68,24 @@ function makeCapturingLLM(responses: Array<{ content: string; toolCalls?: Array<
   const captured: Message[][] = []
   let i = 0
   const adapter: LLMAdapter = {
-    async complete(messages) {
+    async complete() {
+      return { content: 'unused' }
+    },
+    async *stream(messages) {
       captured.push(messages.map((m) => ({ ...m })))
       const r = responses[i++] ?? { content: 'ok' }
-      return { content: r.content, toolCalls: r.toolCalls }
+      if (r.content) yield { delta: r.content }
+      for (const [index, toolCall] of (r.toolCalls ?? []).entries()) {
+        yield {
+          delta: '',
+          toolCallDeltas: [{
+            index,
+            id: toolCall.id,
+            name: toolCall.name,
+            input: JSON.stringify(toolCall.input),
+          }],
+        }
+      }
     },
     maxContextTokens: 1_000_000,
   }

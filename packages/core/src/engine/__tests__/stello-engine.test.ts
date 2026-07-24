@@ -5,6 +5,16 @@ import { StelloEngineImpl } from '../stello-engine';
 import { TurnRunner, type ToolCallParser } from '../turn-runner';
 import { ToolRegistryImpl, type ToolRegistryEntry } from '../../tool/tool-registry';
 
+function streamResult(raw?: unknown) {
+  const serialized = typeof raw === 'string'
+    ? raw
+    : JSON.stringify({ content: null, toolCalls: [] });
+  return {
+    result: Promise.resolve(serialized),
+    async *[Symbol.asyncIterator]() {},
+  };
+}
+
 describe('StelloEngineImpl', () => {
   const jsonParser: ToolCallParser = {
     parse(raw) {
@@ -36,6 +46,7 @@ describe('StelloEngineImpl', () => {
       meta: { id: 's1', turnCount: 0, status: 'active' as const },
       turnCount: 0,
       send: vi.fn(),
+      stream: vi.fn(streamResult),
       consolidate: vi.fn(),
       messages: vi.fn().mockResolvedValue([]),
       setTools: vi.fn(),
@@ -108,15 +119,16 @@ describe('StelloEngineImpl', () => {
       id: 's1',
       meta: { id: 's1', turnCount: 0, status: 'active' as const },
       turnCount: 0,
-      send: vi
+      send: vi.fn(),
+      stream: vi
         .fn()
-        .mockResolvedValueOnce(
+        .mockReturnValueOnce(streamResult(
           JSON.stringify({
             content: null,
             toolCalls: [{ id: '1', name: 'read', args: { path: 'core.name' } }],
           }),
-        )
-        .mockResolvedValueOnce(JSON.stringify({ content: 'done', toolCalls: [] })),
+        ))
+        .mockReturnValueOnce(streamResult(JSON.stringify({ content: 'done', toolCalls: [] }))),
       consolidate: vi.fn(),
       messages: vi.fn().mockResolvedValue([]),
       setTools: vi.fn(),
@@ -178,7 +190,8 @@ describe('StelloEngineImpl', () => {
         id: 's1',
         meta: { id: 's1', turnCount: 0, status: 'active' as const },
         turnCount: 0,
-        send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
+        send: vi.fn(),
+        stream: vi.fn(() => streamResult(JSON.stringify({ content: 'done', toolCalls: [] }))),
         consolidate: vi.fn(),
         messages: vi.fn().mockResolvedValue([]),
         setTools: vi.fn(),
@@ -231,6 +244,7 @@ describe('StelloEngineImpl', () => {
         meta: { id: 's1', turnCount: 0, status: 'active' as const },
         turnCount: 0,
         send: vi.fn(),
+        stream: vi.fn(streamResult),
         consolidate: vi.fn(),
         messages: vi.fn().mockResolvedValue([]),
         setTools: vi.fn(),
@@ -260,6 +274,7 @@ describe('StelloEngineImpl', () => {
       meta: { id: 's1', turnCount: 2, status: 'active' as const },
       turnCount: 2,
       send: vi.fn(),
+      stream: vi.fn(streamResult),
       consolidate: vi.fn(),
       messages: vi.fn().mockResolvedValue([]),
       setTools: vi.fn(),
@@ -296,6 +311,7 @@ describe('StelloEngineImpl', () => {
       meta: { id: 's1', turnCount: 2, status: 'active' as const },
       turnCount: 2,
       send: vi.fn(),
+      stream: vi.fn(streamResult),
       consolidate: vi.fn(),
       messages: vi.fn().mockResolvedValue([]),
       setTools: vi.fn(),
@@ -335,7 +351,8 @@ describe('StelloEngineImpl', () => {
     });
     const sessionFork = vi.fn().mockResolvedValue({
       id: 'child-1', meta: { id: 'child-1', turnCount: 0, status: 'active' },
-      turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
+      turnCount: 0, send: vi.fn(), stream: vi.fn(streamResult),
+      consolidate: vi.fn(), messages: vi.fn().mockResolvedValue([]), setTools: vi.fn(),
     });
     const splitGuard = {
       checkCanSplit: vi.fn().mockResolvedValue({ canSplit: true }),
@@ -348,6 +365,7 @@ describe('StelloEngineImpl', () => {
         meta: { id: 's1', turnCount: 3, status: 'active' as const },
         turnCount: 3,
         send: vi.fn(),
+        stream: vi.fn(streamResult),
         consolidate: vi.fn(),
         messages: vi.fn().mockResolvedValue([]),
         setTools: vi.fn(),
@@ -396,6 +414,7 @@ describe('StelloEngineImpl', () => {
         meta: { id: 's1', turnCount: 0, status: 'active' as const },
         turnCount: 0,
         send: vi.fn(),
+        stream: vi.fn(streamResult),
         consolidate: vi.fn(),
         messages: vi.fn().mockResolvedValue([]),
         setTools: vi.fn(),
@@ -420,13 +439,14 @@ describe('StelloEngineImpl', () => {
       });
       const sessionFork = vi.fn().mockResolvedValue({
         id: 'child-1', meta: { id: 'child-1', turnCount: 0, status: 'active' },
-        turnCount: 0, send: vi.fn(), consolidate: vi.fn(), setTools: vi.fn(),
+        turnCount: 0, send: vi.fn(), stream: vi.fn(streamResult),
+        consolidate: vi.fn(), messages: vi.fn().mockResolvedValue([]), setTools: vi.fn(),
       });
 
       const engine = new StelloEngineImpl({
         session: {
           id: 's1', meta: { id: 's1', turnCount: 2, status: 'active' as const },
-          turnCount: 2, send: vi.fn(), consolidate: vi.fn(),
+          turnCount: 2, send: vi.fn(), stream: vi.fn(streamResult), consolidate: vi.fn(),
           messages: vi.fn().mockResolvedValue([]),
           setTools: vi.fn(),
           fork: sessionFork,
@@ -454,7 +474,7 @@ describe('StelloEngineImpl', () => {
       const engine = new StelloEngineImpl({
         session: {
           id: 's1', meta: { id: 's1', turnCount: 0, status: 'active' as const },
-          turnCount: 0, send: vi.fn(), consolidate: vi.fn(),
+          turnCount: 0, send: vi.fn(), stream: vi.fn(streamResult), consolidate: vi.fn(),
           messages: vi.fn().mockResolvedValue([]),
           setTools: vi.fn(),
         },
@@ -485,7 +505,9 @@ describe('StelloEngineImpl', () => {
         meta: { id: 'child-1', turnCount: 0, status: 'active' as const },
         turnCount: 0,
         send: vi.fn(),
+        stream: vi.fn(streamResult),
         consolidate: vi.fn(),
+        messages: vi.fn().mockResolvedValue([]),
         setTools: vi.fn(),
       });
 
@@ -495,6 +517,7 @@ describe('StelloEngineImpl', () => {
           meta: { id: 'root-id', turnCount: 0, status: 'active' as const },
           turnCount: 0,
           send: vi.fn(),
+          stream: vi.fn(streamResult),
           consolidate: vi.fn(),
           messages: vi.fn().mockResolvedValue([]),
           setTools: vi.fn(),
@@ -543,6 +566,7 @@ describe('StelloEngineImpl', () => {
         meta: { id: 's1', turnCount: 0, status: 'active' as const },
         turnCount: 0,
         send: vi.fn(),
+        stream: vi.fn(streamResult),
         consolidate: vi.fn(),
         messages: vi.fn().mockResolvedValue([]),
         get tools() { return sessionTools; },
@@ -579,6 +603,7 @@ describe('StelloEngineImpl', () => {
         meta: { id: 'child-1', turnCount: 0, status: 'active' as const },
         turnCount: 0,
         send: vi.fn(),
+        stream: vi.fn(streamResult),
         consolidate: vi.fn(),
         messages: vi.fn().mockResolvedValue([]),
         tools: undefined as undefined | Array<{ name: string }>,
@@ -597,6 +622,7 @@ describe('StelloEngineImpl', () => {
           meta: { id: 's1', turnCount: 2, status: 'active' as const },
           turnCount: 2,
           send: vi.fn(),
+          stream: vi.fn(streamResult),
           consolidate: vi.fn(),
           messages: vi.fn().mockResolvedValue([]),
           tools: undefined,

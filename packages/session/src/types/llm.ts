@@ -168,10 +168,10 @@ export interface LLMChunk {
  * 实现者负责将此接口映射到具体 LLM 服务
  */
 export interface LLMAdapter {
-  /** 发送消息列表，返回完整 LLM 响应 */
+  /** 非流式调用 facade；实现必须消费 stream() 并聚合完整 LLM 响应。 */
   complete(messages: Message[], options?: LLMCompleteOptions): Promise<LLMResult>
-  /** 流式输出，逐 chunk 返回。未实现时 Session 退化为 complete + 单次 yield */
-  stream?(messages: Message[], options?: LLMCompleteOptions): AsyncIterable<LLMChunk>
+  /** 流式输出，逐 chunk 返回；所有 adapter 必须实现。 */
+  stream(messages: Message[], options?: LLMCompleteOptions): AsyncIterable<LLMChunk>
   /** 模型上下文窗口大小（token 数），用于自动压缩判断 */
   maxContextTokens: number
 }

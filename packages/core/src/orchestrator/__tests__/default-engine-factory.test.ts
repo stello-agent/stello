@@ -36,6 +36,10 @@ describe('DefaultEngineFactory', () => {
     meta: { id, turnCount: 0, status: 'active' as const },
     turnCount: 0,
     send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
+    stream: vi.fn().mockReturnValue({
+      result: Promise.resolve(JSON.stringify({ content: 'done', toolCalls: [] })),
+      async *[Symbol.asyncIterator]() {},
+    }),
     consolidate: vi.fn(),
     setTools: vi.fn(),
   });
@@ -54,7 +58,8 @@ describe('DefaultEngineFactory', () => {
     const result = await engine.turn('hello');
 
     expect(engine.sessionId).toBe('s1');
-    expect(runtimeSession.send).toHaveBeenCalledWith('hello', { signal: undefined });
+    expect(runtimeSession.stream).toHaveBeenCalledWith('hello', { signal: undefined });
+    expect(runtimeSession.send).not.toHaveBeenCalled();
     expect(result.turn.rawResponse).toContain('"content":"done"');
   });
 
@@ -88,6 +93,10 @@ describe('DefaultEngineFactory', () => {
     meta: { id, turnCount: initialTurnCount, status: 'active' as const },
     turnCount: initialTurnCount,
     send: vi.fn().mockResolvedValue(JSON.stringify({ content: 'done', toolCalls: [] })),
+    stream: vi.fn().mockReturnValue({
+      result: Promise.resolve(JSON.stringify({ content: 'done', toolCalls: [] })),
+      async *[Symbol.asyncIterator]() {},
+    }),
     consolidate: vi.fn().mockResolvedValue(undefined),
     setTools: vi.fn(),
   });

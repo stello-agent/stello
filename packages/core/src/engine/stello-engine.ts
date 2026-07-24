@@ -61,8 +61,8 @@ export interface EngineRuntimeSession {
   turnCount: number;
   /** 运行一次单条对话 */
   send(input: TurnInput, options?: EngineRuntimeSessionCallOptions): Promise<string>;
-  /** 可选：流式运行一次单条对话 */
-  stream?(
+  /** 流式运行一次单条对话 */
+  stream(
     input: TurnInput,
     options?: EngineRuntimeSessionCallOptions,
   ): AsyncIterable<string> & { result: Promise<string> };

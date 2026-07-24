@@ -118,8 +118,8 @@ export interface TurnRunnerSession {
   id: string;
   /** 执行一次单条对话 */
   send(input: TurnInput, options?: TurnRunnerSessionCallOptions): Promise<string>;
-  /** 可选：流式执行一次单条对话 */
-  stream?(
+  /** 流式执行一次单条对话 */
+  stream(
     input: TurnInput,
     options?: TurnRunnerSessionCallOptions,
   ): AsyncIterable<string> & { result: Promise<string> };
@@ -157,7 +157,7 @@ export interface TurnRunnerOptions {
   /** 工具调用后的观察回调 */
   onToolResult?: (result: ToolCallResult) => Promise<void> | void;
   /**
-   * AbortSignal — abort 后下一轮边界（含 send / tool 执行前后）抛 AbortError，
+   * AbortSignal — abort 后下一轮边界（含 stream / tool 执行前后）抛 AbortError，
    * 同时透传给 session.send/stream 与 tools.executeTool。
    * Tools 不消费 ctx.signal 时，runner 会等本轮 tool 自然返回，再在边界处抛。
    */
@@ -194,6 +194,61 @@ export interface TurnRunnerStreamResult extends AsyncIterable<string> {
   result: Promise<TurnRunnerResult>;
 }
 
+function createTurnRunnerStreamResult(
+  processor: (push: (chunk: string) => void) => Promise<TurnRunnerResult>,
+): TurnRunnerStreamResult {
+  const queue: string[] = [];
+  let done = false;
+  let hasTerminalError = false;
+  let terminalError: unknown;
+  let notify: (() => void) | null = null;
+
+  const wake = () => {
+    if (!notify) return;
+    const current = notify;
+    notify = null;
+    current();
+  };
+
+  const push = (chunk: string) => {
+    if (!chunk) return;
+    queue.push(chunk);
+    wake();
+  };
+
+  const result = (async () => {
+    try {
+      return await processor(push);
+    } catch (error) {
+      hasTerminalError = true;
+      terminalError = error;
+      throw error;
+    } finally {
+      done = true;
+      wake();
+    }
+  })();
+  // Consumers may observe failures through the iterator only. Keep the result
+  // promise handled without changing the promise returned to explicit awaiters.
+  result.catch(() => {});
+
+  return {
+    result,
+    async *[Symbol.asyncIterator]() {
+      while (!done || queue.length > 0) {
+        if (queue.length > 0) {
+          yield queue.shift()!;
+          continue;
+        }
+        await new Promise<void>((resolve) => {
+          notify = resolve;
+        });
+      }
+      if (hasTerminalError) throw terminalError;
+    },
+  };
+}
+
 /**
  * TurnRunner
  *
@@ -207,7 +262,7 @@ export class TurnRunner {
    * 运行一次完整 turn。
    *
    * 流程：
-   * 1. 把用户输入交给 Session.send()
+   * 1. 把用户输入交给 Session.stream() 并消费完整子流
    * 2. 解析 LLM 是否表达了工具调用意图
    * 3. 如有工具调用，则由 Engine 执行后回灌结果继续下一轮
    * 4. 没有工具调用时结束
@@ -218,16 +273,59 @@ export class TurnRunner {
     tools: TurnRunnerToolExecutor,
     options: TurnRunnerOptions = {},
   ): Promise<TurnRunnerResult> {
+    return this.executeStreamingLoop(session, input, tools, options);
+  }
+
+  /**
+   * 流式运行一次完整 turn。
+   *
+   * 所有 LLM 子轮都使用 session.stream()；工具调用后的续轮 chunk
+   * 与首轮保持顺序，统一向调用方输出。
+   */
+  runStream(
+    session: TurnRunnerSession,
+    input: TurnInput,
+    tools: TurnRunnerToolExecutor,
+    options: TurnRunnerOptions = {},
+  ): TurnRunnerStreamResult {
+    return createTurnRunnerStreamResult((push) =>
+      this.executeStreamingLoop(session, input, tools, options, push),
+    );
+  }
+
+  /**
+   * turn / stream 共用的唯一 tool loop。
+   *
+   * Runner 主动消费每个 Session 子流，因此即使底层 runtime 的
+   * result 依赖 iterator 被驱动，run() 也不会死锁。结构化的
+   * toolCalls / usage 始终以子流 result 为准，不从文本 chunk 反推。
+   */
+  private async executeStreamingLoop(
+    session: TurnRunnerSession,
+    input: TurnInput,
+    tools: TurnRunnerToolExecutor,
+    options: TurnRunnerOptions,
+    onChunk?: (chunk: string) => void,
+  ): Promise<TurnRunnerResult> {
     const maxToolRounds = options.maxToolRounds ?? 5;
     let currentInput: TurnInput = input;
     let toolRoundCount = 0;
     let toolCallsExecuted = 0;
-    let lastRawResponse = '';
     let usage: TurnRunnerUsage | undefined;
 
     while (true) {
       options.signal?.throwIfAborted();
-      lastRawResponse = await session.send(currentInput, { signal: options.signal });
+      const source = session.stream(currentInput, { signal: options.signal });
+      // If the iterator is the error channel a caller observes, keep a later
+      // result rejection from becoming unhandled while preserving it for await.
+      source.result.catch(() => {});
+
+      for await (const chunk of source) {
+        onChunk?.(chunk);
+      }
+
+      const lastRawResponse = await source.result;
+      options.signal?.throwIfAborted();
       const parsed = this.parser.parse(lastRawResponse);
       usage = addUsage(usage, parsed.usage);
 
@@ -250,98 +348,6 @@ export class TurnRunner {
 
       toolRoundCount += 1;
       currentInput = JSON.stringify({ toolResults });
-    }
-  }
-
-  /**
-   * 流式运行一次完整 turn。
-   *
-   * 语义：
-   * - 优先使用 session.stream() 输出增量文本
-   * - 流结束后再解析最终结果
-   * - 若后续存在工具调用，则继续使用 send() 完成剩余 tool loop
-   */
-  runStream(
-    session: TurnRunnerSession,
-    input: TurnInput,
-    tools: TurnRunnerToolExecutor,
-    options: TurnRunnerOptions = {},
-  ): TurnRunnerStreamResult {
-    // pre-flight：已 abort 时直接返回 reject 的 result + 立刻抛错的 iterator
-    if (options.signal?.aborted) {
-      const aborted = Promise.reject(new DOMException('aborted', 'AbortError'))
-      // 安抚 unhandledRejection：消费方通过 `result` 或 iterator 任一感知即可。
-      aborted.catch(() => {})
-      return {
-        result: aborted as Promise<TurnRunnerResult>,
-        async *[Symbol.asyncIterator]() {
-          throw new DOMException('aborted', 'AbortError')
-        },
-      }
-    }
-
-    if (!session.stream) {
-      const result = this.run(session, input, tools, options)
-      return {
-        result,
-        async *[Symbol.asyncIterator]() {
-          const final = await result
-          if (final.finalContent) {
-            yield final.finalContent
-          }
-        },
-      }
-    }
-
-    const source = session.stream(input, { signal: options.signal })
-    const result = this.finishFromStreamResult(session, source.result, tools, options)
-
-    return {
-      result,
-      async *[Symbol.asyncIterator]() {
-        // 重新抛出 AbortError（而不是静默关闭），让调用方明确感知取消语义。
-        for await (const chunk of source) {
-          yield chunk
-        }
-      },
-    }
-  }
-
-  private async finishFromStreamResult(
-    session: TurnRunnerSession,
-    rawResult: Promise<string>,
-    tools: TurnRunnerToolExecutor,
-    options: TurnRunnerOptions,
-  ): Promise<TurnRunnerResult> {
-    const maxToolRounds = options.maxToolRounds ?? 5
-    let toolRoundCount = 0
-    let toolCallsExecuted = 0
-    let lastRawResponse = await rawResult
-    options.signal?.throwIfAborted()
-    let parsed = this.parser.parse(lastRawResponse)
-    let usage = addUsage(undefined, parsed.usage)
-
-    while (parsed.toolCalls.length > 0) {
-      if (toolRoundCount >= maxToolRounds) {
-        throw new Error(`tool loop 超出上限：最多允许 ${maxToolRounds} 轮`)
-      }
-
-      const toolResults = await executeToolsParallel(parsed.toolCalls, tools, options)
-      toolCallsExecuted += parsed.toolCalls.length
-
-      toolRoundCount += 1
-      options.signal?.throwIfAborted()
-      lastRawResponse = await session.send(JSON.stringify({ toolResults }), { signal: options.signal })
-      parsed = this.parser.parse(lastRawResponse)
-      usage = addUsage(usage, parsed.usage)
-    }
-
-    return {
-      finalContent: parsed.content,
-      toolRoundCount,
-      toolCallsExecuted,
-      rawResponse: lastRawResponse,
-      usage,
     }
   }
 }

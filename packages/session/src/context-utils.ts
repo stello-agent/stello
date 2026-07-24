@@ -1,6 +1,7 @@
 import type { Message, LLMAdapter } from './types/llm.js'
 import type { SessionStorage, CompressionCacheSnapshot } from './types/storage.js'
 import type { CompressFn } from './types/functions.js'
+import { collectLLMStream } from './llm-stream.js'
 
 /**
  * 从历史中移除所有不完整的 tool call 组：
@@ -66,10 +67,10 @@ const BUILTIN_COMPRESS_PROMPT = `你是对话压缩助手。请将以下对话�
 export function createBuiltinCompressFn(llm: LLMAdapter): CompressFn {
   return async (messages) => {
     const content = messages.map((m) => `${m.role}: ${m.content}`).join('\n')
-    const result = await llm.complete([
+    const result = await collectLLMStream(llm.stream([
       { role: 'system', content: BUILTIN_COMPRESS_PROMPT },
       { role: 'user', content: `对话记录:\n${content}` },
-    ])
+    ]))
     return (result.content ?? '').replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim()
   }
 }

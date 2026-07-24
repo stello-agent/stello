@@ -231,8 +231,11 @@ describe('updateMeta() + archive() + fork()', () => {
       const spyLlm = {
         maxContextTokens: llm.maxContextTokens,
         async complete(messages: unknown[], opts?: { tools?: unknown[] }) {
-          capturedTools.push(opts?.tools)
           return llm.complete(messages as never[], opts as never)
+        },
+        async *stream(messages: unknown[], opts?: { tools?: unknown[] }) {
+          capturedTools.push(opts?.tools)
+          yield* llm.stream(messages as never[], opts as never)
         },
       }
       const { session } = await makeSession({ llm: spyLlm, tools: parentTools })

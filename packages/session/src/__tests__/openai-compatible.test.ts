@@ -14,13 +14,25 @@ vi.mock('openai', () => ({
   },
 }))
 
+function completionStream(chunks: unknown[]): AsyncIterable<unknown> {
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield* chunks
+    },
+  }
+}
+
+function textResponseStream(text = 'ok', promptTokens = 12, completionTokens = 3) {
+  return completionStream([
+    { choices: [{ delta: { content: text } }] },
+    { choices: [], usage: { prompt_tokens: promptTokens, completion_tokens: completionTokens } },
+  ])
+}
+
 describe('createOpenAICompatibleAdapter', () => {
   beforeEach(() => {
     createCompletion.mockReset()
-    createCompletion.mockResolvedValue({
-      choices: [{ message: { content: 'ok', tool_calls: [] } }],
-      usage: { prompt_tokens: 12, completion_tokens: 3 },
-    })
+    createCompletion.mockResolvedValue(textResponseStream())
   })
 
   it('合并连续的 system 消息后再发请求', async () => {
@@ -47,7 +59,8 @@ describe('createOpenAICompatibleAdapter', () => {
           { role: 'user', content: 'hello' },
         ],
         max_tokens: 4096,
-        stream: false,
+        stream: true,
+        stream_options: { include_usage: true },
       }),
       undefined,
     )
@@ -66,7 +79,7 @@ describe('createOpenAICompatibleAdapter', () => {
     expect(createCompletion).toHaveBeenCalledWith(
       expect.objectContaining({
         max_tokens: 2048,
-        stream: false,
+        stream: true,
       }),
       undefined,
     )
@@ -84,7 +97,7 @@ describe('createOpenAICompatibleAdapter', () => {
     await adapter.complete([{ role: 'user', content: 'hello' }])
 
     expect(createCompletion).toHaveBeenCalledWith(
-      expect.objectContaining({ max_tokens: 8192, stream: false }),
+      expect.objectContaining({ max_tokens: 8192, stream: true }),
       undefined,
     )
   })
@@ -101,16 +114,16 @@ describe('createOpenAICompatibleAdapter', () => {
     await adapter.complete([{ role: 'user', content: 'hello' }], { maxTokens: 2048 })
 
     expect(createCompletion).toHaveBeenCalledWith(
-      expect.objectContaining({ max_tokens: 2048, stream: false }),
+      expect.objectContaining({ max_tokens: 2048, stream: true }),
       undefined,
     )
   })
 
   it('complete() 提取响应中的 reasoning_content', async () => {
-    createCompletion.mockResolvedValueOnce({
-      choices: [{ message: { content: 'answer', reasoning_content: 'thinking...' } }],
-      usage: { prompt_tokens: 10, completion_tokens: 5 },
-    })
+    createCompletion.mockResolvedValueOnce(completionStream([
+      { choices: [{ delta: { content: 'answer', reasoning_content: 'thinking...' } }] },
+      { choices: [], usage: { prompt_tokens: 10, completion_tokens: 5 } },
+    ]))
 
     const adapter = createOpenAICompatibleAdapter({
       apiKey: 'test-key',
@@ -233,23 +246,26 @@ describe('createOpenAICompatibleAdapter', () => {
   })
 
   it('StepFun web_search tool_calls 不会变成客户端 toolCalls，并保留 providerToolEvents', async () => {
-    createCompletion.mockResolvedValueOnce({
-      choices: [{
-        message: {
-          content: '上海中心大厦',
-          tool_calls: [{
-            id: 'call_search_1',
-            type: 'web_search',
-            function: {
-              name: 'step_websearch',
-              arguments: '{"keyword":"上海最高的楼"}',
-              results: [{ index: 0, url: 'https://example.com', title: '上海最高的楼' }],
-            },
-          }],
-        },
-      }],
-      usage: { prompt_tokens: 10, completion_tokens: 4 },
-    })
+    createCompletion.mockResolvedValueOnce(completionStream([
+      {
+        choices: [{
+          delta: {
+            content: '上海中心大厦',
+            tool_calls: [{
+              index: 0,
+              id: 'call_search_1',
+              type: 'web_search',
+              function: {
+                name: 'step_websearch',
+                arguments: '{"keyword":"上海最高的楼"}',
+                results: [{ index: 0, url: 'https://example.com', title: '上海最高的楼' }],
+              },
+            }],
+          },
+        }],
+      },
+      { choices: [], usage: { prompt_tokens: 10, completion_tokens: 4 } },
+    ]))
 
     const adapter = createOpenAICompatibleAdapter({
       apiKey: 'test-key',
@@ -266,7 +282,7 @@ describe('createOpenAICompatibleAdapter', () => {
       }],
     })
 
-    expect(result.toolCalls).toEqual([])
+    expect(result.toolCalls).toBeUndefined()
     expect(result.providerToolEvents).toEqual([{
       id: 'call_search_1',
       type: 'web_search',
@@ -274,6 +290,7 @@ describe('createOpenAICompatibleAdapter', () => {
       input: { keyword: '上海最高的楼' },
       results: [{ index: 0, url: 'https://example.com', title: '上海最高的楼' }],
       raw: {
+        index: 0,
         id: 'call_search_1',
         type: 'web_search',
         function: {
@@ -283,6 +300,51 @@ describe('createOpenAICompatibleAdapter', () => {
         },
       },
     }])
+  })
+
+  it('complete() 从 stream delta 聚合客户端 tool call，且无文本时 content 为 null', async () => {
+    createCompletion.mockResolvedValueOnce(completionStream([
+      {
+        choices: [{
+          delta: {
+            tool_calls: [{
+              index: 1,
+              id: 'call_1',
+              type: 'function',
+              function: { name: 'search', arguments: '{"q":' },
+            }],
+          },
+        }],
+      },
+      {
+        choices: [{
+          delta: {
+            tool_calls: [{
+              index: 1,
+              function: { arguments: '"stello"}' },
+            }],
+          },
+        }],
+      },
+    ]))
+
+    const adapter = createOpenAICompatibleAdapter({
+      apiKey: 'test-key',
+      baseURL: 'https://api.example.com/v1',
+      model: 'test-model',
+      maxContextTokens: 128_000,
+    })
+
+    const result = await adapter.complete([{ role: 'user', content: 'search' }])
+
+    expect(result).toEqual({
+      content: null,
+      toolCalls: [{ id: 'call_1', name: 'search', input: { q: 'stello' } }],
+    })
+    expect(createCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({ stream: true }),
+      undefined,
+    )
   })
 
   it('stream() 忽略 provider tool delta 的客户端执行通道，并下发 providerToolEvents', async () => {
@@ -476,7 +538,7 @@ describe('createOpenAICompatibleAdapter', () => {
     await adapter.complete([{ role: 'user', content: 'hello' }], { signal: controller.signal })
 
     expect(createCompletion).toHaveBeenCalledWith(
-      expect.objectContaining({ stream: false }),
+      expect.objectContaining({ stream: true }),
       { signal: controller.signal },
     )
   })

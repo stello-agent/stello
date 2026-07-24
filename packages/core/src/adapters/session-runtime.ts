@@ -72,7 +72,7 @@ export interface SessionCompatible {
     content: SessionCompatibleInput,
     options?: SessionCompatibleSendOptions,
   ): Promise<SessionCompatibleSendResult>;
-  stream?(
+  stream(
     content: SessionCompatibleInput,
     options?: SessionCompatibleSendOptions,
   ): AsyncIterable<string> & { result: Promise<SessionCompatibleSendResult> };
@@ -195,36 +195,32 @@ export async function adaptSessionToEngineRuntime(
     setTools(tools) {
       session.setTools(tools);
     },
-    ...(session.stream
-      ? {
-          stream(input: SessionCompatibleInput, sendOptions?: SessionCompatibleSendOptions) {
-            const contextPromise = options.sharedMemoryContextProvider?.() ?? Promise.resolve(undefined);
-            const topologyPromise = options.topologyContextProvider?.(session.meta.id) ?? Promise.resolve(undefined);
-            const source = (async () => {
-              const sharedMemoryContext = await contextPromise;
-              const topologyContext = await topologyPromise;
-              const mergedOptions: SessionCompatibleSendOptions = {
-                ...sendOptions,
-                ...(sharedMemoryContext ? { sharedMemoryContext } : {}),
-                ...(topologyContext ? { topologyContext } : {}),
-              };
-              return session.stream!(input, mergedOptions);
-            })();
-            return {
-              result: (async () => {
-                const stream = await source;
-                const result = await stream.result;
-                turnCount += 1;
-                return (options.serializeResult ?? serializeSessionSendResult)(result);
-              })(),
-              async *[Symbol.asyncIterator]() {
-                const stream = await source;
-                for await (const chunk of stream) yield chunk;
-              },
-            };
-          },
-        }
-      : {}),
+    stream(input: SessionCompatibleInput, sendOptions?: SessionCompatibleSendOptions) {
+      const contextPromise = options.sharedMemoryContextProvider?.() ?? Promise.resolve(undefined);
+      const topologyPromise = options.topologyContextProvider?.(session.meta.id) ?? Promise.resolve(undefined);
+      const source = (async () => {
+        const sharedMemoryContext = await contextPromise;
+        const topologyContext = await topologyPromise;
+        const mergedOptions: SessionCompatibleSendOptions = {
+          ...sendOptions,
+          ...(sharedMemoryContext ? { sharedMemoryContext } : {}),
+          ...(topologyContext ? { topologyContext } : {}),
+        };
+        return session.stream(input, mergedOptions);
+      })();
+      return {
+        result: (async () => {
+          const stream = await source;
+          const result = await stream.result;
+          turnCount += 1;
+          return (options.serializeResult ?? serializeSessionSendResult)(result);
+        })(),
+        async *[Symbol.asyncIterator]() {
+          const stream = await source;
+          for await (const chunk of stream) yield chunk;
+        },
+      };
+    },
     async consolidate(): Promise<void> {
       await session.consolidate();
     },

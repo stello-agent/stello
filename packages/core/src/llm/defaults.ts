@@ -1,4 +1,4 @@
-import type { LLMAdapter } from '@stello-ai/session'
+import { collectLLMStream, type LLMAdapter } from '@stello-ai/session'
 import type {
   SessionCompatibleConsolidateFn,
   SessionCompatibleCompressFn,
@@ -11,14 +11,16 @@ export type LLMCallFn = (
 
 /**
  * 将 LLMAdapter 桥接为 LLMCallFn。
- * LLMAdapter.complete 需要窄化的 role 联合,且返回 { content: string | null };
+ * LLMAdapter.stream 需要窄化的 role 联合,且聚合后返回 { content: string | null };
  * LLMCallFn 使用宽松的 { role: string } 且返回 Promise<string>。
  * 这个适配器集中处理两者之间的 role narrowing 和 null 合并。
  */
 export function llmCallFnFromAdapter(adapter: LLMAdapter): LLMCallFn {
   return async (msgs) => {
-    const result = await adapter.complete(
-      msgs as Array<{ role: 'system' | 'user' | 'assistant' | 'tool'; content: string }>,
+    const result = await collectLLMStream(
+      adapter.stream(
+        msgs as Array<{ role: 'system' | 'user' | 'assistant' | 'tool'; content: string }>,
+      ),
     )
     return result.content ?? ''
   }

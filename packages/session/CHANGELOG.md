@@ -1,5 +1,16 @@
 # @stello-ai/session
 
+## Unreleased
+
+### Breaking
+
+- `LLMAdapter.stream()` is now required. Complete-only custom adapters must implement a real streaming transport; Session no longer falls back to `complete()`.
+
+### Changed
+
+- `Session.send()` and the built-in `complete()` facades now consume and aggregate the same streaming path used by `Session.stream()`.
+- Built-in Anthropic and OpenAI-compatible adapters no longer use provider non-streaming endpoints, including for large output-token budgets and automatic context compression.
+
 ## 0.8.0
 
 > **迁移指南**：[`docs/migration-main-session-decouple.md`](../../docs/migration-main-session-decouple.md) 含心智模型转变、删除清单、迁移配方与 orchestrator 重建示例。

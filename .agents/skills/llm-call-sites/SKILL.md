@@ -22,7 +22,7 @@ Stello 里所有 LLM 调用的 `messages` 参数构成。Session 同构——roo
 ]
 ```
 
-`tools` 经 `llm.complete(messages, { tools })` 第二参数传入，不进 messages。
+`tools` 经 `llm.stream(messages, { tools })` 第二参数传入，不进 messages。`Session.stream()` 直接转发文本增量，`Session.send()` 消费同一条 stream 后返回聚合结果。
 
 `<session_identity>` 形态（label 缺省则该消息不注入）：
 
@@ -111,7 +111,7 @@ label 改名后下次 send 自动同步，无需重写持久化的 systemPrompt�
 
 | 维度 | 对话类（1） | 提炼类（2、3） |
 |------|------------|--------------|
-| 接口 | `llm.complete(msgs, { tools })` | `LLMCallFn(msgs)` → `string` |
+| 接口 | `llm.stream(msgs, { tools })` | 内部消费 `llm.stream(msgs)` 后聚合为 `string` |
 | tools | 有 | 无 |
 | L3 形态 | 原始 message 数组 | `${role}: ${content}` 字符串拼接进 user content |
 | 返回 | 结构化（含 tool calls） | 纯文本 |

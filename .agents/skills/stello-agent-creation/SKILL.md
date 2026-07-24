@@ -451,12 +451,14 @@ console.log(result.turn.finalContent)
 "全 memory → 反思 → 定向 insight" 的循环由应用层实现：
 
 ```typescript
+import { collectLLMStream } from '@stello-ai/session'
+
 async function reflect(agent: StelloAgent, llm: LLMAdapter): Promise<void> {
   const digests = await agent.listSessionDigests({ status: 'active' })
-  const reflection = await llm.complete([
+  const reflection = await collectLLMStream(llm.stream([
     { role: 'system', content: '你是 orchestrator，请综合各 session 的 memory，对需要纠偏/补充信息的 session 写出 insight。' },
     { role: 'user', content: JSON.stringify(digests) },
-  ])
+  ]))
 
   // 解析 reflection 输出（自定义 schema），调用 putInsight 定向回写
   const { insights } = JSON.parse(reflection.content ?? '{}') as { insights: Record<string, string> }

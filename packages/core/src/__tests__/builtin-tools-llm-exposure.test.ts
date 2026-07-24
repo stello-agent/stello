@@ -25,20 +25,27 @@ import {
  *   ToolRegistryImpl([createSessionTool(), activateSkillTool(skills)])
  *     → new StelloEngineImpl(...)  // 构造时会调用 pushToolsToSession
  *       → session.setTools(union(...))
- *         → engine.turn('hi') → session.send('hi')
- *           → llm.complete(messages, { tools })  ← 断言这里收到 tools
+ *         → engine.turn('hi') → session.stream('hi')
+ *           → llm.stream(messages, { tools })  ← 断言这里收到 tools
  */
 describe('Built-in tool LLM exposure (bug regression)', () => {
   it('LLM 在 send 时收到 stello_create_session 与 activate_skill 的描述', async () => {
-    // 1. 用 spy LLM，捕获 complete 的调用参数
+    // 1. 用 spy LLM，捕获 stream 的调用参数
     const completeSpy = vi.fn<NonNullable<LLMAdapter['complete']>>().mockResolvedValue({
       content: 'ok',
       toolCalls: [],
       usage: { promptTokens: 0, completionTokens: 0 },
     } satisfies LLMResult)
+    const streamSpy = vi.fn<LLMAdapter['stream']>(async function* () {
+      yield {
+        delta: 'ok',
+        usage: { promptTokens: 0, completionTokens: 0 },
+      }
+    })
     const llm: LLMAdapter = {
       maxContextTokens: 1_000_000,
       complete: completeSpy,
+      stream: streamSpy,
     }
 
     // 2. 真实的 createSession（带 InMemoryStorage）
@@ -87,13 +94,14 @@ describe('Built-in tool LLM exposure (bug regression)', () => {
       turnRunner: new TurnRunner(sessionSendResultParser),
     })
 
-    // 7. 跑一轮 turn，从而触发 session.send → llm.complete
+    // 7. 跑一轮 turn，从而触发 session.stream → llm.stream
     await engine.turn('hi')
 
-    // 8. 断言：llm.complete 第一次调用时收到了内置工具的定义
-    expect(completeSpy).toHaveBeenCalled()
-    const [, completeOptions] = completeSpy.mock.calls[0]!
-    const toolList = completeOptions?.tools ?? []
+    // 8. 断言：llm.stream 第一次调用时收到了内置工具的定义
+    expect(streamSpy).toHaveBeenCalled()
+    expect(completeSpy).not.toHaveBeenCalled()
+    const [, streamOptions] = streamSpy.mock.calls[0]!
+    const toolList = streamOptions?.tools ?? []
     const toolNames = toolList.map(t => t.name)
 
     expect(toolNames).toContain('stello_create_session')
